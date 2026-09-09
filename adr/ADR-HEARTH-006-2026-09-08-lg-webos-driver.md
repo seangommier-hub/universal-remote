@@ -76,6 +76,32 @@ single toggle).
 - If port 3000 doesn't work, LG joins Samsung's encrypted-path problem:
   real progress here requires a Dev Build + a native TLS-trust module (or
   equivalent), to be scoped in a future ADR — not assumed or half-built now.
+## Update 2026-09-09: the first real-hardware test was inconclusive, not failed
+
+`scripts/test-lg-connection.js` was run once against `192.168.200.13` (a
+43" LG, not Sean's primary 75" — see the LG update thread this same night)
+and got "Received network error or non-101 status code," which this ADR's
+original text (and a status message to Sean) treated as evidence for the
+"unencrypted port rejected" scenario described above.
+
+That conclusion was premature. A later network sweep from this dev machine
+(on the Primary subnet, 192.168.1.x) found **no** device answering on port
+3000 (or 8001/8060) anywhere on Primary — strongly suggesting Sean's real
+TVs live on Guest or IoT, both confirmed elsewhere in this project as
+network-isolated from Primary by the router itself. That isolation would
+produce the exact same "network error" independent of whether the TV's
+port 3000 actually works — **the one real test run so far cannot
+distinguish "TV rejected the unencrypted protocol" from "router blocked
+Primary→Guest traffic before the TV was ever reached."**
+
+This driver's real-hardware status is therefore genuinely **untested**, not
+"tested and found broken." The only valid way to test it is from a device
+on the *same* network segment as the TV — i.e. Sean's phone, connected to
+whichever WiFi network (Guest/IoT/Primary) the TV is actually on, running
+the app and using "+ Add LG TV" directly. Re-running the standalone script
+from this dev machine cannot produce a meaningful result while it sits on
+a different, isolated segment than the TV.
+
 - Any fourth TV driver should keep following this same pattern: verify
   against a real source, declare only implemented capabilities, and prefer
   reading real state back over assuming a command worked wherever the
