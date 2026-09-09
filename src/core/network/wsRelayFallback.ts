@@ -3,14 +3,15 @@ import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCent
 // See ADR-HEARTH-011. Mirrors httpRelayFallback.ts's fallback pattern for WebSocket-based
 // drivers (Samsung, LG): try a direct connection to the device first, and only relay through
 // Family Command Center's WS relay if that fails — e.g. the device is on a network segment the
-// phone isn't currently joined to. The relay scheme (ws vs wss) is intentionally read from
-// config rather than hardcoded, since whether Family Command Center's relay uses a real or
-// self-signed TLS cert changes what React Native's WebSocket can actually connect to.
+// phone isn't currently joined to. Confirmed with Family Command Center: the relay is plain
+// ws:// (a `ws` package WebSocketServer with no TLS underneath) — an internal LAN hop where the
+// query-string token is the real auth boundary, same reasoning as why the devices themselves
+// use unencrypted ws:// locally (ADR-HEARTH-005/006).
 
 const DIRECT_CONNECT_TIMEOUT_MS = 4000;
 const RELAY_CONNECT_TIMEOUT_MS = 8000;
 const RELAY_PORT = 3211;
-const RELAY_SCHEME = "wss"; // confirm against Family Command Center; see ADR-HEARTH-011 update
+const RELAY_SCHEME = "ws";
 
 function tryOpenSocket(url: string, timeoutMs: number, failureContext: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {

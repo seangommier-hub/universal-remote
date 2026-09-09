@@ -85,16 +85,19 @@ to route through their respective helper instead of calling
 `fetch`/`WebSocket` directly. 71/71 tests passing, including new coverage
 for the fallback triggering correctly.
 
-**One open question before this can be tested end-to-end**: Family Command
-Center's relay was specified as `wss://<pi-ip>:3211` (TLS). If that
-certificate is self-signed, React Native's `WebSocket` cannot connect to it
-at all — the same wall documented in ADR-HEARTH-005/006 for the devices'
-own local encrypted ports. Asked Family Command Center to confirm whether
-it's genuinely TLS (and with what cert) or `ws://` was intended; Hearth's
-scheme is read from a constant (`RELAY_SCHEME` in `wsRelayFallback.ts`),
-not hardcoded per-callsite, so this is a one-line fix once confirmed either
-way. Not yet validated against real hardware regardless — that requires
-this question resolved first.
+**Resolved**: confirmed with Family Command Center — the `wss://` in their
+original message was a mistake, not a real TLS setup (`new
+WebSocketServer({port: PORT})` from the `ws` package, no HTTPS server or
+cert/key underneath). It's plain `ws://`, matching the reasoning that this
+is an internal LAN hop (phone → Pi, already on the household network) where
+the query-string token is the real auth boundary — the same reasoning
+already applied to the devices' own local `ws://` ports. `RELAY_SCHEME` in
+`wsRelayFallback.ts` updated from `"wss"` to `"ws"`; no other changes
+needed since the scheme was already isolated to one constant. 71/71 tests
+still passing.
+
+Still not yet validated against real hardware — that's the next real
+checkpoint, independent of anything left to build.
 
 ## Consequences
 
