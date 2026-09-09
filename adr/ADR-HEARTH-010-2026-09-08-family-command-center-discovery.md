@@ -55,6 +55,24 @@ solves network inventory is the same "don't rebuild what already exists"
 judgment as reusing `UniversalTvRemote` for Roku (ADR-HEARTH-007) rather
 than a new component.
 
+## Product boundary (confirmed directly by Sean, in the Family Command Center session)
+
+"both need to work together and share information. think of this as a
+combined effort but two separate apps" ... "one is meant to provide
+information to the house. the other is meant to control the house based on
+that information. both equally important."
+
+This is the governing split for this integration and any future one between
+the two projects: **Family Command Center is the information/sensing layer
+(network inventory, household state); Hearth is the control/actuation layer
+(drivers, commands, real device state).** Concretely for this integration:
+FCC decides what devices exist and reports them; Hearth decides how to
+actually talk to a recognized one and never re-implements device inventory
+itself. Neither app should absorb the other's responsibility — e.g. Hearth
+should not grow its own network-scanning logic while this integration
+exists, and Family Command Center should not grow TV/streaming-device
+control logic Hearth already owns.
+
 ## Consequences
 
 - This discovery path only ever surfaces what Family Command Center's own
