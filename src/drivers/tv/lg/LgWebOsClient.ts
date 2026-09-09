@@ -3,7 +3,11 @@
 // (no first-party LG doc for this direction of control) — verified against the widely-used
 // reference implementation https://github.com/hobbyquaker/lgtv2 (index.js, pairing.json,
 // README.md). See ADR-HEARTH-006 for why this targets only the unencrypted port, not
-// wss://3001, and why that's a narrower window than Samsung's equivalent limitation.
+// wss://3001, and why that's a narrower window than Samsung's equivalent limitation. See
+// ADR-HEARTH-011: connect() and the pointer-input socket both fall back to relaying through
+// Family Command Center if the TV isn't reachable directly from the phone's current network.
+
+import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 
 const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
 const PORT = 3000;
@@ -130,10 +134,11 @@ export class LgWebOsClient {
 
   constructor(private config: LgWebOsConfig) {}
 
-  connect(): Promise<void> {
+  async connect(): Promise<void> {
+    const socket = await openSocketWithRelayFallback(`ws://${this.config.ipAddress}:${PORT}`);
+    const registerId = String(this.nextId++);
+
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(`ws://${this.config.ipAddress}:${PORT}`);
-      const registerId = String(this.nextId++);
       const timeout = setTimeout(() => {
         this.pending.delete(registerId);
         socket.close();
@@ -154,15 +159,14 @@ export class LgWebOsClient {
         },
       });
 
-      socket.onopen = () => {
-        socket.send(JSON.stringify({ type: "register", id: registerId, payload: PAIRING_MANIFEST }));
-      };
       socket.onmessage = (event: { data: unknown }) => this.handleMessage(String(event.data));
       socket.onerror = () => {
         clearTimeout(timeout);
         this.pending.delete(registerId);
         reject(new Error(`Could not open a WebSocket to ${this.config.ipAddress}:${PORT}`));
       };
+
+      socket.send(JSON.stringify({ type: "register", id: registerId, payload: PAIRING_MANIFEST }));
     });
   }
 
@@ -200,14 +204,9 @@ export class LgWebOsClient {
     if (typeof socketPath !== "string") {
       throw new Error("LG TV did not return a pointer input socket path");
     }
-    return new Promise((resolve, reject) => {
-      const socket = new WebSocket(socketPath);
-      socket.onopen = () => {
-        this.pointerSocket = socket;
-        resolve(socket);
-      };
-      socket.onerror = () => reject(new Error("Could not open the LG pointer input socket"));
-    });
+    const socket = await openSocketWithRelayFallback(socketPath);
+    this.pointerSocket = socket;
+    return socket;
   }
 
   private handleMessage(data: string): void {

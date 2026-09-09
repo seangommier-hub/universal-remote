@@ -1,10 +1,13 @@
 import { LgWebOsClient } from "./LgWebOsClient";
-import { installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
+import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 
 async function connectClient(client: LgWebOsClient): Promise<void> {
   const connectPromise = client.connect();
   const socket = MockWebSocket.latest();
   socket.simulateOpen();
+  // openSocketWithRelayFallback's own internal await chain means connect() doesn't resume (and
+  // attach onmessage) synchronously with the open event anymore — flush before sending messages.
+  await flushMicrotasks();
   // The TV first replies with a "prompt is showing" response (no client-key yet)...
   socket.simulateMessage({ type: "response", id: "1", payload: { pairingType: "PROMPT", returnValue: true } });
   // ...then, once the user accepts on-screen, the final response carrying the client-key.
@@ -26,6 +29,7 @@ describe("LgWebOsClient", () => {
     expect(socket.sentMessages).toHaveLength(0);
 
     socket.simulateOpen();
+    await flushMicrotasks();
     const sent = JSON.parse(socket.sentMessages[0]);
     expect(sent.type).toBe("register");
     expect(sent.payload.manifest.appVersion).toBe("1.1");
@@ -44,6 +48,7 @@ describe("LgWebOsClient", () => {
     const connectPromise = client.connect();
     const socket = MockWebSocket.latest();
     socket.simulateOpen();
+    await flushMicrotasks();
     const sent = JSON.parse(socket.sentMessages[0]);
 
     socket.simulateMessage({ type: "error", id: sent.id, error: "403 cancelled" });

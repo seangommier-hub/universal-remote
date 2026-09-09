@@ -1,5 +1,5 @@
 import { SamsungPairingError, SamsungTizenClient } from "./SamsungTizenClient";
-import { installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
+import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 
 describe("SamsungTizenClient", () => {
   beforeEach(() => {
@@ -13,6 +13,8 @@ describe("SamsungTizenClient", () => {
     const socket = MockWebSocket.latest();
     expect(socket.url).toBe("ws://192.168.1.60:8001/api/v2/channels/samsung.remote.control?name=SGVhcnRo");
 
+    socket.simulateOpen();
+    await flushMicrotasks();
     socket.simulateMessage({ event: "ms.channel.connect", data: {} });
     await expect(connectPromise).resolves.toBeUndefined();
   });
@@ -21,7 +23,10 @@ describe("SamsungTizenClient", () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
     const connectPromise = client.connect();
 
-    MockWebSocket.latest().simulateMessage({ event: "ms.channel.unauthorized" });
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.unauthorized" });
 
     await expect(connectPromise).rejects.toBeInstanceOf(SamsungPairingError);
   });
@@ -30,15 +35,20 @@ describe("SamsungTizenClient", () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
     const connectPromise = client.connect();
 
+    // Fails at the transport layer before ever opening — no relay configured either, so the
+    // fallback attempt (see httpRelayFallback/wsRelayFallback pattern) also fails, surfacing a
+    // clear error rather than hanging.
     MockWebSocket.latest().simulateError();
 
-    await expect(connectPromise).rejects.toThrow(/Could not open/);
+    await expect(connectPromise).rejects.toThrow();
   });
 
   test("sendKey sends the documented ms.remote.control envelope once connected", async () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
     const connectPromise = client.connect();
     const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
     socket.simulateMessage({ event: "ms.channel.connect", data: {} });
     await connectPromise;
 

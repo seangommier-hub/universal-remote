@@ -1,5 +1,5 @@
 import { LgWebOsDriver, LG_WEBOS_DRIVER_ID } from "./LgWebOsDriver";
-import { installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
+import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
 
 const device: Device = {
@@ -17,10 +17,11 @@ async function connectDriver(driver: LgWebOsDriver): Promise<void> {
   const connectPromise = driver.connect(device);
   const socket = MockWebSocket.latest();
   socket.simulateOpen();
+  await flushMicrotasks();
   const registerSent = JSON.parse(socket.sentMessages[0]);
   socket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key" } });
 
-  await Promise.resolve(); // let connect()'s internal refreshVolumeState() send its request
+  await flushMicrotasks(); // let connect()'s internal refreshVolumeState() send its request
   const volumeRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
   socket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 15, mute: false } });
 

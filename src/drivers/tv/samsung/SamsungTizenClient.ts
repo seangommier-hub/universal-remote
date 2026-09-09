@@ -3,7 +3,11 @@
 // community-reverse-engineered protocol (no first-party Samsung documentation for this
 // direction of control) — verified against the widely-used reference implementation
 // https://github.com/xchwarze/samsung-tv-ws-api (connection.py, event.py, COMMANDS.md).
-// See ADR-HEARTH-005 for why this targets only the unencrypted port, not wss://8002.
+// See ADR-HEARTH-005 for why this targets only the unencrypted port, not wss://8002. See
+// ADR-HEARTH-011: if the TV isn't reachable directly (different network segment than the
+// phone), connect() falls back to relaying through Family Command Center.
+
+import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 
 const CONNECT_TIMEOUT_MS = 20000; // the TV requires a physical on-screen approval tap
 const MS_CHANNEL_CONNECT_EVENT = "ms.channel.connect";
@@ -37,12 +41,12 @@ export class SamsungTizenClient {
 
   constructor(private config: SamsungTizenConfig) {}
 
-  connect(): Promise<void> {
+  async connect(): Promise<void> {
     const name = encodeAsciiBase64(this.config.appName ?? "Hearth");
     const url = `ws://${this.config.ipAddress}:8001/api/v2/channels/samsung.remote.control?name=${name}`;
+    const socket = await openSocketWithRelayFallback(url);
 
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(url);
       const timeout = setTimeout(() => {
         socket.close();
         reject(new Error("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again"));

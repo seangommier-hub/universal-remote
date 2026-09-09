@@ -68,3 +68,10 @@ export function installMockWebSocket(): void {
   MockWebSocket.reset();
   (global as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
 }
+
+/** Drains pending microtasks — needed after simulateOpen()/simulateMessage() when the code under test has its own internal await chain (e.g. openSocketWithRelayFallback) between the event firing and its visible side effect. */
+export async function flushMicrotasks(ticks = 4): Promise<void> {
+  for (let i = 0; i < ticks; i++) {
+    await Promise.resolve();
+  }
+}

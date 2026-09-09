@@ -1,5 +1,5 @@
 import { SamsungTizenDriver, SAMSUNG_TIZEN_DRIVER_ID } from "./SamsungTizenDriver";
-import { installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
+import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
 
 const device: Device = {
@@ -14,7 +14,10 @@ const device: Device = {
 
 async function connectDriver(driver: SamsungTizenDriver): Promise<void> {
   const connectPromise = driver.connect(device);
-  MockWebSocket.latest().simulateMessage({ event: "ms.channel.connect", data: {} });
+  const socket = MockWebSocket.latest();
+  socket.simulateOpen();
+  await flushMicrotasks();
+  socket.simulateMessage({ event: "ms.channel.connect", data: {} });
   await connectPromise;
 }
 
