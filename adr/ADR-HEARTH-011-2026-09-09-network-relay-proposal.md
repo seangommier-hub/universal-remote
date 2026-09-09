@@ -99,6 +99,25 @@ still passing.
 Still not yet validated against real hardware — that's the next real
 checkpoint, independent of anything left to build.
 
+## Update 2026-09-09: security hardening on Family Command Center's side
+
+Family Command Center ran a full security review of the relay endpoint and
+found (and fixed) two real gaps, deployed live: a **redirect-based SSRF
+bypass** (the relay's target-IP allowlist check could be sidestepped by a
+target that issued an HTTP redirect to an address the allowlist wouldn't
+have permitted directly), and a **missing port restriction** (the allowlist
+validated the target *hostname* against known devices but not the target
+*port*, meaning a request naming a legitimate device IP could still reach
+an arbitrary port on that device). Both matter specifically because this
+relay's whole job is reaching addresses on a household's LAN on the app's
+behalf — an SSRF-class gap there is a real household-network exposure, not
+an abstract finding.
+
+No changes needed on Hearth's side for either fix: the four drivers already
+only ever request their own protocol's standard port (80 Sony, 8001
+Samsung, 3000 LG, 8060 Roku), so port-scoping doesn't reject anything
+legitimate Hearth sends.
+
 ## Consequences
 
 - Every driver client (`SonyBraviaClient`, `SamsungTizenClient`,
