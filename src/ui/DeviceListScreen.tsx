@@ -1,0 +1,196 @@
+import { Ionicons } from "@expo/vector-icons";
+import { ComponentProps } from "react";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Device } from "../core/types/Device";
+import { CapabilityButton } from "./CapabilityButton";
+import { theme } from "./theme";
+
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku";
+
+type IconName = ComponentProps<typeof Ionicons>["name"];
+
+const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }[] = [
+  { brand: "sony", label: "Sony TV", icon: "tv-outline" },
+  { brand: "samsung", label: "Samsung TV", icon: "tv-outline" },
+  { brand: "lg", label: "LG TV", icon: "tv-outline" },
+  { brand: "roku", label: "Roku", icon: "play-circle-outline" },
+];
+
+const CATEGORY_ICON: Record<string, IconName> = {
+  tv: "tv-outline",
+  streaming: "play-circle-outline",
+};
+
+interface DeviceListScreenProps {
+  devices: Device[];
+  onSelect: (device: Device) => void;
+  onAddDevice: (brand: AddableBrand) => void;
+  onDiscover: () => void;
+}
+
+/** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
+export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover }: DeviceListScreenProps) {
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.brandMark}>
+          <View style={styles.emberDot} />
+        </View>
+        <View>
+          <Text style={styles.title}>Hearth</Text>
+          <Text style={styles.subtitle}>One home. One remote.</Text>
+        </View>
+      </View>
+
+      {devices.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="home-outline" size={40} color={theme.textTertiary} />
+          <Text style={styles.emptyTitle}>No devices yet</Text>
+          <Text style={styles.emptyBody}>Add your first TV or streaming device below to start controlling it.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={devices}
+          keyExtractor={(device) => device.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <Pressable style={({ pressed }) => [styles.card, pressed && styles.cardPressed]} onPress={() => onSelect(item)}>
+              <View style={styles.cardIcon}>
+                <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.deviceName}>{item.name}</Text>
+                <Text style={styles.deviceMeta}>
+                  {item.manufacturer} {item.model}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+            </Pressable>
+          )}
+        />
+      )}
+
+      <Pressable
+        style={({ pressed }) => [styles.discoverTile, pressed && styles.cardPressed]}
+        onPress={onDiscover}
+        accessibilityRole="button"
+        accessibilityLabel="Discover devices on your network"
+      >
+        <Ionicons name="search-outline" size={20} color={theme.background} />
+        <Text style={styles.discoverLabel}>Discover devices on your network</Text>
+      </Pressable>
+
+      <Text style={styles.sectionLabel}>Or add a device manually</Text>
+      <View style={styles.addGrid}>
+        {ADD_DEVICE_OPTIONS.map((option) => (
+          <Pressable
+            key={option.brand}
+            style={({ pressed }) => [styles.addTile, pressed && styles.cardPressed]}
+            onPress={() => onAddDevice(option.brand)}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${option.label}`}
+          >
+            <Ionicons name={option.icon} size={20} color={theme.accentEnd} />
+            <Text style={styles.addTileLabel}>{option.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background, paddingTop: 64, paddingHorizontal: theme.spacing.xl },
+  header: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: theme.spacing.xl },
+  brandMark: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emberDot: {
+    width: 16,
+    height: 16,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.accentEnd,
+  },
+  title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700" },
+  subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
+  list: { gap: theme.spacing.md, paddingBottom: theme.spacing.md },
+  sectionLabel: {
+    color: theme.textSecondary,
+    fontSize: theme.type.label,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  discoverTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.sm,
+    backgroundColor: theme.accentEnd,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+    marginTop: theme.spacing.lg,
+  },
+  discoverLabel: { color: theme.background, fontSize: theme.type.body, fontWeight: "700" },
+  addGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, paddingBottom: theme.spacing.xl },
+  addTile: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    backgroundColor: theme.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    paddingVertical: 14,
+    paddingHorizontal: theme.spacing.md,
+  },
+  addTileLabel: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600" },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+    backgroundColor: theme.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  cardPressed: { opacity: 0.6 },
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.surfaceRaised,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardBody: { flex: 1 },
+  deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
+  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: 2 },
+  emptyState: {
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.xxl,
+    backgroundColor: theme.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.borderSubtle,
+    marginBottom: theme.spacing.lg,
+  },
+  emptyTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
+  emptyBody: {
+    color: theme.textSecondary,
+    fontSize: theme.type.label,
+    textAlign: "center",
+    paddingHorizontal: theme.spacing.xl,
+  },
+});

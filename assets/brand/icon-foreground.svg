@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="flame" x1="512" y1="260" x2="512" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC773"/>
+      <stop offset="1" stop-color="#FF7A45"/>
+    </linearGradient>
+    <radialGradient id="ember" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FFD68A"/>
+      <stop offset="0.55" stop-color="#FF9D52"/>
+      <stop offset="1" stop-color="#F4692B"/>
+    </radialGradient>
+  </defs>
+  <polyline points="300,472 512,296 724,472" fill="none" stroke="url(#flame)" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="618" r="136" fill="url(#ember)"/>
+  <circle cx="470" cy="576" r="46" fill="#FFE7B8" opacity="0.55"/>
+</svg>
