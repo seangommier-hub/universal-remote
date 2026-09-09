@@ -96,3 +96,33 @@ control logic Hearth already owns.
   "ADR-HEARTH-009" in comments, written before this project's actual
   ADR-009 (UI design pass) existed. All references fixed to ADR-HEARTH-010
   (this document) to keep the ADR trail accurate.
+
+## Update 2026-09-08 (later same night): why IoT/Guest are invisible today, and the open credential question
+
+The family-command-center session investigated directly (live authenticated
+router admin session) and found the real mechanism: Pi-hole (which backs
+`/api/integrations/hearth/devices`) only has DNS/DHCP visibility into the
+Primary network and a separate Pi-managed kids' AP — the router's Guest and
+IoT networks never touch Pi-hole at all, so there is no data for those two
+segments for the endpoint to surface, regardless of how the endpoint itself
+is written.
+
+**Correction to the "ext" theory**: I have direct first-hand evidence this
+project's earlier "192.168.200.x might be a fourth mystery segment" theory
+is wrong — a device settings page on this same router (a 43" LG TV) showed,
+verbatim, `Connection: Wi-Fi / 2.4 GHz Guest` alongside `IPv4 Address:
+192.168.200.13` on the same screen. That's the router's own UI: 192.168.200.x
+*is* the Guest network's subnet, not a separate "ext" segment. So the real
+picture is two visibility buckets, not three-plus-a-mystery: Primary
+(Pi-hole visible) vs. Guest+IoT (not Pi-hole visible).
+
+**Open, unresolved, requires Sean directly — not decided by either
+session**: reaching Guest/IoT would mean Family Command Center's backend
+holding and maintaining an authenticated session to the router's own admin
+API (an internal `analysis.cgi` endpoint was found, session-cookie
+authenticated) — i.e. storing router admin credentials server-side. That is
+a genuine new credential-storage/security decision, not an extension of
+existing patterns (it's the router's own login, not a per-device PSK like
+Sony's). Neither this session nor the family-command-center session is
+authorizing that unilaterally. Scoped as its own follow-up task with its
+own ADR once Sean weighs in, not bolted onto this one.
