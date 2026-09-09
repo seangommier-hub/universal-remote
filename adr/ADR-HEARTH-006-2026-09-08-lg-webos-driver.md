@@ -102,6 +102,21 @@ the app and using "+ Add LG TV" directly. Re-running the standalone script
 from this dev machine cannot produce a meaningful result while it sits on
 a different, isolated segment than the TV.
 
+**Confirmed, not just theorized (2026-09-09):** Sean's real 75" LG TV is at
+`10.20.30.40` on the "sewer rat" WiFi network — the Pi-managed segment the
+family-command-center session separately identified as `10.20.30.x`. A raw
+TCP connect from this dev machine to `10.20.30.40:3000`, using Node's own
+socket API directly (not the driver, not the standalone script — isolating
+the network layer specifically), **times out with zero response** — no
+`ECONNREFUSED`, nothing. That is the specific signature of traffic being
+silently dropped by network isolation, not of a device actively rejecting
+a connection. This closes the ambiguity above: the driver's actual protocol
+behavior against this TV remains completely unknown, because no connection
+attempt from this machine has ever reached the TV at the network layer at
+all. Testing this driver requires running the app from a device already on
+the `10.20.30.x` / "sewer rat" network — this dev machine cannot do it
+under any circumstance, regardless of what code changes.
+
 - Any fourth TV driver should keep following this same pattern: verify
   against a real source, declare only implemented capabilities, and prefer
   reading real state back over assuming a command worked wherever the
