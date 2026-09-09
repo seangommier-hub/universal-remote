@@ -31,7 +31,13 @@
       "backgroundColor": "#12141C"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Hearth uses the camera to scan a Family Command Center QR code for easy pairing."
+        }
+      ]
     ]
   }
 }

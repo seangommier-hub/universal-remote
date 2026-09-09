@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
-import { loadFamilyCommandCenterConfig, saveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -34,18 +34,10 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
   }, []);
 
   async function handleSave() {
-    const trimmedUrl = baseUrl.trim().replace(/\/$/, "");
-    const trimmedToken = token.trim();
     setStatus("checking");
     setErrorMessage("");
     try {
-      const res = await fetch(`${trimmedUrl}/api/integrations/hearth/devices`, {
-        headers: { Authorization: `Bearer ${trimmedToken}` },
-      });
-      if (!res.ok) {
-        throw new Error(res.status === 401 ? "That token was rejected." : `Server returned ${res.status}.`);
-      }
-      await saveFamilyCommandCenterConfig({ baseUrl: trimmedUrl, token: trimmedToken });
+      await verifyAndSaveFamilyCommandCenterConfig(baseUrl, token);
       onSaved();
     } catch (err) {
       setStatus("error");

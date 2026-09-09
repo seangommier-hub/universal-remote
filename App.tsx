@@ -13,6 +13,7 @@ import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
+import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
 import { CapabilityButton } from "./src/ui/CapabilityButton";
 import { theme } from "./src/ui/theme";
 
@@ -21,6 +22,7 @@ type Screen =
   | { name: "remote"; device: Device }
   | { name: "add"; brand: AddableBrand }
   | { name: "discover" }
+  | { name: "fcc-scan" }
   | { name: "fcc-settings" };
 
 export default function App() {
@@ -102,7 +104,14 @@ export default function App() {
           driverRegistry={runtime.driverRegistry}
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleDeviceAdded}
-          onOpenSettings={() => setScreen({ name: "fcc-settings" })}
+          onOpenSettings={() => setScreen({ name: "fcc-scan" })}
+        />
+      )}
+      {screen.name === "fcc-scan" && (
+        <ScanFamilyCommandCenterQrScreen
+          onCancel={() => setScreen({ name: "list" })}
+          onSaved={() => setScreen({ name: "discover" })}
+          onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
         />
       )}
       {screen.name === "fcc-settings" && (
