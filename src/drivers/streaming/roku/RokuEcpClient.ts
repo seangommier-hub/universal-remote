@@ -2,6 +2,8 @@
 // no auth, no pairing. Source: https://developer.roku.com/docs/developer-program/debugging/external-control-api.md
 // Applies to both Roku streaming devices and Roku TVs (they share ECP).
 
+import { requestWithRelayFallback } from "../../../core/network/httpRelayFallback";
+
 const DEFAULT_PORT = 8060;
 
 export interface RokuEcpConfig {
@@ -26,19 +28,29 @@ function extractXmlTag(xml: string, tag: string): string | undefined {
 export class RokuEcpClient {
   constructor(private config: RokuEcpConfig) {}
 
-  private baseUrl(): string {
-    return `http://${this.config.ipAddress}:${this.config.port ?? DEFAULT_PORT}`;
+  private port(): number {
+    return this.config.port ?? DEFAULT_PORT;
   }
 
   async keypress(key: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl()}/keypress/${key}`, { method: "POST" });
+    const response = await requestWithRelayFallback({
+      ip: this.config.ipAddress,
+      port: this.port(),
+      path: `/keypress/${key}`,
+      method: "POST",
+    });
     if (!response.ok) {
       throw new Error(`Roku at ${this.config.ipAddress} returned HTTP ${response.status} for keypress ${key}`);
     }
   }
 
   async getDeviceInfo(): Promise<RokuDeviceInfo> {
-    const response = await fetch(`${this.baseUrl()}/query/device-info`);
+    const response = await requestWithRelayFallback({
+      ip: this.config.ipAddress,
+      port: this.port(),
+      path: "/query/device-info",
+      method: "GET",
+    });
     if (!response.ok) {
       throw new Error(`Roku at ${this.config.ipAddress} returned HTTP ${response.status} for device-info`);
     }

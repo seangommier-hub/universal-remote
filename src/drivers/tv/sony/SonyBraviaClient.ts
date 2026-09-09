@@ -4,6 +4,10 @@
 // Source: https://pro-bravia.sony.net/develop/integrate/rest-api/spec/getting-started/
 //         https://pro-bravia.sony.net/remote-display-control/rest-api/reference/
 
+import { requestWithRelayFallback } from "../../../core/network/httpRelayFallback";
+
+const SONY_PORT = 80;
+
 export interface SonyBraviaConfig {
   ipAddress: string;
   psk: string;
@@ -33,7 +37,10 @@ export class SonyBraviaClient {
 
   async call<T = unknown>(service: string, method: string, params: unknown[] = [], version = "1.0"): Promise<T> {
     const id = this.nextId++;
-    const response = await fetch(`http://${this.config.ipAddress}/sony/${service}`, {
+    const response = await requestWithRelayFallback({
+      ip: this.config.ipAddress,
+      port: SONY_PORT,
+      path: `/sony/${service}`,
       method: "POST",
       headers: {
         "Content-Type": "application/json",

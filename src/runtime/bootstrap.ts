@@ -3,8 +3,6 @@ import { DeviceRegistry } from "../core/registry/DeviceRegistry";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
-import { mockSamsungTvDriver } from "../drivers/tv/samsung/MockSamsungTvDriver";
-import { mockLgTvDriver } from "../drivers/tv/lg/MockLgTvDriver";
 import { SonyBraviaDriver } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
@@ -18,41 +16,23 @@ export interface HearthRuntime {
   devices: Device[];
 }
 
-/** Composition root for this development stage: wires the two mock TV drivers and two seed devices into a working runtime. Real drivers/discovery replace the seed devices as they're built — this function is where that swap happens. */
+/**
+ * Composition root: registers the four real drivers. No seed/mock devices — the mocks proved
+ * the driver abstraction (see src/drivers/tv/SimulatedTvDriver.ts and its tests, still exercised
+ * directly by the test suite) but real-hardware testing is now the priority, so the app starts
+ * with an empty device list and the user pairs real devices via "+ Add" or Discover.
+ */
 export function createHearthRuntime(): HearthRuntime {
   const deviceRegistry = new DeviceRegistry();
   const driverRegistry = new DriverRegistry();
   const stateStore = new StateStore();
 
-  driverRegistry.register(mockSamsungTvDriver);
-  driverRegistry.register(mockLgTvDriver);
   driverRegistry.register(new SonyBraviaDriver());
   driverRegistry.register(new SamsungTizenDriver());
   driverRegistry.register(new LgWebOsDriver());
   driverRegistry.register(new RokuEcpDriver());
 
-  const devices: Device[] = [
-    {
-      id: "living-room-samsung-tv",
-      name: "Living Room TV",
-      category: "tv",
-      manufacturer: "Samsung",
-      model: "Q80 (simulated)",
-      driverId: mockSamsungTvDriver.id,
-      capabilities: mockSamsungTvDriver.getCapabilities(),
-    },
-    {
-      id: "bedroom-lg-tv",
-      name: "Bedroom TV",
-      category: "tv",
-      manufacturer: "LG",
-      model: "C3 webOS (simulated)",
-      driverId: mockLgTvDriver.id,
-      capabilities: mockLgTvDriver.getCapabilities(),
-    },
-  ];
-
-  devices.forEach((device) => deviceRegistry.add(device));
+  const devices: Device[] = [];
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

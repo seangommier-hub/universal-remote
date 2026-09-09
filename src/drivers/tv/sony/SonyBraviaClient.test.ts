@@ -16,7 +16,7 @@ describe("SonyBraviaClient", () => {
     await client.call("system", "getPowerStatus");
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://192.168.1.50/sony/system",
+      "http://192.168.1.50:80/sony/system",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ "X-Auth-PSK": "secret-psk", "Content-Type": "application/json" }),

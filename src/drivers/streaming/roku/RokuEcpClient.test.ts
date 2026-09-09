@@ -15,7 +15,7 @@ describe("RokuEcpClient", () => {
 
     await client.keypress("Home");
 
-    expect(global.fetch).toHaveBeenCalledWith("http://192.168.1.80:8060/keypress/Home", { method: "POST" });
+    expect(global.fetch).toHaveBeenCalledWith("http://192.168.1.80:8060/keypress/Home", expect.objectContaining({ method: "POST" }));
   });
 
   test("keypress throws on a non-OK response", async () => {
