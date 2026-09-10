@@ -37,7 +37,7 @@ jobs:
       - name: Build unsigned .app
         run: |
           set -euo pipefail
-          WORKSPACE=$(ls ios/*.xcworkspace | head -n1)
+          WORKSPACE=$(ls -d ios/*.xcworkspace | head -n1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "Building $SCHEME from $WORKSPACE"
           xcodebuild \
