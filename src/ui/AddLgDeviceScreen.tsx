@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
@@ -15,10 +15,12 @@ interface AddLgDeviceScreenProps {
 }
 
 /**
- * Pairs a real LG webOS TV over its unencrypted SSAP WebSocket (port 3000 — see
- * ADR-HEARTH-006). The TV will show an on-screen Allow/Deny prompt during connect; this screen
- * waits for that instead of assuming success. Newer LG TVs (~2023+) may only accept the
- * encrypted port 3001, which this driver doesn't support yet.
+ * Pairs a real LG webOS TV over its encrypted SSAP WebSocket (port 3001, via Family Command
+ * Center's relay — see ADR-HEARTH-014). The TV will show an on-screen Allow/Deny prompt during
+ * connect; this screen waits for that instead of assuming success. Requires Family Command
+ * Center to be paired first (Settings → the home-screen link icon) — the direct connection
+ * attempt always fails by design (React Native can't trust the TV's certificate), and without a
+ * relay configured there's nothing to fall back to.
  */
 export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDeviceScreenProps) {
   const [name, setName] = useState("LG TV");
@@ -58,7 +60,8 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDe
   const canSubmit = ipAddress.trim().length > 0 && status !== "connecting";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />
@@ -68,8 +71,7 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDe
       <View style={styles.hintCard}>
         <Text style={styles.hint}>
           Watch the TV screen after tapping Connect — it will show an Allow/Deny prompt you need to accept within 30
-          seconds. Only works if the TV still accepts the unencrypted port 3000 channel (see ADR-HEARTH-006); TVs from
-          roughly 2023 on may reject it.
+          seconds. Requires Family Command Center to already be paired (Settings → the link icon on the home screen).
         </Text>
       </View>
 
@@ -96,8 +98,10 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDe
 
       <View style={styles.row}>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "connecting"} />
+        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
+            visible label — this button rendered as a bare link glyph with no visible "Connect" /
+            "Waiting for TV..." text at all. No icon here now. */}
         <CapabilityButton
-          icon="link-outline"
           label={status === "connecting" ? "Waiting for TV..." : "Connect"}
           variant="accent"
           onPress={handleConnect}
@@ -106,5 +110,6 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDe
       </View>
       {status === "connecting" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

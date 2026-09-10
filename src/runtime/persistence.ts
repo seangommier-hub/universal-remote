@@ -7,8 +7,16 @@ const DEVICES_STORAGE_KEY = "hearth.devices";
 // AsyncStorage (plaintext) and stored per-device in SecureStore instead.
 const SENSITIVE_CONFIG_KEYS = ["psk"];
 
+// Real-hardware finding (2026-09-09): SecureStore keys may only contain alphanumerics, ".",
+// "-", and "_" -- a device id built from a MAC address (FamilyCommandCenterDiscoveryProvider's
+// `fcc-${hwaddr}`, e.g. "fcc-aa:bb:cc:dd:ee:ff") contains colons and fails that check. This threw
+// on every SecureStore call, including the read in loadDevices() at app startup -- unhandled,
+// it kept setReady(true) from ever running, hanging the whole app on its loading spinner
+// indefinitely. Sanitizing here, at the actual boundary that imposes the constraint, protects
+// against this for any future id format too, not just today's MAC-address case.
 function secureStoreKey(deviceId: string, field: string): string {
-  return `hearth.device.${deviceId}.${field}`;
+  const safeId = deviceId.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return `hearth.device.${safeId}.${field}`;
 }
 
 /** Splits a device's config into non-sensitive (stored inline) and sensitive (stored separately) fields, then persists both. */

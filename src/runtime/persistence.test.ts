@@ -69,6 +69,23 @@ describe("persistence", () => {
     expect(stored[0].name).toBe("New Name");
   });
 
+  test("sanitizes a device id containing characters SecureStore rejects (e.g. a MAC-address-derived id) rather than throwing (real-hardware finding, 2026-09-09)", async () => {
+    const discoveredDevice: Device = { ...sonyDevice, id: "fcc-aa:bb:cc:dd:ee:ff" };
+    await saveDevice(discoveredDevice);
+
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.device.fcc-aa-bb-cc-dd-ee-ff.psk", "super-secret-psk");
+  });
+
+  test("loadDevices doesn't throw when a persisted device's id contains SecureStore-invalid characters", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+      JSON.stringify([{ ...sonyDevice, id: "fcc-aa:bb:cc:dd:ee:ff", config: { ipAddress: "192.168.1.50" } }])
+    );
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue(null);
+
+    await expect(loadDevices()).resolves.toHaveLength(1);
+    expect(SecureStore.getItemAsync).toHaveBeenCalledWith("hearth.device.fcc-aa-bb-cc-dd-ee-ff.psk");
+  });
+
   test("removeDevice deletes both the list entry and the secure-store credential", async () => {
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify([{ ...sonyDevice, config: {} }]));
 

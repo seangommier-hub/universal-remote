@@ -44,6 +44,19 @@ export class RokuEcpClient {
     }
   }
 
+  /** Launches an installed channel by its numeric Roku channel ID (e.g. Netflix is "12") — same ECP mechanism as keypress, documented at developer.roku.com's "Launch a channel" section. */
+  async launchChannel(channelId: string): Promise<void> {
+    const response = await requestWithRelayFallback({
+      ip: this.config.ipAddress,
+      port: this.port(),
+      path: `/launch/${channelId}`,
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`Roku at ${this.config.ipAddress} returned HTTP ${response.status} launching channel ${channelId}`);
+    }
+  }
+
   async getDeviceInfo(): Promise<RokuDeviceInfo> {
     const response = await requestWithRelayFallback({
       ip: this.config.ipAddress,

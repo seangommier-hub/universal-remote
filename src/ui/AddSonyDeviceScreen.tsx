@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { ThemedKeyboard } from "./ThemedKeyboard";
 import { theme } from "./theme";
 
 interface AddSonyDeviceScreenProps {
@@ -23,6 +24,10 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
   const [name, setName] = useState("Sony TV");
   const [ipAddress, setIpAddress] = useState("");
   const [psk, setPsk] = useState("");
+  // Real-hardware ask (2026-09-10): a themed on-screen keyboard for password-style fields, since
+  // the system keyboard's white background clashes with this screen's dark theme. Only this field
+  // (the PSK) gets it — it's the one password-style input in the whole app right now.
+  const [pskFocused, setPskFocused] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -58,7 +63,8 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
   const canSubmit = ipAddress.trim().length > 0 && psk.trim().length > 0 && status !== "connecting";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />
@@ -95,7 +101,11 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
         placeholderTextColor={theme.textTertiary}
         autoCapitalize="none"
         secureTextEntry
+        showSoftInputOnFocus={false}
+        onFocus={() => setPskFocused(true)}
+        caretHidden={false}
       />
+      {pskFocused && <ThemedKeyboard value={psk} onChange={setPsk} onDone={() => setPskFocused(false)} />}
 
       {status === "error" && (
         <View style={styles.errorCard}>
@@ -106,8 +116,10 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
 
       <View style={styles.row}>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "connecting"} />
+        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
+            visible label — this button rendered as a bare link glyph with no visible "Connect" /
+            "Connecting..." text at all. No icon here now. */}
         <CapabilityButton
-          icon="link-outline"
           label={status === "connecting" ? "Connecting..." : "Connect"}
           variant="accent"
           onPress={handleConnect}
@@ -116,5 +128,6 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
       </View>
       {status === "connecting" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

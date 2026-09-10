@@ -159,7 +159,7 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background, paddingTop: 56, paddingHorizontal: theme.spacing.xl },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing.xs },
   title: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700" },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.label, marginBottom: theme.spacing.lg },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md, paddingVertical: theme.spacing.xxl },
@@ -188,14 +188,14 @@ const styles = StyleSheet.create({
   },
   cardBody: { flex: 1 },
   deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
-  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: 2 },
-  unsupportedLabel: { color: theme.textTertiary, fontSize: theme.type.label, marginTop: 4, fontStyle: "italic" },
-  connectError: { color: theme.statusError, fontSize: theme.type.label, marginTop: 4 },
+  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
+  unsupportedLabel: { color: theme.textTertiary, fontSize: theme.type.label, marginTop: theme.spacing.xs, fontStyle: "italic" },
+  connectError: { color: theme.statusError, fontSize: theme.type.label, marginTop: theme.spacing.xs },
   connectButton: {
     backgroundColor: theme.accentEnd,
     borderRadius: theme.radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
     minWidth: 84,
     alignItems: "center",
   },

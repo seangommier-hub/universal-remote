@@ -121,3 +121,30 @@ under any circumstance, regardless of what code changes.
   against a real source, declare only implemented capabilities, and prefer
   reading real state back over assuming a command worked wherever the
   protocol actually supports a query.
+
+## Update 2026-09-09 (later): network isolation resolved — TV confirmed rejecting the unencrypted port
+
+Sean, directly: "the pi 5 is connected to it" — the Pi 5 is now bridged
+onto (or otherwise routing to) the "sewer rat" segment in a way that also
+makes `10.20.30.x` reachable from this dev machine, unlike the prior
+update's finding. Re-ran `scripts/test-lg-connection.js 10.20.30.40`:
+
+- The TCP connection to `10.20.30.40:3000` now **succeeds** — no timeout,
+  no silent drop. The isolation described in the previous update is gone
+  (or was never symmetric — either way, it's no longer blocking this test).
+- The WebSocket handshake reaches the TV and gets a real response: `"Received
+  network error or non-101 status code"` — the TV actively answers on port
+  3000 and refuses the WebSocket upgrade.
+
+This is now a **real, hardware-confirmed result**, not the ambiguous one
+from the prior update: Sean's 75" LG TV rejects the unencrypted `ws://3000`
+protocol outright, exactly the "2023-or-later TV" scenario this ADR's
+original Context section flagged as a real possibility up front. The
+network-isolation question is closed; the protocol question is now
+answered too. This driver **cannot connect to Sean's real TV as currently
+implemented** — reaching it requires the encrypted `wss://3001` path, which
+needs a way to trust LG's private-CA certificate that React Native's
+`WebSocket` doesn't support today (same class of gap as Samsung,
+ADR-HEARTH-005). That remains unimplemented and out of scope for Expo Go;
+tracked as future work (Dev Build + native TLS-trust module, per the
+Consequences section above), not started here.

@@ -1,0 +1,157 @@
+name: iOS unsigned build (for AltStore sideload)
+
+# Produces an UNSIGNED .ipa on a free GitHub-hosted macOS runner. No Apple
+# Developer account is used or required at this step — code signing is
+# explicitly disabled. AltServer (running on your own machine) does the
+# signing afterward using your free Apple ID. See ADR-HEARTH-031.
+#
+# expo-dev-client is removed before prebuild: it's only needed to connect
+# to a live Metro server during development, and its expo-dev-menu /
+# expo-dev-launcher pods pull in asset catalogs that need an iOS
+# Simulator runtime matching the exact SDK version — not something a
+# fresh GitHub-hosted runner reliably has. This build embeds the JS
+# bundle directly (the standard Release-config behavior) and doesn't
+# need a dev-client shell at all.
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - feature/ios-unsigned-build
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # Needs Swift tools 6.2 (only shipped from Xcode 26 onward), but
+          # 26.4+ has a stricter Swift/C++ interop check that this Expo SDK
+          # 57 version's expo-modules-jsi header (RuntimeScheduler.h) fails
+          # under (known upstream issue, expo/expo#46242, fixed on SDK 56
+          # but not yet backported here). Pinning the earliest 26.x release
+          # that still has Swift 6.2 tools, before that stricter check.
+          xcode-version: "26.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Remove expo-dev-client (development-only, not needed for a standalone build)
+        run: rm -rf node_modules/expo-dev-client node_modules/expo-dev-menu node_modules/expo-dev-launcher
+
+      - name: Patch expo-modules-jsi for this Xcode/Swift toolchain
+        # Genuine upstream compile failures under the Xcode 26.x available
+        # here, all inside expo-modules-jsi's own source, not this app's code
+        # (its Package.swift assumes Swift tools 6.2 fully supports things
+        # this compiler doesn't yet):
+        #  1. `weak let` (an immutable weak reference) — "'weak' must be a
+        #     mutable variable" in 12 files. `weak var` fixes most of them.
+        #  2. Three of those are `Sendable`-conforming classes, where a plain
+        #     `weak var` then fails as "stored property ... is mutable" —
+        #     Sendable requires immutability. `nonisolated(unsafe)` is the
+        #     standard escape hatch: these are weak, ARC-managed references,
+        #     inherently safe to read across concurrency domains.
+        #  3. RuntimeScheduler.h's two constructors are marked
+        #     SWIFT_RETURNS_RETAINED, which (confirmed by testing) isn't
+        #     valid Swift/C++ interop syntax on a constructor at all — a
+        #     constructor's return is implicitly retained already. Removing
+        #     the annotation from just the constructors (not the class,
+        #     which keeps its own trailing SWIFT_SHARED_REFERENCE) is the
+        #     targeted fix; an earlier attempt at reordering the class-level
+        #     attribute didn't change this error at all, confirming it
+        #     wasn't a parse-ordering issue.
+        #  4. A bare-slash regex literal in JavaScriptRuntime.swift
+        #     (`/^[a-zA-Z_$].../`) mis-parses as division once the compiler's
+        #     BareSlashRegexLiterals default differs from what this package
+        #     was written against, producing a nonsense "'$' is not a valid
+        #     digit" error. Swift's `#/.../#` extended delimiter form parses
+        #     unambiguously regardless of that default — same pattern, no
+        #     behavior change.
+        #  5. JavaScriptRuntime.swift also hits "sending 'x' risks causing
+        #     data races" at several call sites — Swift 6 strict
+        #     concurrency's region-based isolation checker. The package's
+        #     OWN existing fix for this exact situation is a
+        #     `nonisolated(unsafe) let x = x` shadow declared *before* the
+        #     closure that uses it (with a code comment explaining exactly
+        #     why that's sound) — and this compiler still rejects it there.
+        #     Moving the same shadow to just inside the `assumeIsolated`
+        #     closure (right before use, crossing one fewer closure boundary
+        #     first) is the same safety reasoning the original authors
+        #     already documented, just placed where this specific compiler
+        #     accepts it.
+        #  6. JavaScriptPromise.swift's `LongLivedState` is
+        #     `@JavaScriptActor`-isolated as a whole, which makes its
+        #     implicit no-arg init isolated too — but the enclosing
+        #     `JavaScriptPromise` constructs one synchronously from a
+        #     nonisolated context. Its three stored properties'
+        #     initializers (`JavaScriptValue.Ref()`) aren't themselves
+        #     actor-isolated (confirmed: no `@JavaScriptActor` on `Ref`), so
+        #     there's nothing to protect at construction time. Giving
+        #     `LongLivedState` an explicit `nonisolated init() {}` mirrors
+        #     the exact same pattern the package already uses for
+        #     `LongLivedObjectCollection`'s init, elsewhere in this file.
+        run: |
+          set -euo pipefail
+          grep -rl "weak let" node_modules/expo-modules-jsi | while read -r f; do
+            sed -i '' 's/weak let/weak var/g' "$f"
+          done
+          for f in \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift; do
+            sed -i '' 's/weak var runtime: JavaScriptRuntime?/nonisolated(unsafe) weak var runtime: JavaScriptRuntime?/' "$f"
+          done
+          SCHEDULER_H="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
+          sed -i '' 's/SWIFT_RETURNS_RETAINED RuntimeScheduler(/RuntimeScheduler(/' "$SCHEDULER_H"
+          python3 "$GITHUB_WORKSPACE/.github/workflows/patch-expo-modules-jsi.py"
+          echo "--- Verifying patches applied ---"
+          grep -n "weak var\|nonisolated" \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
+          grep -n "RuntimeScheduler(" "$SCHEDULER_H"
+
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Build unsigned .app
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d ios/*.xcworkspace | head -n1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building $SCHEME from $WORKSPACE"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          APP_NAME=$(basename "$APP_PATH")
+          mkdir -p Payload
+          cp -r "$APP_PATH" "Payload/$APP_NAME"
+          zip -qr Hearth-unsigned.ipa Payload
+          echo "Built: Hearth-unsigned.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hearth-unsigned-ipa
+          path: Hearth-unsigned.ipa
+          retention-days: 14

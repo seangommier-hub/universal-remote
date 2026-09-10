@@ -94,8 +94,10 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
 
       <View style={styles.row}>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "checking"} />
+        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
+            visible label — this button rendered as a bare checkmark glyph with no visible "Save"
+            / "Checking..." text at all. No icon here now. */}
         <CapabilityButton
-          icon="checkmark-outline"
           label={status === "checking" ? "Checking..." : "Save"}
           variant="accent"
           onPress={handleSave}

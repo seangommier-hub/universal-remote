@@ -85,6 +85,28 @@ describe("RokuEcpDriver", () => {
     expect(call[0]).toBe("http://192.168.1.80:8060/keypress/InputHDMI2");
   });
 
+  test("launchApp maps 'netflix' to Roku's real public channel id 12 (real-hardware research, 2026-09-10)", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
+    await driver.connect(device);
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+
+    const call = (global.fetch as jest.Mock).mock.calls[1];
+    expect(call[0]).toBe("http://192.168.1.80:8060/launch/12");
+  });
+
+  test("launchApp with an unsupported service throws without touching the network", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
+    await driver.connect(device);
+
+    const callsBefore = (global.fetch as jest.Mock).mock.calls.length;
+    await expect(
+      driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "disneyPlus" } })
+    ).rejects.toThrow(/supported 'service'/);
+    expect((global.fetch as jest.Mock).mock.calls.length).toBe(callsBefore);
+  });
+
   test("mute toggles the locally-tracked muted flag (ECP has no mute-state query)", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
     await driver.connect(device);
@@ -102,5 +124,49 @@ describe("RokuEcpDriver", () => {
     await driver.connect(device);
 
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation" })).rejects.toThrow();
+  });
+
+  test("a bad command argument does not mark a healthy device disconnected or start a reconnect loop (real-hardware finding, 2026-09-09)", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
+    await driver.connect(device);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation" })).rejects.toThrow();
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "not-a-number" } })).rejects.toThrow();
+    await expect(
+      driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: 42 } })
+    ).rejects.toThrow();
+
+    const state = await driver.getState(device);
+    expect(state.connection).toBe("connected"); // never touched by any of the three validation failures above
+
+    // No reconnect timer was scheduled — if one had been, a fetch call would eventually fire on
+    // its own; confirm the mock was never called again beyond the initial connect().
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(1);
+  });
+
+  test("setChannel sends a Lit_<digit> keypress per digit, in order, via Roku's documented literal-character format", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
+    await driver.connect(device);
+
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse());
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: 142 } });
+
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(1).map((call) => call[0]);
+    expect(keypressUrls).toEqual([
+      "http://192.168.1.80:8060/keypress/Lit_1",
+      "http://192.168.1.80:8060/keypress/Lit_4",
+      "http://192.168.1.80:8060/keypress/Lit_2",
+    ]);
+    expect(result.state?.channel).toBe(142);
+  }, 10000);
+
+  test("setChannel rejects a non-numeric channel arg without any network call", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn"));
+    await driver.connect(device);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "12" } })).rejects.toThrow(
+      /numeric 'channel'/
+    );
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(1); // only the connect() call
   });
 });

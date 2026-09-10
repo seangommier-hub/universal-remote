@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { connectAllDevices, createHearthRuntime } from "./src/runtime/bootstrap";
-import { loadDevices, saveDevice } from "./src/runtime/persistence";
+import { createHearthRuntime } from "./src/runtime/bootstrap";
+import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
+import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
 import { Device } from "./src/core/types/Device";
 import { logger } from "./src/core/logging/logger";
 import { DeviceListScreen, AddableBrand } from "./src/ui/DeviceListScreen";
@@ -14,7 +15,6 @@ import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
-import { CapabilityButton } from "./src/ui/CapabilityButton";
 import { theme } from "./src/ui/theme";
 
 type Screen =
@@ -25,18 +25,103 @@ type Screen =
   | { name: "fcc-scan" }
   | { name: "fcc-settings" };
 
+/** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
+async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
+  await Promise.all(
+    devices.map(async (device) => {
+      const driver = runtime.driverRegistry.get(device.driverId);
+      try {
+        await driver?.connect(device);
+        // Real-hardware ask (2026-09-10): "only have to approve one time... forever remembered by
+        // the tv." A driver (LG today) may have just mutated device.config with a freshly-learned
+        // pairing key — re-saving here is what actually gets that onto disk, not just into memory
+        // for this session. Cheap no-op for every driver whose config didn't change.
+        saveDeviceQuietly(device);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn("App", `Could not reconnect ${device.name}`, { message });
+      }
+    })
+  );
+}
+
+/** saveDevice(), but failures are logged and swallowed rather than thrown — every call site here is a background persistence step riding along an already-successful connect(), not something that should fail the caller's own flow. */
+function saveDeviceQuietly(device: Device): void {
+  saveDevice(device).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn("App", `Could not persist ${device.name}`, { message });
+  });
+}
+
 export default function App() {
   const runtime = useMemo(() => createHearthRuntime(), []);
   const [ready, setReady] = useState(false);
-  const [devices, setDevices] = useState<Device[]>(runtime.devices);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "list" });
+  const appState = useRef(AppState.currentState);
+  // Real-hardware finding (2026-09-10): a device's driver was never wired to the shared
+  // stateStore the UI actually reads — see stateStoreBridge.ts. One bridge per device, tracked by
+  // id so handleRemoveDevice can unsubscribe it and a device can't accidentally be bridged twice.
+  const stateBridges = useRef(new Map<string, () => void>()).current;
+
+  function attachStateBridge(device: Device) {
+    if (stateBridges.has(device.id)) return;
+    const driver = runtime.driverRegistry.get(device.driverId);
+    if (!driver) return;
+    stateBridges.set(device.id, bridgeDeviceState(driver, device, runtime.stateStore));
+  }
+
+  // Real-device finding (2026-09-10): "there are no buttons for streaming" — a device persisted
+  // from an earlier pairing carries whatever `driver.getCapabilities()` returned AT THAT TIME
+  // (AddLgDeviceScreen.tsx and its siblings set `capabilities` once, before this session's
+  // launchApp/settings/sleepTimer additions existed). Nothing ever re-synced it, so a driver that
+  // gained new capabilities after a device was paired left that device permanently unaware of
+  // them. Capabilities are a pure function of the driver, not the live connection — refreshed
+  // synchronously here, independent of whether connect() itself succeeds.
+  function refreshCapabilities(device: Device) {
+    const driver = runtime.driverRegistry.get(device.driverId);
+    if (driver) device.capabilities = driver.getCapabilities();
+  }
+
+  // Sean, directly (2026-09-09): "make sure that nothing ever gets unconnected like a device on
+  // wifi" — the one real gap ADR-HEARTH-017's per-driver backoff didn't cover: iOS can suspend
+  // or kill a backgrounded app's WebSocket connections outright, and nothing was re-checking
+  // connection state when the app came back to the foreground. A phone doesn't wait for a
+  // 30-second WiFi retry timer after you unlock it — it reconnects the moment you're back. Same
+  // idea here: any time the app returns to "active" from background/inactive, every known
+  // device gets a reconnect attempt immediately, regardless of where its own backoff timer was.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      const cameFromBackground = appState.current.match(/inactive|background/) && nextState === "active";
+      appState.current = nextState;
+      if (cameFromBackground) {
+        reconnectAllDevices(runtime, runtime.deviceRegistry.list());
+      }
+    });
+    return () => subscription.remove();
+  }, [runtime]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await connectAllDevices(runtime);
-      const persisted = await loadDevices();
-      persisted.forEach((device) => runtime.deviceRegistry.add(device));
+      // Real-hardware finding (2026-09-09): a SecureStore key-format bug in loadDevices() threw
+      // here, unhandled — since nothing below setReady(true) ran, the app hung on its loading
+      // spinner forever, with no error surfaced anywhere. That specific bug is fixed
+      // (persistence.ts), but startup should never be able to hang indefinitely regardless of
+      // what throws — this degrades to an empty device list (still usable, still recoverable)
+      // instead of a silent permanent hang.
+      let persisted: Device[] = [];
+      try {
+        persisted = await loadDevices();
+        persisted.forEach((device) => {
+          refreshCapabilities(device);
+          runtime.deviceRegistry.add(device);
+          attachStateBridge(device);
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error("App", "Startup failed to load persisted devices — continuing with an empty list", { message });
+      }
       if (cancelled) return;
       setDevices(runtime.deviceRegistry.list());
       setReady(true);
@@ -45,28 +130,63 @@ export default function App() {
       // on-screen pairing prompt the user may not be next to right now — never block app
       // startup on that. Each device connects independently in the background; the device list
       // already shows the device either way, just with "disconnected" state until this resolves.
-      persisted.forEach(async (device) => {
-        const driver = runtime.driverRegistry.get(device.driverId);
-        try {
-          await driver?.connect(device);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.warn("App", `Could not reconnect persisted device ${device.name} on startup`, { message });
-        }
-      });
+      // A failure here isn't the end of the story either: ADR-HEARTH-017's per-driver backoff
+      // and the AppState listener above both keep retrying afterward.
+      reconnectAllDevices(runtime, persisted);
     })();
     return () => {
       cancelled = true;
     };
   }, [runtime]);
 
+  async function handleReconnect(device: Device): Promise<void> {
+    const driver = runtime.driverRegistry.get(device.driverId);
+    await driver?.connect(device);
+    saveDeviceQuietly(device); // see reconnectAllDevices' identical comment — may carry a freshly-learned pairing key
+  }
+
   function handleDeviceAdded(device: Device) {
     runtime.deviceRegistry.add(device);
+    attachStateBridge(device);
     setDevices(runtime.deviceRegistry.list());
     setScreen({ name: "remote", device });
-    saveDevice(device).catch((err) => {
+    saveDeviceQuietly(device);
+  }
+
+  // Real-device feedback (2026-09-10): "the name should be able to be edited" — previously fixed
+  // at pairing time. Reuses deviceRegistry.add() (a Map keyed by id) to overwrite the entry rather
+  // than adding a rename-specific registry method; also updates the open remote screen's own
+  // `screen.device` snapshot so the header reflects the new name immediately, not just the list.
+  function handleRenameDevice(device: Device, newName: string) {
+    const updated: Device = { ...device, name: newName };
+    runtime.deviceRegistry.add(updated);
+    setDevices(runtime.deviceRegistry.list());
+    setScreen((current) => (current.name === "remote" && current.device.id === device.id ? { name: "remote", device: updated } : current));
+    saveDeviceQuietly(updated);
+  }
+
+  // Found in review (2026-09-10): persistence.ts's removeDevice() and DeviceRegistry.remove()
+  // were both fully implemented but never called from anywhere — there was no way to actually
+  // remove a paired device short of clearing the whole app's storage, e.g. after mistyping an IP.
+  // Disconnecting first (best-effort — a device that's already unreachable shouldn't block its
+  // own removal) stops a live socket/reconnect-backoff loop from outliving the device it belonged
+  // to; the in-memory list updates immediately, persistence removal happens in the background
+  // like handleDeviceAdded's own save does.
+  async function handleRemoveDevice(device: Device): Promise<void> {
+    const driver = runtime.driverRegistry.get(device.driverId);
+    try {
+      await driver?.disconnect(device);
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn("App", `Could not persist device ${device.name}`, { message });
+      logger.warn("App", `Error disconnecting ${device.name} during removal (continuing)`, { message });
+    }
+    runtime.deviceRegistry.remove(device.id);
+    stateBridges.get(device.id)?.();
+    stateBridges.delete(device.id);
+    setDevices(runtime.deviceRegistry.list());
+    removeDevice(device.id).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn("App", `Could not remove persisted device ${device.name}`, { message });
     });
   }
 
@@ -88,12 +208,14 @@ export default function App() {
   return (
     <View style={styles.container}>
       {screen.name === "remote" && (
-        <>
-          <View style={styles.backRow}>
-            <CapabilityButton icon="chevron-back" label="Devices" variant="ghost" onPress={() => setScreen({ name: "list" })} />
-          </View>
-          <UniversalTvRemote device={screen.device} commandEngine={runtime.commandEngine} stateStore={runtime.stateStore} />
-        </>
+        <UniversalTvRemote
+          device={screen.device}
+          commandEngine={runtime.commandEngine}
+          stateStore={runtime.stateStore}
+          onReconnect={() => handleReconnect(screen.device)}
+          onRename={handleRenameDevice}
+          onBack={() => setScreen({ name: "list" })}
+        />
       )}
       {screen.name === "add" && screen.brand === "sony" && <AddSonyDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "samsung" && <AddSamsungDeviceScreen {...addScreenProps} />}
@@ -123,6 +245,8 @@ export default function App() {
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
           onDiscover={() => setScreen({ name: "discover" })}
+          onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
+          onRemove={handleRemoveDevice}
         />
       )}
       <StatusBar style="light" />
@@ -133,5 +257,4 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
   loading: { flex: 1, backgroundColor: theme.background, alignItems: "center", justifyContent: "center", gap: theme.spacing.md },
-  backRow: { paddingTop: 56, paddingHorizontal: theme.spacing.xl, alignItems: "flex-start" },
 });

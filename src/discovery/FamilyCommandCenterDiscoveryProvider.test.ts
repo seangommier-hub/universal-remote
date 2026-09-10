@@ -85,4 +85,23 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
 
     await expect(provider.scan(() => {})).rejects.toThrow(/rejected/);
   });
+
+  test("times out and surfaces a clear, retry-able error instead of hanging forever (real-hardware finding, 2026-09-09)", async () => {
+    // Real timers deliberately, not fake ones -- AbortController's event dispatch interacting
+    // with fake-timer microtask ordering proved flaky here; a real ~8s wait is slower but
+    // reliable, same tradeoff already made for LgWebOsDriver's setChannel test.
+    (global.fetch as jest.Mock).mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => {
+            const err = new Error("The operation was aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        })
+    );
+    const provider = new FamilyCommandCenterDiscoveryProvider();
+
+    await expect(provider.scan(() => {})).rejects.toThrow(/didn't respond within/);
+  }, 12000);
 });

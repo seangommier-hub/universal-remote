@@ -72,4 +72,41 @@ describe("SamsungTizenDriver", () => {
     await connectDriver(driver);
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation" })).rejects.toThrow();
   });
+
+  test("settings and sleepTimer send the real, verified Tizen key codes KEY_TOOLS and KEY_SLEEP (real-hardware ask, 2026-09-10)", async () => {
+    await connectDriver(driver);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "settings" });
+    expect(JSON.parse(MockWebSocket.latest().sentMessages[0]).params.DataOfCmd).toBe("KEY_TOOLS");
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "sleepTimer" });
+    expect(JSON.parse(MockWebSocket.latest().sentMessages[1]).params.DataOfCmd).toBe("KEY_SLEEP");
+  });
+
+  test("openSourceList sends the real, verified Tizen key code KEY_SOURCE (real-hardware research, 2026-09-10)", async () => {
+    await connectDriver(driver);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "openSourceList" });
+
+    expect(JSON.parse(MockWebSocket.latest().sentMessages[0]).params.DataOfCmd).toBe("KEY_SOURCE");
+  });
+
+  test("setChannel sends KEY_0..KEY_9 for each digit, in order, and records the channel", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: 142 } });
+
+    const sentKeys = socket.sentMessages.map((raw) => JSON.parse(raw).params.DataOfCmd);
+    expect(sentKeys).toEqual(["KEY_1", "KEY_4", "KEY_2"]);
+    expect(result.state?.channel).toBe(142);
+  }, 10000);
+
+  test("setChannel rejects a non-numeric channel arg without sending anything", async () => {
+    await connectDriver(driver);
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "12" } })).rejects.toThrow(
+      /numeric 'channel'/
+    );
+    expect(MockWebSocket.latest().sentMessages).toHaveLength(0);
+  });
 });

@@ -25,6 +25,22 @@ describe("RokuEcpClient", () => {
     await expect(client.keypress("Home")).rejects.toThrow("HTTP 500");
   });
 
+  test("launchChannel POSTs to /launch/<channel id> (real-hardware research, 2026-09-10)", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    await client.launchChannel("12"); // Netflix's real, public Roku channel id
+
+    expect(global.fetch).toHaveBeenCalledWith("http://192.168.1.80:8060/launch/12", expect.objectContaining({ method: "POST" }));
+  });
+
+  test("launchChannel throws on a non-OK response", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    await expect(client.launchChannel("12")).rejects.toThrow("HTTP 500");
+  });
+
   test("getDeviceInfo parses power-mode and model-name out of the XML response", async () => {
     const xml = `<device-info><udn>abc</udn><power-mode>PowerOn</power-mode><model-name>Roku Ultra</model-name></device-info>`;
     (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));

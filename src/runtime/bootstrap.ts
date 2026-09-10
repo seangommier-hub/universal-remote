@@ -2,7 +2,6 @@ import { CommandEngine } from "../core/engine/CommandEngine";
 import { DeviceRegistry } from "../core/registry/DeviceRegistry";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
-import { Device } from "../core/types/Device";
 import { SonyBraviaDriver } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
@@ -13,7 +12,6 @@ export interface HearthRuntime {
   driverRegistry: DriverRegistry;
   stateStore: StateStore;
   commandEngine: CommandEngine;
-  devices: Device[];
 }
 
 /**
@@ -32,19 +30,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new LgWebOsDriver());
   driverRegistry.register(new RokuEcpDriver());
 
-  const devices: Device[] = [];
-
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 
-  return { deviceRegistry, driverRegistry, stateStore, commandEngine, devices };
-}
-
-/** Connects every seed device's driver so state exists before the UI first renders. */
-export async function connectAllDevices(runtime: HearthRuntime): Promise<void> {
-  await Promise.all(
-    runtime.devices.map((device) => {
-      const driver = runtime.driverRegistry.get(device.driverId);
-      return driver?.connect(device);
-    })
-  );
+  return { deviceRegistry, driverRegistry, stateStore, commandEngine };
 }
