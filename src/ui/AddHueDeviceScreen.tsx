@@ -5,6 +5,7 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { HueBridgeClient, HuePairingPendingError } from "../drivers/lighting/hue/HueBridgeClient";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
+import { findMacByIp } from "../discovery/familyCommandCenterDeviceLookup";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -69,6 +70,13 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHue
     setPhase({ name: "connecting", username, lightId });
     try {
       await driver.connect(device);
+      // Real-hardware finding (2026-09-10, ADR-HEARTH-017): a hwaddr on file lets the driver
+      // re-locate this bridge automatically if it ever moves to a different WiFi network — best
+      // backfilled right at pairing time, the same way EditDeviceAddressScreen does for a device
+      // fixed by hand later. Best-effort: a bridge the Family Command Center doesn't know about
+      // yet just doesn't get this, same as any manually-paired device today.
+      const hwaddr = await findMacByIp(bridgeIpAddress.trim());
+      if (hwaddr) device.config = { ...device.config, hwaddr };
       onAdded(device);
     } catch (err) {
       setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });

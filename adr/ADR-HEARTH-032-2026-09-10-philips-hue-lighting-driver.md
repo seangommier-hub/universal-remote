@@ -121,3 +121,28 @@ library is installed in this project).
 yet run against a real bridge/light — same disclaimer as before; this is the
 one remaining checkpoint before Phase 5's driver work is actually verified,
 tracked in ROADMAP.md.
+
+## Update 2026-09-10 (same day, later): MAC re-discovery parity with the TV drivers
+
+Sean: "keep marching." Checked whether Hue had the same "saved IP goes
+stale after a network change" gap just fixed on LG/Samsung
+(ADR-HEARTH-017) — it did, for the same underlying reason: a Hue bridge
+can move to a different WiFi network just as easily as a TV can. Applied
+the same fix: `HueLightDriver.connect()` now attempts a MAC-based
+re-discovery (`findCurrentIpByMac`) on any connect failure if the device
+has a `hwaddr` on file, retrying once at whatever current address it
+finds — since Hue's HTTP client has no equivalent of LG/Samsung's
+distinct "pairing timeout vs. unreachable" error, re-discovery is
+attempted on *any* failure here; if the bridge isn't actually at a new
+address, the lookup just finds nothing and the original error surfaces
+unchanged, so this is harmless to try broadly.
+
+`AddHueDeviceScreen.tsx` now backfills `hwaddr` right at pairing time
+(via `findMacByIp`, a reverse lookup at the bridge's just-confirmed IP) —
+unlike the TV drivers, where only discovery-added devices get one, every
+Hue light gets this automatically at first pairing, since pairing always
+goes through this one screen (there's no separate "manual add" path for
+Hue the way Add Sony/Samsung/LG/Roku TV exist as an alternative to
+Discover).
+
+180/180 tests passing (2 new), `tsc --noEmit` clean.

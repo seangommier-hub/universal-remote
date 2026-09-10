@@ -1,5 +1,9 @@
 import { HueLightDriver, HUE_LIGHT_DRIVER_ID } from "./HueLightDriver";
 import { Device } from "../../../core/types/Device";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig");
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
@@ -25,6 +29,7 @@ describe("HueLightDriver", () => {
   beforeEach(() => {
     driver = new HueLightDriver();
     global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
   });
 
   test("declares power, setBrightness, and setColor — no TV-shaped capabilities", () => {
@@ -149,5 +154,35 @@ describe("HueLightDriver", () => {
   test("executeCommand throws without config when the light hasn't been paired", async () => {
     const unpaired: Device = { ...device, config: undefined };
     await expect(driver.executeCommand(unpaired, { deviceId: unpaired.id, capability: "power" })).rejects.toThrow(/pair it first/);
+  });
+
+  describe("re-discovery after a network change (ADR-HEARTH-017 update, 2026-09-10)", () => {
+    const deviceWithMac: Device = { ...device, config: { ...device.config, hwaddr: "AA:BB:CC:DD:EE:FF" } };
+
+    test("re-locates the bridge by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      const fetchMock = global.fetch as jest.Mock;
+      fetchMock
+        .mockRejectedValueOnce(new Error("direct connect failed")) // direct attempt to the old (stale) IP
+        .mockRejectedValueOnce(new Error("relay attempt failed")) // relay fallback, still targeting the old IP
+        .mockResolvedValueOnce(jsonResponse({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.219" }] })) // findCurrentIpByMac
+        .mockResolvedValueOnce(lightStateResponse(true, 254, 0, 0)); // direct attempt to the new IP succeeds
+
+      await driver.connect(deviceWithMac);
+
+      const state = await driver.getState(deviceWithMac);
+      expect(state.connection).toBe("connected");
+      expect(deviceWithMac.config?.bridgeIpAddress).toBe("192.168.1.219");
+      expect(fetchMock.mock.calls[3][0]).toBe("http://192.168.1.219:80/api/abc123/lights/1");
+    });
+
+    test("a light with no saved hwaddr just fails normally — no lookup attempted", async () => {
+      const manualDevice: Device = { ...device, config: { ...device.config, hwaddr: undefined } };
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("direct connect failed"));
+
+      await expect(driver.connect(manualDevice)).rejects.toThrow();
+
+      expect((global.fetch as jest.Mock).mock.calls).toHaveLength(1); // never attempted a relay fallback or a MAC lookup
+    });
   });
 });

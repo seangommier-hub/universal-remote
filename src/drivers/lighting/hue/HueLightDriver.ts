@@ -4,7 +4,10 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { HueBridgeClient, HueBridgeConfig } from "./HueBridgeClient";
+import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { logger } from "../../../core/logging/logger";
 
+const LOG_SCOPE = "HueLightDriver";
 export const HUE_LIGHT_DRIVER_ID = "hue-light";
 // No reconnect backoff like the TV drivers: Hue's API is stateless per-request HTTP with no
 // persistent connection to lose, so there's nothing to reconnect — each command simply tries
@@ -47,17 +50,42 @@ export class HueLightDriver implements DeviceDriver {
   async connect(device: Device): Promise<void> {
     const config = requireConfig(device);
     try {
-      const client = new HueBridgeClient(config);
-      const light = await client.getLightState(config.username, config.lightId);
-      this.setState(device.id, {
-        connection: light.reachable ? "connected" : "disconnected",
-        values: { power: light.on ? "on" : "off", brightness: light.brightness, hue: light.hue, saturation: light.saturation, name: light.name },
-        lastUpdated: Date.now(),
-      });
+      await this.readLightState(device, config);
     } catch (err) {
+      // See LgWebOsDriver.ts's identical re-discovery reasoning (ADR-HEARTH-017) — a bridge that
+      // moves to a different WiFi network leaves its saved IP just as stale as a TV's would.
+      // Hue's HTTP client doesn't distinguish "unreachable" from other failures the way LG/Samsung's
+      // pairing-timeout errors do, but re-discovery is harmless to attempt on any failure: if the
+      // bridge isn't actually at a new address, the lookup just finds nothing and the original
+      // error surfaces unchanged.
+      const hwaddr = device.config?.hwaddr;
+      if (typeof hwaddr === "string") {
+        const freshIp = await findCurrentIpByMac(hwaddr);
+        if (freshIp && freshIp !== config.bridgeIpAddress) {
+          logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.bridgeIpAddress} -> ${freshIp} — retrying`);
+          if (device.config) device.config.bridgeIpAddress = freshIp;
+          try {
+            await this.readLightState(device, { ...config, bridgeIpAddress: freshIp });
+            return;
+          } catch (retryErr) {
+            this.setState(device.id, { connection: "disconnected", values: this.states.get(device.id)?.values ?? {}, lastUpdated: Date.now() });
+            throw retryErr;
+          }
+        }
+      }
       this.setState(device.id, { connection: "disconnected", values: this.states.get(device.id)?.values ?? {}, lastUpdated: Date.now() });
       throw err;
     }
+  }
+
+  private async readLightState(device: Device, config: HueLightConfig): Promise<void> {
+    const client = new HueBridgeClient(config);
+    const light = await client.getLightState(config.username, config.lightId);
+    this.setState(device.id, {
+      connection: light.reachable ? "connected" : "disconnected",
+      values: { power: light.on ? "on" : "off", brightness: light.brightness, hue: light.hue, saturation: light.saturation, name: light.name },
+      lastUpdated: Date.now(),
+    });
   }
 
   async disconnect(device: Device): Promise<void> {
