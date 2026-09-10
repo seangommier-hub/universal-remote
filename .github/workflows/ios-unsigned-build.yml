@@ -4,6 +4,14 @@ name: iOS unsigned build (for AltStore sideload)
 # Developer account is used or required at this step — code signing is
 # explicitly disabled. AltServer (running on your own machine) does the
 # signing afterward using your free Apple ID. See ADR-HEARTH-031.
+#
+# expo-dev-client is removed before prebuild: it's only needed to connect
+# to a live Metro server during development, and its expo-dev-menu /
+# expo-dev-launcher pods pull in asset catalogs that need an iOS
+# Simulator runtime matching the exact SDK version — not something a
+# fresh GitHub-hosted runner reliably has. This build embeds the JS
+# bundle directly (the standard Release-config behavior) and doesn't
+# need a dev-client shell at all.
 on:
   workflow_dispatch: {}
   push:
@@ -20,14 +28,6 @@ jobs:
         with:
           xcode-version: "16.2"
 
-      - name: Install matching iOS Simulator runtime
-        # actool validates asset catalogs (e.g. expo-dev-menu's, expo-dev-
-        # launcher's) against BOTH device and simulator SDKs regardless of
-        # -sdk iphoneos, and the runner's pre-installed simulator runtimes
-        # don't match Xcode 16.2's paired SDK build. Installing it directly
-        # is the real fix, not another SDKROOT override.
-        run: xcodebuild -downloadPlatform iOS
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -35,38 +35,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Remove expo-dev-client (development-only, not needed for a standalone build)
+        run: rm -rf node_modules/expo-dev-client node_modules/expo-dev-menu node_modules/expo-dev-launcher
+
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
-
-      - name: Patch Podfile — pin resource-bundle targets to device SDK
-        run: |
-          set -euo pipefail
-          python3 - ios/Podfile <<'PY'
-          import sys
-          path = sys.argv[1]
-          with open(path) as f:
-              content = f.read()
-          marker = "post_install do |installer|"
-          # Xcode 16 treats CocoaPods resource-bundle-only targets (product
-          # type "bundle") as multi-platform by default, which requires a
-          # matching iphonesimulator runtime to be installed even when only
-          # building for a real device. GitHub's macos-15 runner doesn't
-          # ship one matching Xcode 16.2's SDK, so pin these targets to the
-          # device SDK explicitly.
-          patch = marker + """
-              installer.pods_project.targets.each do |target|
-                next unless target.respond_to?(:product_type) && target.product_type == "com.apple.product-type.bundle"
-                target.build_configurations.each do |config|
-                  config.build_settings["SDKROOT"] = "iphoneos"
-                  config.build_settings["SUPPORTED_PLATFORMS"] = "iphoneos"
-                end
-              end
-          """
-          assert marker in content, "post_install hook not found in generated Podfile"
-          content = content.replace(marker, patch, 1)
-          with open(path, "w") as f:
-              f.write(content)
-          PY
 
       - name: Install CocoaPods
         working-directory: ios
@@ -85,8 +58,6 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath build \
-            SDKROOT=iphoneos \
-            SUPPORTS_MACCATALYST=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
