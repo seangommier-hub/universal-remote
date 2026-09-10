@@ -88,3 +88,36 @@ can pair one through the app.
   white" slider would need a `setColorTemperature` capability added later,
   the same incremental way every other capability in this codebase was added
   only once a driver actually needed it.
+
+## Update 2026-09-10 (same day, later): pairing UI + light control screen added
+
+Closed the two gaps flagged above as follow-up work.
+
+**`AddHueDeviceScreen.tsx`** — a genuinely two-step flow, unlike the other
+four Add screens' single form: (1) enter the bridge's IP and tap Pair, which
+polls `HueBridgeClient.pair()` — a `HuePairingPendingError` (link button not
+yet pressed) is treated as a normal "waiting" state, not an error, matching
+how the client itself was designed to make this distinction; (2) once paired,
+`listLights()` (new `HueBridgeClient` method, 2 new tests) populates a
+picker so the user chooses which light this `Device` represents. Wired into
+`App.tsx`'s existing `AddableBrand` union/screen-switch, and
+`DeviceListScreen.tsx`'s "+ Add" menu, the same way Sony/Samsung/LG/Roku are.
+
+**`LightControlScreen.tsx`** — deliberately a new, separate screen rather
+than reusing `UniversalTvRemote`: a light's capability set (power/
+setBrightness/setColor) shares no real controls with a TV remote's, so
+routing a lighting-category device through that screen would mean hiding
+almost everything in it, not fitting the device. `App.tsx`'s "remote" screen
+now branches on `device.category === "lighting"` to pick between the two.
+Reuses the same state-subscription/reconnect-on-mount/rename patterns as
+`UniversalTvRemote` (same `stateStore`/`commandEngine` plumbing) so the two
+screens behave consistently even though their controls don't overlap.
+Brightness is a +/-10% stepper and color is a fixed 9-swatch palette rather
+than a slider or full color picker — matches this app's existing
+discrete-press interaction model and needs no new dependency (no slider
+library is installed in this project).
+
+141/141 tests passing (139 + 2 for `listLights`), `tsc --noEmit` clean. Not
+yet run against a real bridge/light — same disclaimer as before; this is the
+one remaining checkpoint before Phase 5's driver work is actually verified,
+tracked in ROADMAP.md.

@@ -47,6 +47,27 @@ describe("HueBridgeClient", () => {
     });
   });
 
+  describe("listLights", () => {
+    test("returns the bridge's lights keyed by id", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(
+        jsonResponse({ "1": { name: "Living Room Lamp" }, "2": { name: "Kitchen" } })
+      );
+      const client = new HueBridgeClient({ bridgeIpAddress: "192.168.1.50" });
+
+      const lights = await client.listLights("abc123");
+
+      expect(lights).toEqual({ "1": { name: "Living Room Lamp" }, "2": { name: "Kitchen" } });
+      expect(global.fetch).toHaveBeenCalledWith("http://192.168.1.50:80/api/abc123/lights", expect.objectContaining({ method: "GET" }));
+    });
+
+    test("throws on a non-OK response", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(null, false, 401));
+      const client = new HueBridgeClient({ bridgeIpAddress: "192.168.1.50" });
+
+      await expect(client.listLights("abc123")).rejects.toThrow("HTTP 401");
+    });
+  });
+
   describe("getLightState", () => {
     test("normalizes Hue's native bri/hue/sat scales to universal 0-100/0-360/0-100 units", async () => {
       (global.fetch as jest.Mock).mockResolvedValueOnce(

@@ -8,10 +8,12 @@ import { Device } from "./src/core/types/Device";
 import { logger } from "./src/core/logging/logger";
 import { DeviceListScreen, AddableBrand } from "./src/ui/DeviceListScreen";
 import { UniversalTvRemote } from "./src/ui/UniversalTvRemote";
+import { LightControlScreen } from "./src/ui/LightControlScreen";
 import { AddSonyDeviceScreen } from "./src/ui/AddSonyDeviceScreen";
 import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
+import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
@@ -207,7 +209,17 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {screen.name === "remote" && (
+      {screen.name === "remote" && screen.device.category === "lighting" && (
+        <LightControlScreen
+          device={screen.device}
+          commandEngine={runtime.commandEngine}
+          stateStore={runtime.stateStore}
+          onReconnect={() => handleReconnect(screen.device)}
+          onRename={handleRenameDevice}
+          onBack={() => setScreen({ name: "list" })}
+        />
+      )}
+      {screen.name === "remote" && screen.device.category !== "lighting" && (
         <UniversalTvRemote
           device={screen.device}
           commandEngine={runtime.commandEngine}
@@ -221,6 +233,7 @@ export default function App() {
       {screen.name === "add" && screen.brand === "samsung" && <AddSamsungDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "roku" && <AddRokuDeviceScreen {...addScreenProps} />}
+      {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}

@@ -5,7 +5,7 @@ import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -14,11 +14,13 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "samsung", label: "Samsung TV", icon: "tv-outline" },
   { brand: "lg", label: "LG TV", icon: "tv-outline" },
   { brand: "roku", label: "Roku", icon: "play-circle-outline" },
+  { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
   tv: "tv-outline",
   streaming: "play-circle-outline",
+  lighting: "bulb-outline",
 };
 
 interface DeviceListScreenProps {

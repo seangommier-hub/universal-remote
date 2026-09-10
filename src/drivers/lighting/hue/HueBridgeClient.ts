@@ -111,6 +111,20 @@ export class HueBridgeClient {
     throw new Error(`Hue bridge pairing failed: ${entry?.error?.description ?? "unknown error"}`);
   }
 
+  /** Lists every light registered on the bridge, keyed by its light id — used to populate a light picker once pairing has produced a `username`. */
+  async listLights(username: string): Promise<Record<string, { name: string }>> {
+    const response = await requestWithRelayFallback({
+      ip: this.config.bridgeIpAddress,
+      port: this.port(),
+      path: `/api/${username}/lights`,
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`Hue bridge at ${this.config.bridgeIpAddress} returned HTTP ${response.status} listing lights`);
+    }
+    return (await response.json()) as Record<string, { name: string }>;
+  }
+
   async getLightState(username: string, lightId: string): Promise<HueLightState> {
     const response = await requestWithRelayFallback({
       ip: this.config.bridgeIpAddress,
