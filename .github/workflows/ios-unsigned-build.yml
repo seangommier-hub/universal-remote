@@ -44,6 +44,33 @@ jobs:
       - name: Remove expo-dev-client (development-only, not needed for a standalone build)
         run: rm -rf node_modules/expo-dev-client node_modules/expo-dev-menu node_modules/expo-dev-launcher
 
+      - name: Patch expo-modules-jsi for this Xcode/Swift toolchain
+        # Two genuine upstream compile failures under the Xcode 26.x available
+        # here, both inside expo-modules-jsi's own source, not this app's code:
+        #  1. `weak let` (an immutable weak reference on a ~Copyable struct) —
+        #     "'weak' must be a mutable variable" in 12 files. The compiler
+        #     here doesn't yet support that specific Swift feature, even
+        #     though the package's Package.swift assumes Swift tools 6.2 does.
+        #     `weak var` is behaviorally identical for this package's use
+        #     (write-once weak refs) and compiles on every Swift version.
+        #  2. RuntimeScheduler.h applies SWIFT_SHARED_REFERENCE(...) *after*
+        #     the class's closing brace; this compiler processes the
+        #     constructors' SWIFT_RETURNS_RETAINED annotations before it
+        #     retroactively applies that trailing attribute, so it (wrongly)
+        #     sees a non-shared-reference type at that point. Moving the
+        #     attribute onto the class declaration itself — the form Swift's
+        #     own C++ interop docs show — sidesteps the ordering issue.
+        run: |
+          set -euo pipefail
+          grep -rl "weak let" node_modules/expo-modules-jsi | while read -r f; do
+            sed -i '' 's/weak let/weak var/g' "$f"
+          done
+          SCHEDULER_H="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
+          sed -i '' \
+            -e 's/^class RuntimeScheduler {/class SWIFT_SHARED_REFERENCE(retainRuntimeScheduler, releaseRuntimeScheduler) RuntimeScheduler {/' \
+            -e 's/^} SWIFT_SHARED_REFERENCE(retainRuntimeScheduler, releaseRuntimeScheduler);/};/' \
+            "$SCHEDULER_H"
+
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
 
