@@ -20,6 +20,14 @@ jobs:
         with:
           xcode-version: "16.2"
 
+      - name: Install matching iOS Simulator runtime
+        # actool validates asset catalogs (e.g. expo-dev-menu's, expo-dev-
+        # launcher's) against BOTH device and simulator SDKs regardless of
+        # -sdk iphoneos, and the runner's pre-installed simulator runtimes
+        # don't match Xcode 16.2's paired SDK build. Installing it directly
+        # is the real fix, not another SDKROOT override.
+        run: xcodebuild -downloadPlatform iOS
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
