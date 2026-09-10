@@ -45,31 +45,43 @@ jobs:
         run: rm -rf node_modules/expo-dev-client node_modules/expo-dev-menu node_modules/expo-dev-launcher
 
       - name: Patch expo-modules-jsi for this Xcode/Swift toolchain
-        # Two genuine upstream compile failures under the Xcode 26.x available
-        # here, both inside expo-modules-jsi's own source, not this app's code:
-        #  1. `weak let` (an immutable weak reference on a ~Copyable struct) —
-        #     "'weak' must be a mutable variable" in 12 files. The compiler
-        #     here doesn't yet support that specific Swift feature, even
-        #     though the package's Package.swift assumes Swift tools 6.2 does.
-        #     `weak var` is behaviorally identical for this package's use
-        #     (write-once weak refs) and compiles on every Swift version.
-        #  2. RuntimeScheduler.h applies SWIFT_SHARED_REFERENCE(...) *after*
-        #     the class's closing brace; this compiler processes the
-        #     constructors' SWIFT_RETURNS_RETAINED annotations before it
-        #     retroactively applies that trailing attribute, so it (wrongly)
-        #     sees a non-shared-reference type at that point. Moving the
-        #     attribute onto the class declaration itself — the form Swift's
-        #     own C++ interop docs show — sidesteps the ordering issue.
+        # Genuine upstream compile failures under the Xcode 26.x available
+        # here, all inside expo-modules-jsi's own source, not this app's code
+        # (its Package.swift assumes Swift tools 6.2 fully supports things
+        # this compiler doesn't yet):
+        #  1. `weak let` (an immutable weak reference) — "'weak' must be a
+        #     mutable variable" in 12 files. `weak var` fixes most of them.
+        #  2. Three of those are `Sendable`-conforming classes, where a plain
+        #     `weak var` then fails as "stored property ... is mutable" —
+        #     Sendable requires immutability. `nonisolated(unsafe)` is the
+        #     standard escape hatch: these are weak, ARC-managed references,
+        #     inherently safe to read across concurrency domains.
+        #  3. RuntimeScheduler.h's two constructors are marked
+        #     SWIFT_RETURNS_RETAINED, which (confirmed by testing) isn't
+        #     valid Swift/C++ interop syntax on a constructor at all — a
+        #     constructor's return is implicitly retained already. Removing
+        #     the annotation from just the constructors (not the class,
+        #     which keeps its own trailing SWIFT_SHARED_REFERENCE) is the
+        #     targeted fix; an earlier attempt at reordering the class-level
+        #     attribute didn't change this error at all, confirming it
+        #     wasn't a parse-ordering issue.
         run: |
           set -euo pipefail
           grep -rl "weak let" node_modules/expo-modules-jsi | while read -r f; do
             sed -i '' 's/weak let/weak var/g' "$f"
           done
+          for f in \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift; do
+            sed -i '' 's/weak var runtime: JavaScriptRuntime?/nonisolated(unsafe) weak var runtime: JavaScriptRuntime?/' "$f"
+          done
           SCHEDULER_H="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
-          sed -i '' \
-            -e 's/^class RuntimeScheduler {/class SWIFT_SHARED_REFERENCE(retainRuntimeScheduler, releaseRuntimeScheduler) RuntimeScheduler {/' \
-            -e 's/^} SWIFT_SHARED_REFERENCE(retainRuntimeScheduler, releaseRuntimeScheduler);/};/' \
-            "$SCHEDULER_H"
+          sed -i '' 's/SWIFT_RETURNS_RETAINED RuntimeScheduler(/RuntimeScheduler(/' "$SCHEDULER_H"
+          echo "--- Verifying patches applied ---"
+          grep -n "weak var\|nonisolated" \
+            node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
+          grep -n "RuntimeScheduler(" "$SCHEDULER_H"
 
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
