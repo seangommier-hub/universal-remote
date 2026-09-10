@@ -233,6 +233,34 @@ describe("LgWebOsDriver", () => {
     expect((await driver.getState(device)).connection).toBe("connected");
   }, 10000);
 
+  test("a connect() that fails outright — not just a post-connection drop — still gets auto-retried in the background (Sean, twice: 'it needs to never ever again disconnect')", async () => {
+    // Nothing has ever connected yet — the very first attempt fails (e.g. the TV rejecting a
+    // stale client-key and timing out, or any other connect()-time failure).
+    const firstAttempt = driver.connect(device);
+    MockWebSocket.latest().simulateError();
+    await expect(firstAttempt).rejects.toThrow();
+    expect((await driver.getState(device)).connection).not.toBe("connected");
+
+    // No caller does anything else — the driver's own backoff timer (RECONNECT_BASE_DELAY_MS =
+    // 2000ms) should fire connect() again on its own, exactly like a post-connection drop does.
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    const secondSocket = MockWebSocket.latest();
+    expect(secondSocket).not.toBe(undefined);
+    secondSocket.simulateOpen();
+    await flushMicrotasks();
+    const registerSent = JSON.parse(secondSocket.sentMessages[0]);
+    secondSocket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key-3" } });
+    await flushMicrotasks();
+    const volumeRequest = JSON.parse(secondSocket.sentMessages[secondSocket.sentMessages.length - 1]);
+    secondSocket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 10, mute: false } });
+    await flushMicrotasks();
+    const inputListRequest = JSON.parse(secondSocket.sentMessages[secondSocket.sentMessages.length - 1]);
+    secondSocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+    await flushMicrotasks();
+
+    expect((await driver.getState(device)).connection).toBe("connected");
+  }, 10000);
+
   test("disconnect() does not trigger a reconnect (deliberate close, not a drop)", async () => {
     await connectDriver(driver);
     await driver.disconnect(device);

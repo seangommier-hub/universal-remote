@@ -121,6 +121,14 @@ export class LgWebOsDriver implements DeviceDriver {
   // single in-flight promise per device means a second call while one is already connecting
   // just waits on the first instead of opening a doomed second socket.
   private inFlightConnects = new Map<string, Promise<void>>();
+  // Real-hardware finding (2026-09-10), Sean directly, twice: "it needs to never ever again
+  // disconnect." The backoff loop above only ever covered a connection that dropped *after*
+  // succeeding (client.onDisconnect) — a connect() that fails outright (the exact case that kept
+  // happening while troubleshooting his 75" LG TV's pairing) just threw the error and gave up,
+  // with nothing scheduling another try. Tracked here (reset on success) so the very first
+  // failure and every subsequent automatic retry share one persistent backoff count, instead of
+  // every retry restarting at attempt 1.
+  private reconnectAttempts = new Map<string, number>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -143,6 +151,15 @@ export class LgWebOsDriver implements DeviceDriver {
     this.inFlightConnects.set(device.id, attempt);
     try {
       await attempt;
+      this.reconnectAttempts.delete(device.id); // a fresh failure later starts the backoff over, not mid-escalation
+    } catch (err) {
+      // Real-hardware finding (2026-09-10): this used to just throw here, with nothing scheduling
+      // another try — a device that failed to connect (as opposed to one that connected and then
+      // dropped) never got auto-retried at all. One shared path now covers both: the very first
+      // failure, a manual "Reconnect" tap that fails, and every automatic retry after it, all
+      // through this same catch.
+      this.scheduleReconnect(device);
+      throw err;
     } finally {
       if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);
     }
@@ -183,7 +200,11 @@ export class LgWebOsDriver implements DeviceDriver {
     // this specific socket closing for real (its own legitimate future disconnect) can never act
     // on behalf of whatever client has since replaced it.
     client.onDisconnect = () => {
-      if (this.clients.get(device.id) === client) this.handleUnexpectedDisconnect(device);
+      if (this.clients.get(device.id) !== client) return;
+      this.clients.delete(device.id);
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.scheduleReconnect(device);
     };
     const previous = this.clients.get(device.id);
     if (previous && previous !== client) previous.close();
@@ -203,21 +224,28 @@ export class LgWebOsDriver implements DeviceDriver {
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
   }
 
-  private handleUnexpectedDisconnect(device: Device, attempt = 1): void {
-    this.clients.delete(device.id);
-    const current = this.states.get(device.id);
-    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
-
+  /**
+   * Schedules the next automatic connect() attempt with exponential backoff — the single path
+   * that covers a connection dropping after it succeeded (client.onDisconnect) *and* a connect()
+   * that failed outright, including the very first attempt (connect()'s own catch, above). A
+   * device already mid-connect-attempt or already awaiting a scheduled retry is left alone (the
+   * dedup guard below) rather than stacking a second competing timer.
+   */
+  private scheduleReconnect(device: Device): void {
+    if (this.reconnectTimers.has(device.id)) return;
+    const attempt = (this.reconnectAttempts.get(device.id) ?? 0) + 1;
+    this.reconnectAttempts.set(device.id, attempt);
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
-    logger.warn(LOG_SCOPE, `${device.name} disconnected unexpectedly — retrying in ${delay / 1000}s (attempt ${attempt})`);
+    logger.warn(LOG_SCOPE, `${device.name} not connected — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
+      this.reconnectTimers.delete(device.id);
       try {
         await this.connect(device);
-        logger.info(LOG_SCOPE, `${device.name} auto-reconnected after ${attempt} attempt(s)`);
+        logger.info(LOG_SCOPE, `${device.name} reconnected after ${attempt} attempt(s)`);
       } catch (err) {
+        // connect()'s own catch already re-scheduled the next attempt — just log this one.
         const message = err instanceof Error ? err.message : String(err);
-        logger.warn(LOG_SCOPE, `Auto-reconnect attempt ${attempt} for ${device.name} failed`, { message });
-        this.handleUnexpectedDisconnect(device, attempt + 1);
+        logger.warn(LOG_SCOPE, `Reconnect attempt ${attempt} for ${device.name} failed`, { message });
       }
     }, delay);
     this.reconnectTimers.set(device.id, timer);
