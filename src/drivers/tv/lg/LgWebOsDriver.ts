@@ -151,7 +151,15 @@ export class LgWebOsDriver implements DeviceDriver {
   private async doConnect(device: Device): Promise<void> {
     this.clearReconnectTimer(device.id);
     const generation = this.bumpGeneration(device.id);
-    const client = new LgWebOsClient(requireConfig(device));
+    const config = requireConfig(device);
+    // Diagnostic (2026-09-10, real-hardware troubleshooting): Sean asked whether a previous
+    // pairing approval already exists for this TV — this makes that fact directly visible in the
+    // Metro log for the next reconnect attempt, rather than guessing. A known client-key here
+    // means the TV should recognize this app silently (no new on-screen prompt); its absence
+    // means this is genuinely a first-time pairing, which unavoidably needs one physical approval
+    // no matter how this attempt is retried.
+    logger.info(LOG_SCOPE, `Connecting to ${device.name} (${config.ipAddress}) — ${config.clientKey ? "using a previously-saved client-key" : "no saved client-key yet, this will need a fresh on-screen approval"}`);
+    const client = new LgWebOsClient(config);
     const clientKey = await client.connect();
     if (!this.isCurrentGeneration(device.id, generation)) {
       // Superseded while connecting — a disconnect() or a newer connect() call won the race.
