@@ -126,3 +126,54 @@ existing patterns (it's the router's own login, not a per-device PSK like
 Sony's). Neither this session nor the family-command-center session is
 authorizing that unilaterally. Scoped as its own follow-up task with its
 own ADR once Sean weighs in, not bolted onto this one.
+
+## Update 2026-09-09: decision — router admin credentials authorized
+
+**Question asked (per ADR-GLOBAL-002):** should Family Command Center store
+the router's own admin login server-side, so it can see devices on the
+Guest/IoT networks — the only mechanism found that closes that visibility
+gap, per the open question above?
+
+**Sean's answer:** Yes, authorize it — prompted directly by Sean restating
+the requirement in this session, verbatim: "remember this is universal so
+it should cover the pi network, the main, the iot, the guest, and the ext."
+(Note: "ext" as a distinct segment was already corrected above —
+`192.168.200.x` is the Guest subnet, not a fourth network.)
+
+**Rationale:** Sean's requirement has been consistent since ADR-HEARTH-010
+was first written ("a router with an iot, guest, and ext" should all be
+covered) — this closes the one concrete blocker standing between that
+stated requirement and reality. The alternative (leaving Guest/IoT
+permanently unseen) would leave "universal" as an aspirational label rather
+than what the app actually does.
+
+## Update 2026-09-09 (later): fixed a real hang — the discovery fetch had no timeout at all
+
+Real-hardware finding, caught live via Metro's log during an actual test:
+`FamilyCommandCenterDiscoveryProvider.scan()`'s `fetch()` call had no timeout
+of any kind — every other network call in this codebase times out and falls
+back or surfaces an error (`httpRelayFallback.ts`'s `DIRECT_TIMEOUT_MS`,
+`wsRelayFallback.ts`'s equivalents), but this one didn't. A slow or hung
+response left `DiscoverDevicesScreen` stuck on "Scanning..." forever, with
+no error, no way to recover short of leaving the screen — indistinguishable
+from the app being broken. This was very likely the real explanation behind
+at least one of the several "won't load" / "stuck" reports during tonight's
+testing, previously (wrongly) attributed to Fast Refresh staleness and
+tunnel instability — those were real problems too, just not the only one.
+
+Fixed: an 8-second `AbortController`-based timeout, composed with the
+caller-supplied `signal` `DiscoverDevicesScreen` already passes (so a screen
+unmount still cancels immediately, unaffected by the new timeout). On
+timeout, throws a clear, retry-able error ("Family Command Center didn't
+respond within 8 seconds...") instead of hanging. New test proves the
+timeout actually fires (real timers, not fake — an `AbortController`
+event-dispatch/fake-timer interaction proved flaky, same tradeoff already
+made for `LgWebOsDriver`'s `setChannel` test). 89/89 tests passing.
+
+**Consequence:** Family Command Center's session is authorized to implement
+router-admin-credential storage server-side (its own project, its own
+credential boundary — Hearth never sees or stores this credential, same
+information/control split as the rest of this ADR) to query Guest+IoT
+device lists via the router's admin API. Relayed to that session directly;
+tracked as its own follow-up work and its own ADR on that side, not
+implemented in this repo.

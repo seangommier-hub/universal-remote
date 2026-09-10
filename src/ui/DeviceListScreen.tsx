@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -26,20 +26,38 @@ interface DeviceListScreenProps {
   onSelect: (device: Device) => void;
   onAddDevice: (brand: AddableBrand) => void;
   onDiscover: () => void;
+  /** Opens Family Command Center pairing directly from the home screen — previously only reachable by first triggering "Discover devices" and hitting its not-configured error state, three taps deep for what's meant to be a one-time setup step. */
+  onConnectFamilyCommandCenter: () => void;
+  /** Unpairs a device (disconnects it, removes it from the registry and from persisted storage) — triggered by a long-press, confirmed first since it's not reversible from this screen. */
+  onRemove: (device: Device) => void;
 }
 
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
-export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover }: DeviceListScreenProps) {
+export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover, onConnectFamilyCommandCenter, onRemove }: DeviceListScreenProps) {
+  function confirmRemove(device: Device) {
+    Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
+    ]);
+  }
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.brandMark}>
           <View style={styles.emberDot} />
         </View>
-        <View>
+        <View style={styles.headerText}>
           <Text style={styles.title}>Hearth</Text>
           <Text style={styles.subtitle}>One home. One remote.</Text>
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
+          onPress={onConnectFamilyCommandCenter}
+          accessibilityRole="button"
+          accessibilityLabel="Connect Family Command Center"
+        >
+          <Ionicons name="link-outline" size={20} color={theme.accentEnd} />
+        </Pressable>
       </View>
 
       {devices.length === 0 ? (
@@ -54,7 +72,14 @@ export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover }:
           keyExtractor={(device) => device.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <Pressable style={({ pressed }) => [styles.card, pressed && styles.cardPressed]} onPress={() => onSelect(item)}>
+            <Pressable
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+              onPress={() => onSelect(item)}
+              onLongPress={() => confirmRemove(item)}
+              accessibilityRole="button"
+              accessibilityLabel={item.name}
+              accessibilityHint="Double tap to open. Long press to remove this device."
+            >
               <View style={styles.cardIcon}>
                 <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />
               </View>
@@ -76,7 +101,7 @@ export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover }:
         accessibilityRole="button"
         accessibilityLabel="Discover devices on your network"
       >
-        <Ionicons name="search-outline" size={20} color={theme.background} />
+        <Ionicons name="search-outline" size={20} color={theme.accentEnd} />
         <Text style={styles.discoverLabel}>Discover devices on your network</Text>
       </Pressable>
 
@@ -102,6 +127,17 @@ export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover }:
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background, paddingTop: 64, paddingHorizontal: theme.spacing.xl },
   header: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: theme.spacing.xl },
+  headerText: { flex: 1 },
+  fccButton: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   brandMark: {
     width: 44,
     height: 44,
@@ -128,17 +164,21 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.lg,
     marginBottom: theme.spacing.sm,
   },
+  // Outlined rather than solid-filled (ADR-HEARTH-016): a one-time setup action shouldn't
+  // visually outweigh the actual device cards above it, which is what a solid accent fill did.
   discoverTile: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: theme.spacing.sm,
-    backgroundColor: theme.accentEnd,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.accentEnd,
     borderRadius: theme.radius.md,
-    paddingVertical: 14,
+    paddingVertical: theme.spacing.md,
     marginTop: theme.spacing.lg,
   },
-  discoverLabel: { color: theme.background, fontSize: theme.type.body, fontWeight: "700" },
+  discoverLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "700" },
   addGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, paddingBottom: theme.spacing.xl },
   addTile: {
     flexBasis: "47%",
@@ -150,7 +190,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.border,
-    paddingVertical: 14,
+    paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
   },
   addTileLabel: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600" },
@@ -175,7 +215,7 @@ const styles = StyleSheet.create({
   },
   cardBody: { flex: 1 },
   deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
-  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: 2 },
+  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
   emptyState: {
     alignItems: "center",
     gap: theme.spacing.sm,

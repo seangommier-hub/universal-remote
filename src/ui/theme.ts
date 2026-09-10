@@ -47,6 +47,15 @@ export const theme = {
     full: 999,
   },
 
+  // Touch-target diameters for circular controls (ADR-HEARTH-016). "sm" is every existing
+  // d-pad/keypad circle; "lg" is reserved for the one control per screen that should read as
+  // the primary interaction target (e.g. the d-pad's center Select/OK button), the same way a
+  // physical remote's most-pressed button gets the most generous hit area.
+  circleDiameter: {
+    sm: 52,
+    lg: 68,
+  },
+
   type: {
     display: 32,
     title: 24,

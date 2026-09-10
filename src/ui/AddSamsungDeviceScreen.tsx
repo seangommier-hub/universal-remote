@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
@@ -57,7 +57,8 @@ export function AddSamsungDeviceScreen({ driverRegistry, onCancel, onAdded }: Ad
   const canSubmit = ipAddress.trim().length > 0 && status !== "connecting";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />
@@ -95,8 +96,10 @@ export function AddSamsungDeviceScreen({ driverRegistry, onCancel, onAdded }: Ad
 
       <View style={styles.row}>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "connecting"} />
+        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
+            visible label — this button rendered as a bare link glyph with no visible "Connect" /
+            "Waiting for TV..." text at all. No icon here now. */}
         <CapabilityButton
-          icon="link-outline"
           label={status === "connecting" ? "Waiting for TV..." : "Connect"}
           variant="accent"
           onPress={handleConnect}
@@ -105,5 +108,6 @@ export function AddSamsungDeviceScreen({ driverRegistry, onCancel, onAdded }: Ad
       </View>
       {status === "connecting" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
