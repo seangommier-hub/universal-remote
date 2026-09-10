@@ -38,6 +38,10 @@ function encodeAsciiBase64(input: string): string {
 /** Talks to one Samsung Tizen TV's unencrypted remote-control WebSocket channel. One instance per TV. */
 export class SamsungTizenClient {
   private socket: WebSocket | null = null;
+  /** Fired when the socket closes after a successful connect (not during pairing, and not from
+   * a deliberate close()) — set by the driver to drive auto-reconnect. See SamsungTizenDriver.ts. */
+  onDisconnect: (() => void) | null = null;
+  private closingDeliberately = false;
 
   constructor(private config: SamsungTizenConfig) {}
 
@@ -62,6 +66,11 @@ export class SamsungTizenClient {
         if (message.event === MS_CHANNEL_CONNECT_EVENT) {
           clearTimeout(timeout);
           this.socket = socket;
+          socket.onclose = () => {
+            if (this.socket !== socket) return; // a newer connection already replaced this one
+            this.socket = null;
+            if (!this.closingDeliberately) this.onDisconnect?.();
+          };
           resolve();
         } else if (message.event === MS_CHANNEL_UNAUTHORIZED_EVENT) {
           clearTimeout(timeout);
@@ -89,6 +98,7 @@ export class SamsungTizenClient {
   }
 
   close(): void {
+    this.closingDeliberately = true;
     this.socket?.close();
     this.socket = null;
   }

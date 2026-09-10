@@ -1,13 +1,18 @@
-// Fast, UI-independent check of whether a real LG webOS TV still accepts the unencrypted SSAP
-// WebSocket (ws://<ip>:3000) that src/drivers/tv/lg/LgWebOsClient.ts uses. Per ADR-HEARTH-006,
-// TVs from roughly 2023 onward may only accept the encrypted wss://3001 path, which this driver
-// does NOT support yet. Uses Node's built-in global WebSocket (Node 22+) — no extra dependency.
+// Fast, UI-independent check of whether a real LG webOS TV accepts the encrypted SSAP WebSocket
+// (wss://<ip>:3001) that src/drivers/tv/lg/LgWebOsClient.ts targets, per ADR-HEARTH-006/014.
+// Uses the `ws` package (not Node's built-in global WebSocket) specifically because it exposes
+// `rejectUnauthorized: false` — needed to accept the TV's self-signed/private-CA certificate,
+// the same trust Family Command Center's relay applies server-side (ADR-HEARTH-014). This
+// script tests the TV directly, independent of the relay, to isolate "does the TV's protocol
+// work at all" from "does the relay path work" — the two are different failure modes.
 //
 // Usage:
 //   node scripts/test-lg-connection.js <tv-ip-address>
 //
 // Watch the TV screen after running this — it will show an Allow/Deny pairing prompt you must
 // accept within 30 seconds.
+
+const WebSocket = require("ws");
 
 const [, , ipAddress] = process.argv;
 
@@ -63,16 +68,14 @@ const PAIRING_MANIFEST = {
   },
 };
 
-console.log(`Connecting to ws://${ipAddress}:3000 ...`);
+console.log(`Connecting to wss://${ipAddress}:3001 (self-signed cert accepted, matching the relay's trust) ...`);
 console.log("Watch the TV — accept the on-screen pairing prompt within 30 seconds.");
 
-const socket = new WebSocket(`ws://${ipAddress}:3000`);
+const socket = new WebSocket(`wss://${ipAddress}:3001`, { rejectUnauthorized: false });
 const registerId = "1";
 
 const timeout = setTimeout(() => {
-  console.error(
-    "\nTimed out. Either the prompt wasn't accepted, or this TV doesn't accept unencrypted port 3000 at all (see ADR-HEARTH-006) — likely needs the encrypted wss://3001 path, which this driver doesn't support yet."
-  );
+  console.error("\nTimed out — the prompt likely wasn't accepted on the TV in time. Re-run and accept promptly.");
   socket.close();
   process.exit(1);
 }, CONNECT_TIMEOUT_MS);
@@ -104,7 +107,7 @@ socket.onmessage = (event) => {
   }
   if (message.id === "2") {
     console.log("Volume response:", message.payload);
-    console.log("\nSuccess — port 3000 works on this TV.");
+    console.log("\nSuccess — wss://3001 works on this TV.");
     socket.close();
     process.exit(0);
   }
@@ -112,7 +115,6 @@ socket.onmessage = (event) => {
 
 socket.onerror = (event) => {
   clearTimeout(timeout);
-  console.error(`\nConnection failed: ${event.message || "unknown error"}`);
-  console.error("This usually means the TV rejected unencrypted port 3000 outright — likely needs the encrypted wss://3001 path instead (not yet supported, see ADR-HEARTH-006).");
+  console.error(`\nConnection failed: ${event.message || event.error?.message || "unknown error"}`);
   process.exit(1);
 };

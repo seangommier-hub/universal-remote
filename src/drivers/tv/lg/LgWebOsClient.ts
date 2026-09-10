@@ -1,16 +1,20 @@
-// Thin client for the unencrypted LG webOS SSAP WebSocket protocol
-// (ws://<ip>:3000, root path — no service suffix). Unofficial/community-reverse-engineered
+// Thin client for the LG webOS SSAP WebSocket protocol, encrypted port
+// (wss://<ip>:3001, root path — no service suffix). Unofficial/community-reverse-engineered
 // (no first-party LG doc for this direction of control) — verified against the widely-used
 // reference implementation https://github.com/hobbyquaker/lgtv2 (index.js, pairing.json,
-// README.md). See ADR-HEARTH-006 for why this targets only the unencrypted port, not
-// wss://3001, and why that's a narrower window than Samsung's equivalent limitation. See
-// ADR-HEARTH-011: connect() and the pointer-input socket both fall back to relaying through
-// Family Command Center if the TV isn't reachable directly from the phone's current network.
+// README.md). See ADR-HEARTH-006: real-hardware testing (2026-09-09) confirmed Sean's TV
+// (2023-or-later) rejects the unencrypted ws://3000 path outright, so this targets the
+// encrypted port exclusively. React Native's own WebSocket cannot trust LG's private-CA
+// certificate, so the direct-connect attempt below always fails for this port — that's
+// expected and by design, not a bug: openSocketWithRelayFallback's fallback path is what
+// actually succeeds, because Family Command Center's relay (plain Node.js, not React Native)
+// CAN be configured to trust that certificate server-side. See ADR-HEARTH-014.
 
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 
 const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
-const PORT = 3000;
+const PORT = 3001;
+const SCHEME = "wss";
 
 // Verbatim from https://github.com/hobbyquaker/lgtv2/blob/master/pairing.json — the exact
 // manifest LG's own reference client sends. Do not trim fields; unrecognized/missing fields
@@ -123,22 +127,47 @@ interface PendingEntry {
 
 export interface LgWebOsConfig {
   ipAddress: string;
+  /** A client-key from a previous successful pairing, if one is known. Echoing it back in the
+   * register request lets the TV recognize this client without re-showing the on-screen
+   * Allow/Deny prompt — see connect()'s real-hardware finding, 2026-09-10. */
+  clientKey?: string;
 }
 
-/** Talks to one LG webOS TV's unencrypted SSAP WebSocket channel, plus its separate pointer-input socket for button presses. One instance per TV. */
+/** Talks to one LG webOS TV's encrypted SSAP WebSocket channel (wss://3001, via relay), plus its separate pointer-input socket for button presses. One instance per TV. */
 export class LgWebOsClient {
   private socket: WebSocket | null = null;
   private pointerSocket: WebSocket | null = null;
   private nextId = 1;
   private pending = new Map<string, PendingEntry>();
+  /** Fired when the main socket closes after a successful connect (not during the initial
+   * handshake, and not from this.close() being called deliberately) — set by the driver to
+   * drive auto-reconnect. See LgWebOsDriver.ts. */
+  onDisconnect: (() => void) | null = null;
+  private closingDeliberately = false;
+  // Real-hardware finding (2026-09-09): the main SSAP connection had the identical "check
+  // pointerSocket, then create if missing" race that Family Command Center traced live on this
+  // same TV — two rapid button presses (e.g. fast d-pad taps) before the first pointer-socket
+  // request resolves would each see no open socket yet and independently request+open a second
+  // one, hitting the exact same hang-instead-of-reject behavior the driver-level fix addressed.
+  private pointerSocketPromise: Promise<WebSocket> | null = null;
 
   constructor(private config: LgWebOsConfig) {}
 
-  async connect(): Promise<void> {
-    const socket = await openSocketWithRelayFallback(`ws://${this.config.ipAddress}:${PORT}`);
+  // Real-hardware finding (2026-09-10), Sean directly: "find a way to make this so that i only
+  // have to approve one time and it is forever remembered by the tv." The SSAP protocol already
+  // supports exactly this — a successful register response carries a client-key, and sending that
+  // same key back in a later register request lets the TV recognize the client and skip the
+  // on-screen prompt entirely (confirmed against hobbyquaker/lgtv2, the reference implementation
+  // this driver is already verified against — see the file header). This client received that key
+  // every time and simply discarded it: the outer register-resolve callback ignored its own
+  // `payload` argument, so nothing was ever available to persist, and every connect() requested a
+  // fresh, promptable pairing. Fixed: resolve with the key (new or reconfirmed) so the driver can
+  // persist it, and send any previously-known key back in the manifest payload.
+  async connect(): Promise<string | undefined> {
+    const socket = await openSocketWithRelayFallback(`${SCHEME}://${this.config.ipAddress}:${PORT}`);
     const registerId = String(this.nextId++);
 
-    return new Promise((resolve, reject) => {
+    return new Promise<string | undefined>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(registerId);
         socket.close();
@@ -147,10 +176,18 @@ export class LgWebOsClient {
 
       this.pending.set(registerId, {
         isRegister: true,
-        resolve: () => {
+        resolve: (payload) => {
           clearTimeout(timeout);
           this.socket = socket;
-          resolve();
+          // Only attached on a successful pairing — a close during the handshake itself is
+          // handled by the reject path below, not treated as an unexpected disconnect.
+          socket.onclose = () => {
+            if (this.socket !== socket) return; // a newer connection has already replaced this one
+            this.socket = null;
+            if (!this.closingDeliberately) this.onDisconnect?.();
+          };
+          const clientKey = payload["client-key"];
+          resolve(typeof clientKey === "string" ? clientKey : undefined);
         },
         reject: (err) => {
           clearTimeout(timeout);
@@ -166,7 +203,11 @@ export class LgWebOsClient {
         reject(new Error(`Could not open a WebSocket to ${this.config.ipAddress}:${PORT}`));
       };
 
-      socket.send(JSON.stringify({ type: "register", id: registerId, payload: PAIRING_MANIFEST }));
+      // A known client-key rides alongside the manifest (not nested inside it) — same shape
+      // hobbyquaker/lgtv2 sends. Only included when we have one; an unpaired device still sends
+      // the plain manifest and gets prompted, exactly as before.
+      const registerPayload = this.config.clientKey ? { ...PAIRING_MANIFEST, "client-key": this.config.clientKey } : PAIRING_MANIFEST;
+      socket.send(JSON.stringify({ type: "register", id: registerId, payload: registerPayload }));
     });
   }
 
@@ -189,6 +230,7 @@ export class LgWebOsClient {
   }
 
   close(): void {
+    this.closingDeliberately = true;
     this.pointerSocket?.close();
     this.pointerSocket = null;
     this.socket?.close();
@@ -199,6 +241,16 @@ export class LgWebOsClient {
     if (this.pointerSocket && this.pointerSocket.readyState === this.pointerSocket.OPEN) {
       return this.pointerSocket;
     }
+    if (this.pointerSocketPromise) return this.pointerSocketPromise; // already opening — share it, don't open a second one
+    this.pointerSocketPromise = this.openPointerSocket();
+    try {
+      return await this.pointerSocketPromise;
+    } finally {
+      this.pointerSocketPromise = null;
+    }
+  }
+
+  private async openPointerSocket(): Promise<WebSocket> {
     const result = await this.call("ssap://com.webos.service.networkinput/getPointerInputSocket");
     const socketPath = result.socketPath;
     if (typeof socketPath !== "string") {

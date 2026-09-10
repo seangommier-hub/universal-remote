@@ -1,13 +1,18 @@
 import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceDriver";
-import { CapabilityId, NavigationDirection } from "../../../core/types/Capability";
+import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { RokuEcpClient, RokuEcpConfig } from "./RokuEcpClient";
+import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 
 const LOG_SCOPE = "RokuEcpDriver";
 export const ROKU_ECP_DRIVER_ID = "roku-ecp";
+// Same "connect once, never manually reconnect" behavior as SonyBraviaDriver/LgWebOsDriver —
+// see SonyBraviaDriver.ts for the fuller rationale.
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 // No "power"/"powerOn" — Roku's documented key list has only "PowerOff", no power-on key (waking
 // a fully-off device isn't exposed by ECP). No "setVolume" — volume keys are relative
@@ -27,6 +32,8 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   "back",
   "home",
   "inputSelection",
+  "setChannel",
+  "launchApp",
 ];
 
 const DIRECTION_KEYS: Record<NavigationDirection, string> = {
@@ -34,6 +41,16 @@ const DIRECTION_KEYS: Record<NavigationDirection, string> = {
   down: "Down",
   left: "Left",
   right: "Right",
+};
+
+// Real, public Roku channel IDs — confirmed 2026-09-10, not guessed. Roku doesn't publish these
+// in its own ECP docs, but they're stable, widely-corroborated identifiers for each channel's
+// production listing (the same ID `/launch/<id>` and `/query/icon/<id>` use across the ecosystem).
+const ROKU_CHANNEL_IDS: Record<StreamingService, string> = {
+  netflix: "12",
+  hulu: "2285",
+  primeVideo: "13",
+  youtube: "837",
 };
 
 function requireConfig(device: Device): RokuEcpConfig {
@@ -49,8 +66,18 @@ function inputKeyFor(input: string): string {
   if (input === "av1") return "InputAV1";
   const match = /^hdmi([1-4])$/i.exec(input);
   if (match) return `InputHDMI${match[1]}`;
-  throw new Error(`Unrecognized Roku input '${input}' — expected 'tuner', 'av1', or 'hdmi1'..'hdmi4'`);
+  throw new RokuValidationError(`Unrecognized Roku input '${input}' — expected 'tuner', 'av1', or 'hdmi1'..'hdmi4'`);
 }
+
+// Real-hardware finding (2026-09-09): executeCommand's catch treats *any* thrown error as
+// evidence the device is unreachable — but applyCommand also throws for pure argument
+// validation (a bad direction/channel/input string) that never touches the network at all. A
+// caller sending a malformed command was flipping a perfectly healthy device to "disconnected"
+// and starting an indefinite reconnect loop against it. Confirmed live: this project's own test
+// suite (RokuEcpDriver.test.ts's "directionalNavigation without a valid direction" test)
+// triggered exactly this, leaving real timers running after the test completed. A distinct error
+// type lets executeCommand tell the two apart without string-matching error messages.
+class RokuValidationError extends Error {}
 
 /**
  * Driver for Roku streaming devices and Roku TVs (they share the same ECP interface) over
@@ -64,22 +91,76 @@ export class RokuEcpDriver implements DeviceDriver {
 
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
+  private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // See SonyBraviaDriver.ts's identical comment — a scheduled reconnect's connect() can still be
+  // in flight when disconnect() runs; bumped only there, checked before any state write.
+  private generations = new Map<string, number>();
+  // Same dedupe as LgWebOsDriver.ts/SonyBraviaDriver.ts, applied for consistency.
+  private inFlightConnects = new Map<string, Promise<void>>();
 
   getCapabilities(): CapabilityId[] {
     return ROKU_CAPABILITIES;
   }
 
   async connect(device: Device): Promise<void> {
-    const client = new RokuEcpClient(requireConfig(device));
-    const info = await client.getDeviceInfo();
-    this.setState(device.id, {
-      connection: "connected",
-      values: { power: info.powerMode === "PowerOn" ? "on" : "off", model: info.modelName },
-      lastUpdated: Date.now(),
-    });
+    const existing = this.inFlightConnects.get(device.id);
+    if (existing) return existing;
+    const attempt = this.doConnect(device);
+    this.inFlightConnects.set(device.id, attempt);
+    try {
+      await attempt;
+    } finally {
+      if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);
+    }
+  }
+
+  private async doConnect(device: Device): Promise<void> {
+    const generation = this.generations.get(device.id) ?? 0;
+    this.clearReconnectTimer(device.id);
+    try {
+      const client = new RokuEcpClient(requireConfig(device));
+      const info = await client.getDeviceInfo();
+      if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected while this was in flight
+      this.setState(device.id, {
+        connection: "connected",
+        values: { power: info.powerMode === "PowerOn" ? "on" : "off", model: info.modelName },
+        lastUpdated: Date.now(),
+      });
+    } catch (err) {
+      if (generation !== (this.generations.get(device.id) ?? 0)) throw err;
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.scheduleReconnect(device);
+      throw err;
+    }
+  }
+
+  private scheduleReconnect(device: Device, attempt = 1): void {
+    if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
+    const timer = setTimeout(async () => {
+      try {
+        await this.connect(device);
+        logger.info(LOG_SCOPE, `${device.name} reachable again after ${attempt} attempt(s)`);
+      } catch {
+        this.scheduleReconnect(device, attempt + 1);
+      }
+    }, delay);
+    this.reconnectTimers.set(device.id, timer);
+  }
+
+  private clearReconnectTimer(deviceId: string): void {
+    const timer = this.reconnectTimers.get(deviceId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(deviceId);
+    }
   }
 
   async disconnect(device: Device): Promise<void> {
+    this.generations.set(device.id, (this.generations.get(device.id) ?? 0) + 1);
+    this.clearReconnectTimer(device.id);
     const current = this.states.get(device.id);
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
   }
@@ -90,7 +171,15 @@ export class RokuEcpDriver implements DeviceDriver {
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new RokuEcpClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
+    try {
+      await this.applyCommand(client, device, command);
+    } catch (err) {
+      if (err instanceof RokuValidationError) throw err; // a bad arg, not a dead device — don't touch connection state
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.scheduleReconnect(device);
+      throw err;
+    }
     const state = this.states.get(device.id) ?? { connection: "connected", values: {}, lastUpdated: Date.now() };
     return {
       success: true,
@@ -149,17 +238,34 @@ export class RokuEcpDriver implements DeviceDriver {
       case "directionalNavigation": {
         const direction = command.args?.direction as NavigationDirection | undefined;
         if (!direction || !(direction in DIRECTION_KEYS)) {
-          throw new Error("directionalNavigation requires a valid 'direction' arg");
+          throw new RokuValidationError("directionalNavigation requires a valid 'direction' arg");
         }
         await client.keypress(DIRECTION_KEYS[direction]);
         this.patchValues(device.id, { lastNavigation: direction });
         return;
       }
+      case "setChannel": {
+        const channel = command.args?.channel;
+        if (typeof channel !== "number") throw new RokuValidationError("setChannel requires a numeric 'channel' arg");
+        // "Lit_<char>" sends a literal printable character — sourced from Roku's own official
+        // ECP docs, not a community guess. Digits go through the same literal-keypress path.
+        await sendDigitSequence(channel, (digit) => client.keypress(`Lit_${digit}`));
+        this.patchValues(device.id, { channel });
+        return;
+      }
       case "inputSelection": {
         const input = command.args?.input;
-        if (typeof input !== "string") throw new Error("inputSelection requires a string 'input' arg");
+        if (typeof input !== "string") throw new RokuValidationError("inputSelection requires a string 'input' arg");
         await client.keypress(inputKeyFor(input));
         this.patchValues(device.id, { input });
+        return;
+      }
+      case "launchApp": {
+        const service = command.args?.service as StreamingService | undefined;
+        const channelId = service ? ROKU_CHANNEL_IDS[service] : undefined;
+        if (!channelId) throw new RokuValidationError(`launchApp requires a supported 'service' arg (got ${String(service)})`);
+        await client.launchChannel(channelId);
+        this.patchValues(device.id, { lastAction: `launch:${service}` });
         return;
       }
       default:
