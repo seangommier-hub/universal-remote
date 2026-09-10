@@ -14,6 +14,14 @@ import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 // long-term answer -- this provider only ever surfaces what that one
 // household's network already knows about.
 
+// Real-hardware finding (2026-09-09): this fetch previously had no timeout at all, unlike
+// every other network call in this codebase (see httpRelayFallback.ts's own
+// DIRECT_TIMEOUT_MS). A slow/hung response left DiscoverDevicesScreen stuck on "Scanning..."
+// indefinitely, with no error and no way to recover short of leaving the screen -- exactly
+// what a hung request looks like to a user with no diagnostic access. Now aborts and surfaces
+// a real, retry-able error instead.
+const SCAN_TIMEOUT_MS = 8000;
+
 interface LanDevice {
   hwaddr: string;
   ip: string;
@@ -58,10 +66,26 @@ export class FamilyCommandCenterDiscoveryProvider implements DiscoveryProvider {
       throw new Error("Family Command Center isn't connected yet — add its address and token in Settings first.");
     }
 
-    const res = await fetch(`${config.baseUrl}/api/integrations/hearth/devices`, {
-      headers: { Authorization: `Bearer ${config.token}` },
-      signal,
-    });
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), SCAN_TIMEOUT_MS);
+    const onCallerAbort = () => timeoutController.abort();
+    signal?.addEventListener("abort", onCallerAbort);
+
+    let res: Response;
+    try {
+      res = await fetch(`${config.baseUrl}/api/integrations/hearth/devices`, {
+        headers: { Authorization: `Bearer ${config.token}` },
+        signal: timeoutController.signal,
+      });
+    } catch (err) {
+      if (timeoutController.signal.aborted && !signal?.aborted) {
+        throw new Error(`Family Command Center didn't respond within ${SCAN_TIMEOUT_MS / 1000} seconds — check it's reachable and try again.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onCallerAbort);
+    }
     if (!res.ok) {
       throw new Error(res.status === 401 ? "Family Command Center rejected the saved token." : `Family Command Center returned ${res.status}.`);
     }
