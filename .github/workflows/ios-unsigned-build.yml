@@ -26,7 +26,13 @@ jobs:
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "latest-stable"
+          # Needs Swift tools 6.2 (only shipped from Xcode 26 onward), but
+          # 26.4+ has a stricter Swift/C++ interop check that this Expo SDK
+          # 57 version's expo-modules-jsi header (RuntimeScheduler.h) fails
+          # under (known upstream issue, expo/expo#46242, fixed on SDK 56
+          # but not yet backported here). Pinning the earliest 26.x release
+          # that still has Swift 6.2 tools, before that stricter check.
+          xcode-version: "26.0"
 
       - uses: actions/setup-node@v4
         with:
