@@ -30,12 +30,22 @@ interface DeviceListScreenProps {
   onDiscover: () => void;
   /** Opens Family Command Center pairing directly from the home screen — previously only reachable by first triggering "Discover devices" and hitting its not-configured error state, three taps deep for what's meant to be a one-time setup step. */
   onConnectFamilyCommandCenter: () => void;
+  /** Opens the phone-as-trackpad-and-keyboard screen for the Family Command Center itself (ADR-HEARTH-033) — a different thing from pairing/discovering *devices*, so its own header button rather than folding into onConnectFamilyCommandCenter. */
+  onOpenCommandCenterRemote: () => void;
   /** Unpairs a device (disconnects it, removes it from the registry and from persisted storage) — triggered by a long-press, confirmed first since it's not reversible from this screen. */
   onRemove: (device: Device) => void;
 }
 
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
-export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover, onConnectFamilyCommandCenter, onRemove }: DeviceListScreenProps) {
+export function DeviceListScreen({
+  devices,
+  onSelect,
+  onAddDevice,
+  onDiscover,
+  onConnectFamilyCommandCenter,
+  onOpenCommandCenterRemote,
+  onRemove,
+}: DeviceListScreenProps) {
   function confirmRemove(device: Device) {
     Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
       { text: "Cancel", style: "cancel" },
@@ -52,6 +62,14 @@ export function DeviceListScreen({ devices, onSelect, onAddDevice, onDiscover, o
           <Text style={styles.title}>Hearth</Text>
           <Text style={styles.subtitle}>One home. One remote.</Text>
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
+          onPress={onOpenCommandCenterRemote}
+          accessibilityRole="button"
+          accessibilityLabel="Command Center trackpad and keyboard"
+        >
+          <Ionicons name="hardware-chip-outline" size={20} color={theme.accentEnd} />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
           onPress={onConnectFamilyCommandCenter}

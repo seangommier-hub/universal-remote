@@ -17,6 +17,7 @@ import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
+import { CommandCenterRemoteScreen } from "./src/ui/CommandCenterRemoteScreen";
 import { theme } from "./src/ui/theme";
 
 type Screen =
@@ -25,7 +26,8 @@ type Screen =
   | { name: "add"; brand: AddableBrand }
   | { name: "discover" }
   | { name: "fcc-scan" }
-  | { name: "fcc-settings" };
+  | { name: "fcc-settings" }
+  | { name: "fcc-remote" };
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
 async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
@@ -252,6 +254,7 @@ export default function App() {
       {screen.name === "fcc-settings" && (
         <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "discover" })} />
       )}
+      {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "list" && (
         <DeviceListScreen
           devices={devices}
@@ -259,6 +262,7 @@ export default function App() {
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
+          onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onRemove={handleRemoveDevice}
         />
       )}

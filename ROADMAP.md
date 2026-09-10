@@ -4,6 +4,20 @@ Granular, build→test→validate→complete sized tasks. Checked items are done
 and verified (tests passing and/or confirmed in Expo Go); nothing is marked
 done on the strength of "it compiles."
 
+## Out-of-band — Hearth as the Family Command Center's input device (2026-09-10)
+
+Sean: "make the phone an ultimate driver of the command center so no
+keyboard or mouse is needed but still can be used" — clarified as VNC-based
+(ADR-HEARTH-033), Hearth and the FCC as "sister" systems, integrated but
+independently functional.
+
+- [x] `RfbClient` (RFC 6143 handshake + PointerEvent/KeyEvent only, no framebuffer decode by design) + X11 keysym mapping table. 18 new tests against a mocked WebSocket replaying real RFB byte sequences (including split/reassembled messages).
+- [x] `CommandCenterRemoteScreen.tsx` — touch trackpad (drag to move, tap to click) + on-screen keyboard, reachable from the device list's header. Connects through a new relay URL builder (`familyCommandCenterVncRelay.ts`, 3 tests) using the phone's existing paired FCC token.
+- [ ] **Family Command Center side — cannot be built from this repo/session**: a VNC server on the Pi (x11vnc/TigerVNC, loopback-bound) + a new `/api/integrations/hearth/relay/vnc` WebSocket endpoint proxying to it, reusing the FCC's existing bearer-token auth, with a per-device permission check for "multiple phones, with permission" (Sean's own words). `RfbClient` has nothing real to connect to until this exists — tested only against a mock so far, never a live server.
+- [ ] Once the FCC side exists: **Sean, real-hardware checkpoint** — pair, open the trackpad/keyboard screen, confirm the Pi's actual cursor moves and keystrokes land.
+- [ ] VNC Authentication (DES challenge-response) — not implemented; Phase 1 only supports security type "None", trusting the relay's bearer token as the real security boundary. Follow-up only if the Pi's local VNC server ever needs its own auth independent of the relay.
+- [ ] Framebuffer viewing (seeing the Pi's actual screen inside Hearth) — deliberately out of scope for "no keyboard/mouse needed" (ADR-HEARTH-033); would need real pixel-encoding decode + a render target, unlike RN's DOM-less environment supports out of the box.
+
 ## Phase 0 — Foundation
 
 - [x] Repository audit (new project, nothing pre-existing to audit)
