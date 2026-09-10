@@ -1,6 +1,10 @@
 import { SamsungTizenDriver, SAMSUNG_TIZEN_DRIVER_ID } from "./SamsungTizenDriver";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig");
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 const device: Device = {
   id: "samsung-1",
@@ -27,6 +31,8 @@ describe("SamsungTizenDriver", () => {
   beforeEach(() => {
     installMockWebSocket();
     driver = new SamsungTizenDriver();
+    mockLoadConfig.mockReset();
+    global.fetch = jest.fn();
   });
 
   test("declares nav/menu capabilities but not inputSelection or setVolume (protocol can't do either)", () => {
@@ -108,5 +114,65 @@ describe("SamsungTizenDriver", () => {
       /numeric 'channel'/
     );
     expect(MockWebSocket.latest().sentMessages).toHaveLength(0);
+  });
+
+  test("a connect() that fails outright still gets auto-retried in the background (ADR-HEARTH-017 update, 2026-09-10)", async () => {
+    const firstAttempt = driver.connect(device);
+    MockWebSocket.latest().simulateError();
+    await expect(firstAttempt).rejects.toThrow();
+    expect((await driver.getState(device)).connection).not.toBe("connected");
+
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    const secondSocket = MockWebSocket.latest();
+    secondSocket.simulateOpen();
+    await flushMicrotasks();
+    secondSocket.simulateMessage({ event: "ms.channel.connect", data: {} });
+    await flushMicrotasks();
+
+    expect((await driver.getState(device)).connection).toBe("connected");
+  }, 10000);
+
+  describe("re-discovery after a network change (ADR-HEARTH-017 update, 2026-09-10)", () => {
+    const deviceWithMac: Device = { ...device, config: { ipAddress: "192.168.1.60", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.219" }] }),
+      });
+
+      const connectPromise = driver.connect(deviceWithMac);
+      const directSocket = MockWebSocket.latest();
+      directSocket.simulateError();
+      await flushMicrotasks();
+      const relaySocket = MockWebSocket.latest();
+      expect(relaySocket).not.toBe(directSocket);
+      relaySocket.simulateError();
+      await flushMicrotasks(20);
+
+      const retrySocket = MockWebSocket.latest();
+      expect(retrySocket.url).toContain("192.168.1.219");
+      retrySocket.simulateOpen();
+      await flushMicrotasks();
+      retrySocket.simulateMessage({ event: "ms.channel.connect", data: {} });
+      await flushMicrotasks();
+
+      await connectPromise;
+      expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.219");
+    });
+
+    test("a device with no saved hwaddr just fails normally — no lookup attempted", async () => {
+      const manualDevice: Device = { ...device, config: { ipAddress: "192.168.1.60" } };
+
+      const connectPromise = driver.connect(manualDevice);
+      MockWebSocket.latest().simulateError();
+      await flushMicrotasks();
+
+      await expect(connectPromise).rejects.toThrow();
+      expect(global.fetch).not.toHaveBeenCalled();
+      await driver.disconnect(manualDevice); // cancel the scheduled retry so it can't leak into a later test
+    });
   });
 });

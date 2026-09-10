@@ -318,3 +318,32 @@ existing MAC re-discovery the *next* time its IP changes — this screen
 should only ever be needed once per device, not every time.
 
 175/175 tests passing (3 new for `findMacByIp`), `tsc --noEmit` clean.
+
+## Update 2026-09-10 (same day, later still): applied the same two fixes to Samsung; Sony/Roku already had them
+
+Sean: "keep working forward on this." Both fixes above (auto-retry on a
+failed `connect()`, not just a post-connection drop; MAC-based
+re-discovery when the saved IP goes stale) are architecture-level gaps,
+not LG-specific ones — checked all three other drivers rather than
+assuming.
+
+**Samsung had the identical gap** (same `client.onDisconnect`-only retry
+wiring, same `openSocketWithRelayFallback` transport) — fixed the same
+way: `SamsungUnreachableError` (mirrors `LgUnreachableError`), a
+`connectClient()` re-discovery wrapper, and `connect()`'s catch now
+schedules a retry instead of just throwing. 9 new tests (3 across driver +
+recovery scenarios), 178/178 total, `tsc --noEmit` clean.
+
+**Sony and Roku already had the connect-failure retry correct** — verified
+by reading, not assumed. Both are stateless-HTTP drivers (not persistent
+WebSocket like LG/Samsung): Sony's `refreshState()` and Roku's own
+`doConnect()` each wrap their *own* request in a try/catch that calls
+`scheduleReconnect()` on any failure, connect-time or mid-use alike — the
+architecture doesn't have LG/Samsung's "retry only wired after a
+successful connect" gap in the first place, because there's no persistent
+socket whose `onDisconnect` is the only thing driving retries. Left
+unchanged. MAC-based re-discovery wasn't ported to Sony/Roku in this pass
+— they're plain HTTP (no `openSocketWithRelayFallback`, no
+`LgUnreachableError`-equivalent distinction to hook), so the same
+mechanism doesn't drop in as directly; worth its own pass if Sony/Roku
+hardware testing ever surfaces a real stale-IP case for them.

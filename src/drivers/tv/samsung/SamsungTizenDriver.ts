@@ -3,9 +3,10 @@ import { CapabilityId, NavigationDirection } from "../../../core/types/Capabilit
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
-import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
+import { SamsungTizenClient, SamsungTizenConfig, SamsungUnreachableError } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
+import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -135,6 +136,11 @@ export class SamsungTizenDriver implements DeviceDriver {
   // independent triggers now call connect() for one device. A single in-flight promise per
   // device stops the redundant attempt from ever being made, not just cleaning it up after.
   private inFlightConnects = new Map<string, Promise<void>>();
+  // See LgWebOsDriver.ts's identical field and comment (ADR-HEARTH-017 update, 2026-09-10): a
+  // connect() that fails outright — not just a connection dropping after it succeeded — needs to
+  // be retried too. Tracked here (reset on success) so the very first failure and every
+  // subsequent automatic retry share one persistent backoff count.
+  private reconnectAttempts = new Map<string, number>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -157,22 +163,52 @@ export class SamsungTizenDriver implements DeviceDriver {
     this.inFlightConnects.set(device.id, attempt);
     try {
       await attempt;
+      this.reconnectAttempts.delete(device.id); // a fresh failure later starts the backoff over, not mid-escalation
+    } catch (err) {
+      // See LgWebOsDriver.ts's identical comment (ADR-HEARTH-017 update, 2026-09-10): this used
+      // to just throw here, with nothing scheduling another try — a device that failed to connect
+      // never got auto-retried at all, only one that connected and then dropped did.
+      this.scheduleReconnect(device);
+      throw err;
     } finally {
       if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);
+    }
+  }
+
+  /** See LgWebOsDriver.ts's identical method and comment (ADR-HEARTH-017 update, 2026-09-10) — re-locates a discovered device by MAC through the Family Command Center if its saved IP stops opening a socket at all, and retries once at whatever current address it finds. */
+  private async connectClient(device: Device, config: SamsungTizenConfig): Promise<SamsungTizenClient> {
+    const client = new SamsungTizenClient(config);
+    try {
+      await client.connect();
+      return client;
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      if (!(err instanceof SamsungUnreachableError) || typeof hwaddr !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} unreachable at ${config.ipAddress} — checking Family Command Center for its current address`);
+      const freshIp = await findCurrentIpByMac(hwaddr);
+      if (!freshIp || freshIp === config.ipAddress) throw err;
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp;
+      const retryClient = new SamsungTizenClient({ ...config, ipAddress: freshIp });
+      await retryClient.connect();
+      return retryClient;
     }
   }
 
   private async doConnect(device: Device): Promise<void> {
     this.clearReconnectTimer(device.id);
     const generation = this.bumpGeneration(device.id);
-    const client = new SamsungTizenClient(requireConfig(device));
-    await client.connect();
+    const client = await this.connectClient(device, requireConfig(device));
     if (!this.isCurrentGeneration(device.id, generation)) {
       client.close();
       return;
     }
     client.onDisconnect = () => {
-      if (this.clients.get(device.id) === client) this.handleUnexpectedDisconnect(device);
+      if (this.clients.get(device.id) !== client) return;
+      this.clients.delete(device.id);
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.scheduleReconnect(device);
     };
     const previous = this.clients.get(device.id);
     if (previous && previous !== client) previous.close();
@@ -180,21 +216,21 @@ export class SamsungTizenDriver implements DeviceDriver {
     this.setState(device.id, { connection: "connected", values: {}, lastUpdated: Date.now() });
   }
 
-  private handleUnexpectedDisconnect(device: Device, attempt = 1): void {
-    this.clients.delete(device.id);
-    const current = this.states.get(device.id);
-    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
-
+  /** See LgWebOsDriver.ts's identical method and comment — one shared retry path for a connect() that fails outright and a connection dropping after it succeeded, with a dedup guard against stacking a second competing timer. */
+  private scheduleReconnect(device: Device): void {
+    if (this.reconnectTimers.has(device.id)) return;
+    const attempt = (this.reconnectAttempts.get(device.id) ?? 0) + 1;
+    this.reconnectAttempts.set(device.id, attempt);
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
-    logger.warn(LOG_SCOPE, `${device.name} disconnected unexpectedly — retrying in ${delay / 1000}s (attempt ${attempt})`);
+    logger.warn(LOG_SCOPE, `${device.name} not connected — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
+      this.reconnectTimers.delete(device.id);
       try {
         await this.connect(device);
-        logger.info(LOG_SCOPE, `${device.name} auto-reconnected after ${attempt} attempt(s)`);
+        logger.info(LOG_SCOPE, `${device.name} reconnected after ${attempt} attempt(s)`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        logger.warn(LOG_SCOPE, `Auto-reconnect attempt ${attempt} for ${device.name} failed`, { message });
-        this.handleUnexpectedDisconnect(device, attempt + 1);
+        logger.warn(LOG_SCOPE, `Reconnect attempt ${attempt} for ${device.name} failed`, { message });
       }
     }, delay);
     this.reconnectTimers.set(device.id, timer);

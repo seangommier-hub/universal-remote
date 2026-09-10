@@ -20,6 +20,9 @@ export interface SamsungTizenConfig {
 
 export class SamsungPairingError extends Error {}
 
+/** See LgWebOsClient.ts's identical LgUnreachableError — thrown specifically when the socket never opens at all (as opposed to opening fine but pairing timing out), so the driver can tell "wrong/stale IP" apart from "reachable but not yet approved" and know whether re-discovering the device's current address could help. */
+export class SamsungUnreachableError extends Error {}
+
 function encodeAsciiBase64(input: string): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   let output = "";
@@ -48,7 +51,13 @@ export class SamsungTizenClient {
   async connect(): Promise<void> {
     const name = encodeAsciiBase64(this.config.appName ?? "Hearth");
     const url = `ws://${this.config.ipAddress}:8001/api/v2/channels/samsung.remote.control?name=${name}`;
-    const socket = await openSocketWithRelayFallback(url);
+    let socket: WebSocket;
+    try {
+      socket = await openSocketWithRelayFallback(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new SamsungUnreachableError(message);
+    }
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
