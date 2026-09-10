@@ -232,3 +232,64 @@ without awaiting the first, confirms only one
 `getPointerInputSocket` request goes out and only one pointer-socket
 `WebSocket` is constructed, and both button presses land on that one
 socket in order. 97/97 tests passing (1 new), `tsc --noEmit` clean.
+
+## Update 2026-09-10 (same day, later): a failed connect() never got retried at all
+
+Real-hardware finding while troubleshooting Sean's 75" LG TV live, him
+directly and repeatedly: "it needs to never ever again disconnect." Traced
+the actual gap: everything above this line only ever covers a connection
+that dropped *after* it succeeded (`client.onDisconnect` → this ADR's
+backoff loop). A `connect()` call that fails outright — including the very
+first attempt ever made for a device — just threw the error and gave up,
+with nothing scheduling another try. That's exactly the situation the TV
+had been stuck in all day (a stale, TV-rejected client-key kept timing out
+on every manual reconnect).
+
+**Fix (`LgWebOsDriver.ts`):** consolidated both cases — a fresh failure and
+a post-connection drop — through one `scheduleReconnect()` path, backed by
+a persistent per-device `reconnectAttempts` counter (reset on success)
+instead of a parameter threaded through recursive calls. `connect()`'s own
+catch now calls `scheduleReconnect()` before re-throwing, so the immediate
+caller (a manual "Reconnect" tap) still sees the failure right away, *and*
+a background timer picks it up automatically from then on — the exact
+backoff math (2s→30s cap) is unchanged, just triggered from one shared
+place instead of only from `onDisconnect`.
+
+**Second, related fix, same day — IP going stale across network changes:**
+while live-testing the fix above, discovered the TV's actual real-world
+address had silently changed (`10.20.30.40` → `192.168.1.218`, moved to a
+different WiFi/VLAN) — confirmed directly by scanning the main subnet for
+LG's SSAP port and connecting to it live. Sean, directly: "i have multiple
+wifi types in my house and other people do too... no matter what the
+device wifi is on." No amount of retry backoff recovers a connection aimed
+at a permanently wrong IP. `LgWebOsClient.connect()` now throws a distinct
+`LgUnreachableError` specifically when the socket never opens at all
+(openSocketWithRelayFallback exhausted, both legs) — as opposed to opening
+fine but the pairing handshake itself timing out, a different, unrelated
+failure. `LgWebOsDriver.connectClient()` catches that specific error and,
+if the device carries a `hwaddr` (new: `DiscoverDevicesScreen.tsx` now
+saves it alongside `ipAddress` for every discovered device — manually
+added devices have no MAC and don't get this path), looks itself up by MAC
+through the Family Command Center's existing device inventory
+(`findCurrentIpByMac`, new — `src/discovery/familyCommandCenterDeviceLookup.ts`,
+reuses the same `/api/integrations/hearth/devices` endpoint
+`FamilyCommandCenterDiscoveryProvider` already calls) and retries once at
+whatever current address it finds, persisting it into `device.config` the
+same way a fresh client-key already gets persisted.
+
+Sean also asked for a second-level fallback if the Family Command Center
+lookup itself fails — querying the household router directly (its own
+DHCP/ARP table). Noted as a real, valid direction, not built here: unlike
+the FCC's own clean, controlled API, router APIs vary enormously by
+brand/model with no standard interface, making this a meaningfully larger
+and less bounded task than today's fix — a candidate for its own scoped
+investigation before being attempted, not a same-session add-on.
+
+172/172 tests passing (7 new across `LgWebOsDriver.test.ts` and the new
+`familyCommandCenterDeviceLookup.test.ts`), `tsc --noEmit` clean. Verified
+live end-to-end on the real TV during this exact troubleshooting session —
+confirmed pairing, confirmed a real command (`launchApp` → YouTube) landing
+on screen — though that verification used a direct diagnostic script
+(scratchpad), not the app's own UI, since the saved device in the app
+still needs a one-time remove-and-re-add (or a future "edit address"
+screen) to pick up the corrected IP the first time.

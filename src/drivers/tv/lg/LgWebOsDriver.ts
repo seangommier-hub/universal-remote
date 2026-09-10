@@ -4,8 +4,9 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
+import { LgUnreachableError, LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
+import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "LgWebOsDriver";
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
@@ -165,6 +166,36 @@ export class LgWebOsDriver implements DeviceDriver {
     }
   }
 
+  /**
+   * Connects with one specific fallback: if the socket never opens at all (LgUnreachableError —
+   * as opposed to opening fine but the pairing handshake timing out) and this device carries a
+   * `hwaddr` (only true for devices added via Family Command Center discovery), checks whether
+   * the Center currently sees that MAC at a *different* IP than the one saved — real-hardware
+   * finding (2026-09-10), Sean directly, repeatedly: "it needs to never ever again disconnect...
+   * no matter what the device wifi is on." A device moving to a different WiFi network/VLAN in
+   * the house is exactly the case a saved static IP can never recover from on its own, no matter
+   * how patient the retry backoff is. Only retries once with the corrected address — a second
+   * real failure propagates normally into the caller's own backoff loop.
+   */
+  private async connectClient(device: Device, config: LgWebOsConfig): Promise<{ client: LgWebOsClient; clientKey: string | undefined }> {
+    const client = new LgWebOsClient(config);
+    try {
+      const clientKey = await client.connect();
+      return { client, clientKey };
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      if (!(err instanceof LgUnreachableError) || typeof hwaddr !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} unreachable at ${config.ipAddress} — checking Family Command Center for its current address`);
+      const freshIp = await findCurrentIpByMac(hwaddr);
+      if (!freshIp || freshIp === config.ipAddress) throw err; // nothing better found — surface the original failure
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp; // persisted the same way a fresh client-key is, in doConnect
+      const retryClient = new LgWebOsClient({ ...config, ipAddress: freshIp });
+      const clientKey = await retryClient.connect();
+      return { client: retryClient, clientKey };
+    }
+  }
+
   private async doConnect(device: Device): Promise<void> {
     this.clearReconnectTimer(device.id);
     const generation = this.bumpGeneration(device.id);
@@ -176,8 +207,7 @@ export class LgWebOsDriver implements DeviceDriver {
     // means this is genuinely a first-time pairing, which unavoidably needs one physical approval
     // no matter how this attempt is retried.
     logger.info(LOG_SCOPE, `Connecting to ${device.name} (${config.ipAddress}) — ${config.clientKey ? "using a previously-saved client-key" : "no saved client-key yet, this will need a fresh on-screen approval"}`);
-    const client = new LgWebOsClient(config);
-    const clientKey = await client.connect();
+    const { client, clientKey } = await this.connectClient(device, config);
     if (!this.isCurrentGeneration(device.id, generation)) {
       // Superseded while connecting — a disconnect() or a newer connect() call won the race.
       // This attempt's handshake succeeded, but nothing should act on it; close cleanly rather

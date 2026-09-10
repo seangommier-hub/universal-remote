@@ -133,6 +133,18 @@ export interface LgWebOsConfig {
   clientKey?: string;
 }
 
+/**
+ * Thrown specifically when the socket itself never opened (openSocketWithRelayFallback failed,
+ * both directly and via the relay) — as opposed to a socket that opened fine but the pairing
+ * handshake then timed out. Real-hardware finding (2026-09-10): a TV that changes networks (a
+ * second WiFi/VLAN, common in real households — confirmed with Sean directly) leaves the saved
+ * `ipAddress` pointing at nothing; every retry, however patient, just fails to open a socket at
+ * all. That's a genuinely different situation from "reachable but not yet approved," and the
+ * driver needs to tell them apart to know whether re-discovering the device's *current* address
+ * (LgWebOsDriver's job, not this client's) could actually help.
+ */
+export class LgUnreachableError extends Error {}
+
 /** Talks to one LG webOS TV's encrypted SSAP WebSocket channel (wss://3001, via relay), plus its separate pointer-input socket for button presses. One instance per TV. */
 export class LgWebOsClient {
   private socket: WebSocket | null = null;
@@ -164,7 +176,13 @@ export class LgWebOsClient {
   // fresh, promptable pairing. Fixed: resolve with the key (new or reconfirmed) so the driver can
   // persist it, and send any previously-known key back in the manifest payload.
   async connect(): Promise<string | undefined> {
-    const socket = await openSocketWithRelayFallback(`${SCHEME}://${this.config.ipAddress}:${PORT}`);
+    let socket: WebSocket;
+    try {
+      socket = await openSocketWithRelayFallback(`${SCHEME}://${this.config.ipAddress}:${PORT}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new LgUnreachableError(message);
+    }
     const registerId = String(this.nextId++);
 
     return new Promise<string | undefined>((resolve, reject) => {

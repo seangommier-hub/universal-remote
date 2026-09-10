@@ -57,6 +57,12 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
     if (!driver) return; // "not yet supported" tiles have no driverId and render no Connect button
 
     const ipAddress = discovered.metadata?.ipAddress;
+    // hwaddr (real-hardware finding, 2026-09-10): saved alongside ipAddress so a driver can
+    // re-locate this device by MAC through the Family Command Center if it ever moves to a
+    // different WiFi network/VLAN and the saved IP goes stale — see LgWebOsDriver.connectClient.
+    // Only devices added via discovery ever have one; manually-entered devices (Add Sony/Samsung/
+    // LG/Roku TV) have no MAC to record and simply don't get this recovery path.
+    const hwaddr = discovered.metadata?.hwaddr;
     const device: Device = {
       id: discovered.id,
       name: discovered.name,
@@ -64,7 +70,7 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
       manufacturer: discovered.manufacturer,
       driverId: discovered.driverId,
       capabilities: driver.getCapabilities(),
-      config: { ipAddress },
+      config: { ipAddress, hwaddr },
     };
 
     setConnectingId(discovered.id);

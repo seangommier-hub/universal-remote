@@ -1,6 +1,10 @@
 import { LgWebOsDriver, LG_WEBOS_DRIVER_ID } from "./LgWebOsDriver";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig");
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 const device: Device = {
   id: "lg-1",
@@ -42,6 +46,8 @@ describe("LgWebOsDriver", () => {
   beforeEach(() => {
     installMockWebSocket();
     driver = new LgWebOsDriver();
+    mockLoadConfig.mockReset(); // defaults to undefined — matches every existing test's "no relay configured" world unless a test opts in
+    global.fetch = jest.fn();
   });
 
   test("declares powerOff and inputSelection but not power/powerOn (honest about what SSAP can/can't do)", () => {
@@ -260,6 +266,71 @@ describe("LgWebOsDriver", () => {
 
     expect((await driver.getState(device)).connection).toBe("connected");
   }, 10000);
+
+  describe("re-discovery after a network change (real-hardware finding, 2026-09-10, Sean: \"no matter what the device wifi is on\")", () => {
+    const deviceWithMac: Device = { ...device, config: { ipAddress: "10.20.30.40", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.218" }] }),
+      });
+
+      const connectPromise = driver.connect(deviceWithMac);
+
+      // Old address fails both directly and via relay — the exact sequence that produces
+      // LgUnreachableError (both legs of openSocketWithRelayFallback exhausted).
+      const directSocket = MockWebSocket.latest();
+      expect(directSocket.url).toBe("wss://10.20.30.40:3001");
+      directSocket.simulateError();
+      await flushMicrotasks();
+      const relaySocket = MockWebSocket.latest();
+      expect(relaySocket).not.toBe(directSocket);
+      relaySocket.simulateError();
+      // The recovery path chains several more microtask hops than a plain handshake (catching
+      // LgUnreachableError, then awaiting the mocked fetch() *and* its own .json() call before a
+      // new socket is even created) — the default flushMicrotasks() ticks aren't enough to settle
+      // all of that before the next assertion.
+      await flushMicrotasks(20);
+
+      // The driver looks itself up by MAC (mocked fetch above) and retries at the new address.
+      const retrySocket = MockWebSocket.latest();
+      expect(retrySocket.url).toBe("wss://192.168.1.218:3001");
+      retrySocket.simulateOpen();
+      await flushMicrotasks();
+      const registerSent = JSON.parse(retrySocket.sentMessages[0]);
+      retrySocket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "rediscovered-key" } });
+      await flushMicrotasks();
+      const volumeRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 20, mute: false } });
+      await flushMicrotasks();
+      const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+      await flushMicrotasks();
+
+      await connectPromise;
+      expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218"); // updated in place, same as a fresh client-key
+    });
+
+    test("a device with no saved hwaddr (manually added, not discovered) just fails normally — no lookup attempted", async () => {
+      const manualDevice: Device = { ...device, config: { ipAddress: "10.20.30.40" } }; // no hwaddr
+
+      const connectPromise = driver.connect(manualDevice);
+      MockWebSocket.latest().simulateError();
+      await flushMicrotasks();
+
+      await expect(connectPromise).rejects.toThrow();
+      expect(global.fetch).not.toHaveBeenCalled(); // never even tried to look itself up
+
+      // The failed connect() schedules a real background retry timer (by design, this session's
+      // own fix) — cancel it before the test ends so it can't fire during a later, unrelated test
+      // and corrupt its MockWebSocket state, the same reason other tests in this file explicitly
+      // disconnect() when a scheduled reconnect isn't the thing under test.
+      await driver.disconnect(manualDevice);
+    });
+  });
 
   test("disconnect() does not trigger a reconnect (deliberate close, not a drop)", async () => {
     await connectDriver(driver);

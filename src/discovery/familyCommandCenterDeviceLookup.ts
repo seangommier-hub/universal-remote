@@ -1,0 +1,45 @@
+import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+
+// Real-hardware finding (2026-09-10): a device's saved IP goes stale the moment it moves to a
+// different WiFi network/VLAN — common in real households (confirmed with Sean directly: "i have
+// multiple wifi types in my house and other people do too"), not a one-off edge case. The Family
+// Command Center's own device inventory (ADR-HEARTH-010) already tracks every LAN device by MAC
+// address alongside its current IP, since it scans the network directly — this re-uses that same
+// endpoint FamilyCommandCenterDiscoveryProvider already calls, as a single-device lookup instead
+// of a full scan, so a driver can "find myself again" after a network change.
+
+const LOOKUP_TIMEOUT_MS = 8000;
+
+interface LanDevice {
+  hwaddr: string;
+  ip: string;
+}
+
+/**
+ * Looks up a device's *current* IP address by its MAC address, via the Family Command Center's
+ * device inventory. Returns `undefined` (never throws for "not found") if the Center isn't
+ * configured, the request fails, or no device with that MAC is currently known — callers should
+ * treat that as "couldn't re-locate it," not a hard error, and fall back to their existing retry
+ * behavior.
+ */
+export async function findCurrentIpByMac(hwaddr: string): Promise<string | undefined> {
+  const config = await loadFamilyCommandCenterConfig();
+  if (!config) return undefined;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${config.baseUrl}/api/integrations/hearth/devices`, {
+      headers: { Authorization: `Bearer ${config.token}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) return undefined;
+    const { devices } = (await response.json()) as { devices: LanDevice[] };
+    const match = devices.find((device) => device.hwaddr.toLowerCase() === hwaddr.toLowerCase());
+    return match?.ip;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
