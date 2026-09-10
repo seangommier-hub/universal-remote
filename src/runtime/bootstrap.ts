@@ -6,6 +6,7 @@ import { SonyBraviaDriver } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
 import { RokuEcpDriver } from "../drivers/streaming/roku/RokuEcpDriver";
+import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -29,6 +30,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new SamsungTizenDriver());
   driverRegistry.register(new LgWebOsDriver());
   driverRegistry.register(new RokuEcpDriver());
+  driverRegistry.register(new HueLightDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

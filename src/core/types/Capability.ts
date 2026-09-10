@@ -37,7 +37,15 @@ export type CapabilityId =
   // separate capability, not folded into inputSelection, because it's a genuinely different
   // mechanism (open a picker vs. switch to a resolved id) — see ADR-HEARTH-027. Samsung's own
   // directionalNavigation/select already let the user drive the picker once it's open.
-  | "openSourceList";
+  | "openSourceList"
+  // Phase 5 — Philips Hue lighting (ADR-HEARTH-032). "power" (already declared above) doubles as
+  // the light's on/off toggle, matching how SimulatedTvDriver/SonyBraviaDriver/SamsungTizenDriver
+  // already use it. Brightness and color are normalized to universal units (0-100 percentage;
+  // 0-360/0-100 HSL-style hue degrees/saturation percentage), not Hue's native 1-254/0-65535
+  // scales — each driver converts to its own protocol's units, the same way setVolume/setChannel
+  // take plain numbers rather than a protocol-specific encoding.
+  | "setBrightness"
+  | "setColor";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

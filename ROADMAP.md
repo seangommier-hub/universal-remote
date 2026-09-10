@@ -137,8 +137,9 @@ testing.
 
 ## Phase 5 — Smart lighting
 
-- [ ] Philips Hue local bridge API per feasibility doc's recommendation
-- [ ] `HueDriver`, new `lighting` capabilities (on/off/brightness/color) added to the type only when implemented
+- [x] Philips Hue local bridge API per feasibility doc's recommendation (ADR-HEARTH-032) — `HueBridgeClient` (pairing, get/set light state, all normalized to universal 0-100/0-360 units) + `HueLightDriver` (`power`/`setBrightness`/`setColor`), registered in `bootstrap.ts`. 24 new tests (139/139 total), `tsc` clean. Not yet run against a real bridge.
+- [ ] **Sean: pair a real Hue bridge and light, confirm `HueLightDriver` actually controls it** — no in-app pairing UI yet (see next item), so this needs a one-off manual pairing (call `HueBridgeClient.pair()` after pressing the bridge's link button, or a small script mirroring `scripts/test-lg-connection.js`) until the real screen exists.
+- [ ] "+ Add Hue Light" onboarding screen — bridge IP entry (or the feasibility doc's N-UPnP cloud-assisted discovery), link-button-press polling loop using `HuePairingPendingError`, then a light picker to create one `Device` per light. Not built yet; `HueLightDriver` is usable via `CommandEngine` today but has no way for a user to pair through the app.
 - [ ] First cross-category proof: one `Room` screen (see Phase 7) showing a TV and a light together
 
 ## Phase 6 — Robot vacuum
