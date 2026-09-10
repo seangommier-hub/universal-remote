@@ -4,6 +4,11 @@ Granular, build→test→validate→complete sized tasks. Checked items are done
 and verified (tests passing and/or confirmed in Expo Go); nothing is marked
 done on the strength of "it compiles."
 
+## Out-of-band — real iOS app: unsigned-build workaround definitively closed (2026-09-10)
+
+- [x] Investigated a free, no-Apple-account path to a real installable app (unsigned GitHub Actions build + AltStore sideload, ADR-HEARTH-031) as an interim step while Apple Developer Program approval is pending. Fixed 6 real compiler-compatibility bugs in Expo's own `expo-modules-jsi` package along the way. Hit a persistent Swift concurrency-checker bug confirmed identical across 3 separate Xcode 26.x releases — not a version-specific fluke. Closed for good, not paused: every patch was only verified by "compiles in CI," never tested on a real device (no Mac in the loop) for the JSI bridge every native call depends on. Sean, directly: "this needs to absolutely be airtight. i don't want anything breaking" — chose to stop rather than ship untested bridge-code changes.
+- [ ] **The only remaining path to a real iOS app is Apple Developer Program approval.** `eas.json`'s `development` profile is already configured; the next action once approved is directly `eas build --profile development --platform ios`. Do not resume the unsigned-build path without genuinely new evidence (a new `expo-modules-jsi` release, a closed upstream issue, or a new major Xcode version).
+
 ## Out-of-band — Hearth as the Family Command Center's input device (2026-09-10)
 
 Sean: "make the phone an ultimate driver of the command center so no

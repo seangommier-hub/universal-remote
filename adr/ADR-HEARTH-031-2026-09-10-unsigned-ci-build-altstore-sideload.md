@@ -4,10 +4,12 @@ Date: 2026-09-10
 
 ## Status
 
-Abandoned 2026-09-10 (same day) — see the update below. Attempted as an
-interim path while the Apple Developer Program enrollment
-([[hearth-apple-developer-pending]]) was still pending; blocked by a
-genuine Xcode 26.0 compiler bug, not a code issue on our end.
+**Definitively abandoned 2026-09-10** — see the final update below.
+Confirmed across three independent Xcode 26.x releases, then closed by
+Sean's own explicit call once the real tradeoff (untested changes to the
+JSI bridge every native call depends on, with no Mac anywhere to verify
+them) was on the table: waiting for Apple Developer Program enrollment
+([[hearth-apple-developer-pending]]) is the only remaining path.
 
 ## Context
 
@@ -140,3 +142,42 @@ exact workflow is the fastest way to find out. Don't re-attempt patches
 project's real path to a real iOS app remains
 [[hearth-apple-developer-pending]] — check that first in any future
 session before returning to this one.
+
+## Update 2026-09-10 (same night, final): definitively closed — untestable risk, not just a hard bug
+
+Re-tried once more at Sean's request ("do 57 and make it work") — pinned
+Xcode 26.2 specifically, a third distinct point release. **Byte-identical
+errors, same 7 lines, same file.** Three independent Xcode releases
+(26.0, "latest-stable", 26.2) all failing identically is about as
+conclusive as this gets without filing directly with Apple: this is a
+real, persistent bug in this Swift concurrency checker across the entire
+26.x line so far, not something a different point release plausibly
+dodges.
+
+Sean, immediately after: **"this needs to absolutely be airtight. i don't
+want anything breaking."** That reframed the actual decision. The next
+planned attempt (converting the risky pointers to their integer bit
+pattern before crossing into the isolated closure, reconstructing the
+real pointer inside) was reasoning-sound — the package's own comments
+confirm this specific closure runs synchronously, same-thread, no real
+concurrency ever happens here, so bypassing the checker doesn't introduce
+a race that wasn't already provably absent. But reasoning-sound isn't the
+same as verified: **every patch this session to this file was checked
+only by "does it compile in CI," never "does it run correctly on a real
+device"** — there's no Mac anywhere in this loop to actually test on. This
+file is the JSI bridge every native call in the app goes through end to
+end. Presented that tradeoff to Sean directly rather than deciding it
+unilaterally; he chose to stop patching this file and wait for Apple
+Developer Program approval instead, rather than ship untested changes to
+safety-critical bridge code.
+
+**Final status: abandoned, not paused-pending-a-lucky-Xcode-release.**
+The path back to a real iOS app is now singularly
+[[hearth-apple-developer-pending]] — `eas.json`'s `development` profile
+is already configured and ready; once Apple approves, the next action is
+directly `eas build --profile development --platform ios`, no further
+setup. Do not resume patching `expo-modules-jsi` in a future session on
+the strength of "maybe a newer Xcode fixed it" without new evidence (a
+changed dist-tag on `expo-modules-jsi`, a closed upstream issue, or
+Apple shipping a new major Xcode version, not just another 26.x point
+release) — three data points already rule that out for the 26.x line.
