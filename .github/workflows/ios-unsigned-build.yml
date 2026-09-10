@@ -26,13 +26,13 @@ jobs:
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          # Needs Swift tools 6.2 (only shipped from Xcode 26 onward), but
-          # 26.4+ has a stricter Swift/C++ interop check that this Expo SDK
-          # 57 version's expo-modules-jsi header (RuntimeScheduler.h) fails
-          # under (known upstream issue, expo/expo#46242, fixed on SDK 56
-          # but not yet backported here). Pinning the earliest 26.x release
-          # that still has Swift 6.2 tools, before that stricter check.
-          xcode-version: "26.0"
+          # ADR-HEARTH-031 update, 2026-09-10: neither 26.0 nor "latest-stable" got past
+          # expo-modules-jsi's "sending 'x' risks causing data races" checker bug (confirmed
+          # via two independently-reasoned source patches, both failing identically — see the
+          # ADR). Trying one specific intermediate point release before giving up again: compiler
+          # bugs in a narrow region-isolation checker like this are exactly the kind of thing a
+          # later point release plausibly fixes without a whole SDK bump.
+          xcode-version: "26.2"
 
       - uses: actions/setup-node@v4
         with:
