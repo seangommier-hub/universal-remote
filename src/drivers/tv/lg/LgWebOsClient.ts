@@ -171,7 +171,17 @@ export class LgWebOsClient {
       const timeout = setTimeout(() => {
         this.pending.delete(registerId);
         socket.close();
-        reject(new Error("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again"));
+        // Real-hardware finding (2026-09-10): a saved client-key timing out here doesn't mean
+        // Hearth forgot it — it was confirmed sent (see LgWebOsDriver's connect-attempt log) and
+        // the TV still didn't recognize it, prompting fresh anyway. That happens when the TV's
+        // own trust list has been cleared since (a firmware update, a factory reset, or someone
+        // clearing "connected devices" in its settings) — a genuinely different situation from a
+        // true first-time pairing, worth telling the user directly rather than the same generic
+        // message either way.
+        const message = this.config.clientKey
+          ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
+          : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
+        reject(new Error(message));
       }, CONNECT_TIMEOUT_MS);
 
       this.pending.set(registerId, {

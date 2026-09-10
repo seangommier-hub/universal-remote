@@ -83,3 +83,35 @@ app is killed.
 - If Samsung's protocol turns out to have an equivalent persistent-token
   mechanism, it should get its own ADR when actually verified — not
   bolted on here by assumption.
+
+## Update 2026-09-10 (same day, later): confirmed live — the TV can forget a saved key
+
+Real-hardware finding, diagnosed live with Sean on his 75" LG TV. He
+reported "Reconnect" doing nothing; walked through it step by step:
+
+1. Added a diagnostic log (`LgWebOsDriver.doConnect`) stating plainly
+   whether a saved client-key exists before each connect attempt — direct
+   evidence instead of guessing from symptoms.
+2. Confirmed via that log: a saved client-key **does** exist for this TV
+   (this ADR's mechanism has worked before) and **is** being sent.
+3. The connection still timed out waiting for pairing approval anyway —
+   the TV is not honoring its own previously-issued key. Concluded: the
+   TV's own trust list has been cleared since (a firmware update, a
+   factory reset, or clearing "connected devices" in its settings) — nothing
+   Hearth's persistence logic did wrong, and nothing a retry or a code fix
+   here can work around. The one-time physical approval is unavoidable
+   again, exactly as it would be for a true first pairing.
+
+This is a real, distinct failure mode from "never paired yet," so
+`LgWebOsClient.connect()`'s timeout error message now says which one
+happened, instead of one generic message for both: a saved-but-rejected
+key gets "This TV isn't recognizing a previous pairing anymore (its own
+settings may have been reset or updated) — accept the on-screen prompt to
+re-approve it," a genuine first-time pairing keeps the original "accept
+the on-screen prompt and try again." 2 new tests (fake timers, both
+branches); 164/164 total, `tsc --noEmit` clean.
+
+Still blocked on the same real-hardware checkpoint as before — a human
+physically accepting the prompt on the TV — this update only makes the
+diagnosis and the resulting message clearer, not the underlying
+requirement optional.

@@ -177,4 +177,36 @@ describe("LgWebOsClient", () => {
     expect(pointerSocket.sentMessages).toEqual(["type:button\nname:UP\n\n", "type:button\nname:DOWN\n\n"]);
     expect(MockWebSocket.instances).toHaveLength(2);
   });
+
+  describe("connect() timeout messages (real-hardware finding, 2026-09-10)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test("a genuinely first-time pairing (no saved client-key) gets the plain 'accept the prompt' message", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" }); // no clientKey
+      const connectPromise = client.connect();
+      MockWebSocket.latest().simulateOpen();
+      await flushMicrotasks();
+
+      jest.advanceTimersByTime(30000);
+
+      await expect(connectPromise).rejects.toThrow("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again");
+    });
+
+    test("a saved client-key that still times out gets the 'TV forgot this pairing' message, not the generic one", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70", clientKey: "stale-key" });
+      const connectPromise = client.connect();
+      MockWebSocket.latest().simulateOpen();
+      await flushMicrotasks();
+
+      jest.advanceTimersByTime(30000);
+
+      await expect(connectPromise).rejects.toThrow(/isn't recognizing a previous pairing anymore/);
+    });
+  });
 });
