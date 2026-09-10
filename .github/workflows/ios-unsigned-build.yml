@@ -65,6 +65,17 @@ jobs:
         #     targeted fix; an earlier attempt at reordering the class-level
         #     attribute didn't change this error at all, confirming it
         #     wasn't a parse-ordering issue.
+        #  4. Beyond that, JavaScriptRuntime.swift hits "sending 'x' risks
+        #     causing data races" at multiple call sites — Swift 6 strict
+        #     concurrency's region-based isolation checker rejecting pointer
+        #     trampolines it can't statically prove safe. Patching each call
+        #     site individually risks actually getting the concurrency
+        #     annotations wrong in a Swift/C++ JSI bridge, which is the last
+        #     place to guess. Reverting the package's own declared
+        #     swiftLanguageModes from .v6 to .v5 is the direct fix: it turns
+        #     this whole diagnostic class off at the source (weak let's
+        #     syntax gap, fixed above, is independent of language mode, so
+        #     this doesn't undo that fix).
         run: |
           set -euo pipefail
           grep -rl "weak let" node_modules/expo-modules-jsi | while read -r f; do
@@ -78,10 +89,13 @@ jobs:
           done
           SCHEDULER_H="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
           sed -i '' 's/SWIFT_RETURNS_RETAINED RuntimeScheduler(/RuntimeScheduler(/' "$SCHEDULER_H"
+          PACKAGE_SWIFT="node_modules/expo-modules-jsi/apple/Package.swift"
+          sed -i '' 's/swiftLanguageModes: \[\.v6\],/swiftLanguageModes: [.v5],/' "$PACKAGE_SWIFT"
           echo "--- Verifying patches applied ---"
           grep -n "weak var\|nonisolated" \
             node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
           grep -n "RuntimeScheduler(" "$SCHEDULER_H"
+          grep -n "swiftLanguageModes" "$PACKAGE_SWIFT"
 
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
