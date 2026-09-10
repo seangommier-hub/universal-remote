@@ -1,0 +1,65 @@
+name: iOS unsigned build (for AltStore sideload)
+
+# Produces an UNSIGNED .ipa on a free GitHub-hosted macOS runner. No Apple
+# Developer account is used or required at this step — code signing is
+# explicitly disabled. AltServer (running on your own machine) does the
+# signing afterward using your free Apple ID. See ADR-HEARTH-031.
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - feature/ios-unsigned-build
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Build unsigned .app
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls ios/*.xcworkspace | head -n1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building $SCHEME from $WORKSPACE"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          APP_NAME=$(basename "$APP_PATH")
+          mkdir -p Payload
+          cp -r "$APP_PATH" "Payload/$APP_NAME"
+          zip -qr Hearth-unsigned.ipa Payload
+          echo "Built: Hearth-unsigned.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hearth-unsigned-ipa
+          path: Hearth-unsigned.ipa
+          retention-days: 14
