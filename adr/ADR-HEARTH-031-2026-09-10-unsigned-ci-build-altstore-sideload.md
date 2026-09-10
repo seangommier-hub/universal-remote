@@ -4,8 +4,10 @@ Date: 2026-09-10
 
 ## Status
 
-Accepted — interim path while the Apple Developer Program enrollment
-([[hearth-apple-developer-pending]]) is still pending.
+Abandoned 2026-09-10 (same day) — see the update below. Attempted as an
+interim path while the Apple Developer Program enrollment
+([[hearth-apple-developer-pending]]) was still pending; blocked by a
+genuine Xcode 26.0 compiler bug, not a code issue on our end.
 
 ## Context
 
@@ -80,3 +82,61 @@ experiment doesn't touch the main branch — logged per ADR-GLOBAL-002.
 ## Related
 
 [[hearth-apple-developer-pending]], [[hearth-windows-not-admin]]
+
+## Update 2026-09-10 (same day, later): abandoned — genuine upstream compiler bug
+
+Status changed to **Abandoned**. Sean confirmed via AskUserQuestion to stop
+here and wait for Apple Developer Program approval rather than continue.
+
+The CI build (`.github/workflows/ios-unsigned-build.yml`, still on
+`feature/ios-unsigned-build`, never merged to `main`) got the unsigned
+`.app` compile through roughly 20 iterations of real, verified diagnosis —
+each one traced to an actual root cause and confirmed fixed by checking the
+error disappeared from the next run's full log, not guessed at blindly:
+
+1. `macos-14`'s default Xcode (15.4) below React Native's `>=16.1` floor
+   → pinned a newer Xcode.
+2. A transitive Swift Package needing Swift tools 6.2 (only shipped from
+   Xcode 26 onward) → moved to Xcode 26.x.
+3. `expo-dev-menu`/`expo-dev-launcher` asset catalogs needing a simulator
+   runtime the runner doesn't have → removed `expo-dev-client` entirely
+   (development-only; this build embeds the JS bundle directly and never
+   needed it).
+4. Three real bugs in `expo-modules-jsi@57.1.0`'s own source, all
+   confirmed fixed (verified gone from the error log): `weak let` on
+   9 files (a Swift syntax gap on this specific compiler) → `weak var`;
+   3 `Sendable`-conforming classes where that alone broke Sendable's
+   immutability requirement → `nonisolated(unsafe) weak var`;
+   `RuntimeScheduler.h`'s two constructors invalidly marked
+   `SWIFT_RETURNS_RETAINED` → removed from the constructors.
+5. A bare-slash regex literal mis-parsing as division once
+   `BareSlashRegexLiterals`' default didn't match what the package was
+   written against → `#/.../#` extended delimiters. Confirmed fixed.
+6. `JavaScriptPromise`'s `LongLivedState` (`@JavaScriptActor`-isolated)
+   constructed synchronously from a nonisolated context → explicit
+   `nonisolated init() {}`, mirroring a pattern the package already uses
+   elsewhere in the same file. Confirmed fixed.
+
+**Where it stopped:** "sending 'x' risks causing data races" at 7 call
+sites in `JavaScriptRuntime.swift`, from Swift 6's region-based isolation
+checker rejecting pointer trampolines it can't statically prove safe. The
+package's own code already handles this exact situation with a documented
+`nonisolated(unsafe) let x = x` shadow (with a comment explaining why it's
+sound) declared before the closure that uses it — and this compiler still
+rejects it there. Relocating the identical shadow to just inside the
+`assumeIsolated` closure (crossing one fewer boundary before use) produced
+the byte-identical error at the same call sites. Two structurally
+different, independently-reasoned fix attempts failing identically is
+strong evidence this is a real Xcode 26.0 bug in that specific checker,
+not a patchable code issue — continuing to guess a third variant without
+new information wasn't a good use of further iterations, which Sean
+agreed with when asked.
+
+**Disposition:** the branch and workflow are left in place, unmerged, as
+a reference — if a later Xcode point release fixes the region-isolation
+checker bug, or Expo ships a patched `expo-modules-jsi`, re-running this
+exact workflow is the fastest way to find out. Don't re-attempt patches
+1-6 above from scratch; they're already correct and verified. The
+project's real path to a real iOS app remains
+[[hearth-apple-developer-pending]] — check that first in any future
+session before returning to this one.
