@@ -30,6 +30,36 @@ jobs:
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
 
+      - name: Patch Podfile — pin resource-bundle targets to device SDK
+        run: |
+          set -euo pipefail
+          python3 - ios/Podfile <<'PY'
+          import sys
+          path = sys.argv[1]
+          with open(path) as f:
+              content = f.read()
+          marker = "post_install do |installer|"
+          # Xcode 16 treats CocoaPods resource-bundle-only targets (product
+          # type "bundle") as multi-platform by default, which requires a
+          # matching iphonesimulator runtime to be installed even when only
+          # building for a real device. GitHub's macos-15 runner doesn't
+          # ship one matching Xcode 16.2's SDK, so pin these targets to the
+          # device SDK explicitly.
+          patch = marker + """
+              installer.pods_project.targets.each do |target|
+                next unless target.respond_to?(:product_type) && target.product_type == "com.apple.product-type.bundle"
+                target.build_configurations.each do |config|
+                  config.build_settings["SDKROOT"] = "iphoneos"
+                  config.build_settings["SUPPORTED_PLATFORMS"] = "iphoneos"
+                end
+              end
+          """
+          assert marker in content, "post_install hook not found in generated Podfile"
+          content = content.replace(marker, patch, 1)
+          with open(path, "w") as f:
+              f.write(content)
+          PY
+
       - name: Install CocoaPods
         working-directory: ios
         run: pod install
