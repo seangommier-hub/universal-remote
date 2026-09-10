@@ -15,14 +15,7 @@ interface LanDevice {
   ip: string;
 }
 
-/**
- * Looks up a device's *current* IP address by its MAC address, via the Family Command Center's
- * device inventory. Returns `undefined` (never throws for "not found") if the Center isn't
- * configured, the request fails, or no device with that MAC is currently known — callers should
- * treat that as "couldn't re-locate it," not a hard error, and fall back to their existing retry
- * behavior.
- */
-export async function findCurrentIpByMac(hwaddr: string): Promise<string | undefined> {
+async function fetchLanDevices(): Promise<LanDevice[] | undefined> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) return undefined;
 
@@ -35,11 +28,35 @@ export async function findCurrentIpByMac(hwaddr: string): Promise<string | undef
     });
     if (!response.ok) return undefined;
     const { devices } = (await response.json()) as { devices: LanDevice[] };
-    const match = devices.find((device) => device.hwaddr.toLowerCase() === hwaddr.toLowerCase());
-    return match?.ip;
+    return devices;
   } catch {
     return undefined;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Looks up a device's *current* IP address by its MAC address, via the Family Command Center's
+ * device inventory. Returns `undefined` (never throws for "not found") if the Center isn't
+ * configured, the request fails, or no device with that MAC is currently known — callers should
+ * treat that as "couldn't re-locate it," not a hard error, and fall back to their existing retry
+ * behavior.
+ */
+export async function findCurrentIpByMac(hwaddr: string): Promise<string | undefined> {
+  const devices = await fetchLanDevices();
+  return devices?.find((device) => device.hwaddr.toLowerCase() === hwaddr.toLowerCase())?.ip;
+}
+
+/**
+ * The reverse lookup: given an IP address, finds the MAC address the Family Command Center
+ * currently sees at it. Used to backfill `hwaddr` onto a device that was paired manually (typed
+ * IP, no MAC on file) once it's known to be reachable at a specific address — so a device fixed
+ * by hand once can still self-heal automatically the *next* time its IP goes stale, instead of
+ * needing a human to fix it by hand forever. Same "never throws for not found" contract as
+ * `findCurrentIpByMac`.
+ */
+export async function findMacByIp(ip: string): Promise<string | undefined> {
+  const devices = await fetchLanDevices();
+  return devices?.find((device) => device.ip === ip)?.hwaddr;
 }

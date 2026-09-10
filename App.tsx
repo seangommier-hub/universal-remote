@@ -18,6 +18,7 @@ import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
 import { CommandCenterRemoteScreen } from "./src/ui/CommandCenterRemoteScreen";
+import { EditDeviceAddressScreen } from "./src/ui/EditDeviceAddressScreen";
 import { theme } from "./src/ui/theme";
 
 type Screen =
@@ -27,7 +28,8 @@ type Screen =
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
-  | { name: "fcc-remote" };
+  | { name: "fcc-remote" }
+  | { name: "edit-address"; device: Device };
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
 async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
@@ -169,6 +171,17 @@ export default function App() {
     saveDeviceQuietly(updated);
   }
 
+  // Real-hardware need (2026-09-10): a device's saved IP going stale (moved to a different WiFi
+  // network) shouldn't require unpairing and re-pairing from scratch — EditDeviceAddressScreen
+  // already verified the new address connects before calling this. Same update-in-place pattern
+  // as handleRenameDevice.
+  function handleAddressUpdated(updated: Device) {
+    runtime.deviceRegistry.add(updated);
+    setDevices(runtime.deviceRegistry.list());
+    setScreen({ name: "list" });
+    saveDeviceQuietly(updated);
+  }
+
   // Found in review (2026-09-10): persistence.ts's removeDevice() and DeviceRegistry.remove()
   // were both fully implemented but never called from anywhere — there was no way to actually
   // remove a paired device short of clearing the whole app's storage, e.g. after mistyping an IP.
@@ -255,6 +268,14 @@ export default function App() {
         <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "discover" })} />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
+      {screen.name === "edit-address" && (
+        <EditDeviceAddressScreen
+          device={screen.device}
+          driverRegistry={runtime.driverRegistry}
+          onCancel={() => setScreen({ name: "list" })}
+          onSaved={handleAddressUpdated}
+        />
+      )}
       {screen.name === "list" && (
         <DeviceListScreen
           devices={devices}
@@ -264,6 +285,7 @@ export default function App() {
           onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onRemove={handleRemoveDevice}
+          onEditAddress={(device) => setScreen({ name: "edit-address", device })}
         />
       )}
       <StatusBar style="light" />

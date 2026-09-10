@@ -34,6 +34,8 @@ interface DeviceListScreenProps {
   onOpenCommandCenterRemote: () => void;
   /** Unpairs a device (disconnects it, removes it from the registry and from persisted storage) — triggered by a long-press, confirmed first since it's not reversible from this screen. */
   onRemove: (device: Device) => void;
+  /** Opens a small form to correct a device's saved IP address without a full remove-and-re-add — real-hardware need (2026-09-10): a device's IP can go stale (moved to a different WiFi network) and the fastest fix shouldn't be "unpair everything and start over." Offered from the same long-press menu as Remove. */
+  onEditAddress: (device: Device) => void;
 }
 
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
@@ -45,11 +47,22 @@ export function DeviceListScreen({
   onConnectFamilyCommandCenter,
   onOpenCommandCenterRemote,
   onRemove,
+  onEditAddress,
 }: DeviceListScreenProps) {
-  function confirmRemove(device: Device) {
-    Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
+  function showDeviceActions(device: Device) {
+    const hasAddress = typeof device.config?.ipAddress === "string";
+    Alert.alert(device.name, undefined, [
       { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
+      ...(hasAddress ? [{ text: "Edit address", onPress: () => onEditAddress(device) }] : []),
+      {
+        text: "Remove",
+        style: "destructive" as const,
+        onPress: () =>
+          Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
+          ]),
+      },
     ]);
   }
   return (
@@ -95,10 +108,10 @@ export function DeviceListScreen({
             <Pressable
               style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
               onPress={() => onSelect(item)}
-              onLongPress={() => confirmRemove(item)}
+              onLongPress={() => showDeviceActions(item)}
               accessibilityRole="button"
               accessibilityLabel={item.name}
-              accessibilityHint="Double tap to open. Long press to remove this device."
+              accessibilityHint="Double tap to open. Long press for more options."
             >
               <View style={styles.cardIcon}>
                 <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />

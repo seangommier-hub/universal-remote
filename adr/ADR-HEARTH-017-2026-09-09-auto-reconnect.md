@@ -293,3 +293,28 @@ on screen — though that verification used a direct diagnostic script
 (scratchpad), not the app's own UI, since the saved device in the app
 still needs a one-time remove-and-re-add (or a future "edit address"
 screen) to pick up the corrected IP the first time.
+
+## Update 2026-09-10 (same day, later still): "get it done" — an edit-address screen instead of remove-and-re-add
+
+Sean: "fix the remote and get it done" — the remove-and-re-add workaround
+from the previous update was a real fix but genuine friction, and this
+device's saved config has no `hwaddr` (it was paired manually, long before
+today's MAC-based recovery existed), so the automatic re-discovery above
+can't help it on its own. Built the better fix instead of asking for a
+manual workaround: `EditDeviceAddressScreen.tsx`, reached via a new "long
+press → Edit address" option on the device list (alongside the existing
+Remove). Verifies the new IP actually connects — same real
+`driver.connect()` check every Add*DeviceScreen already does — before
+saving anything, so it can never save an address that doesn't actually
+work.
+
+Also backfills the missing piece going forward: if the device has no
+`hwaddr` yet, this screen now looks up the Family Command Center's
+inventory for whatever MAC is currently at the *new* address
+(`findMacByIp`, the reverse of `findCurrentIpByMac`, same
+`familyCommandCenterDeviceLookup.ts` module) and saves it. A device fixed
+by hand once through this screen can self-heal automatically through the
+existing MAC re-discovery the *next* time its IP changes — this screen
+should only ever be needed once per device, not every time.
+
+175/175 tests passing (3 new for `findMacByIp`), `tsc --noEmit` clean.
