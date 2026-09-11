@@ -728,7 +728,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         has(device, "sleepTimer") ||
         has(device, "openSourceList")) && (
         <View style={[styles.card, styles.utilityCard]}>
+          {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
           <View style={styles.utilityRow}>
+            {has(device, "home") && <UtilityAction scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
+            {has(device, "menu") && <UtilityAction scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
             {has(device, "mute") && (
               <UtilityAction
                 scale={scale}
@@ -740,8 +743,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               />
             )}
             {has(device, "back") && <UtilityAction scale={scale} icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
-            {has(device, "home") && <UtilityAction scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
-            {has(device, "menu") && <UtilityAction scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
             {/* Real-hardware ask (2026-09-10): "settings and sleep timer should be next to
                 eachother" — Samsung only; verified real KEY_TOOLS/KEY_SLEEP codes exist for this
                 protocol specifically (see Capability.ts). LG/Roku don't declare these capabilities
@@ -900,7 +901,12 @@ const styles = StyleSheet.create({
   // Real-device ask (2026-09-10): "that card needs better spacing" — more generous padding than
   // the base `card` for the utility row specifically, since a sparse row of a few icon+caption
   // chips reads as cramped at the same padding a denser card (the hub, the keypad) uses well.
-  utilityCard: { padding: theme.spacing.xl },
+  // Real-device ask (2026-09-11): "add a little padding to the bottom under the menu that has
+  // mute back home etc" — this card is the last one on the "remote" tab, so its own marginBottom
+  // is what actually controls the gap between it and the bottom of the scrollable content
+  // (the ScrollView's own contentContainerStyle padding applies equally above the first card too,
+  // not extra room specific to this one).
+  utilityCard: { padding: theme.spacing.xl, marginBottom: theme.spacing.lg },
   cardLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,
