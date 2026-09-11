@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps } from "react";
+import { ComponentProps, useEffect, useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -26,6 +27,8 @@ const CATEGORY_ICON: Record<string, IconName> = {
 
 interface DeviceListScreenProps {
   devices: Device[];
+  /** Real gap found in review (2026-09-10), during a live "why is it not connecting" troubleshooting session: this screen never showed connection status at all — every device looked identical whether connected, disconnected, or mid-reconnect, so there was no way to tell at a glance whether something needed attention without tapping in and waiting out the full reconnect timeout. Each row now subscribes to its own live state. */
+  stateStore: StateStore;
   onSelect: (device: Device) => void;
   onAddDevice: (brand: AddableBrand) => void;
   onDiscover: () => void;
@@ -39,9 +42,30 @@ interface DeviceListScreenProps {
   onEditAddress: (device: Device) => void;
 }
 
+/** A small live indicator so a device's connection state is visible at a glance from the list, without tapping in and waiting out the full reconnect timeout to find out. Subscribes independently per row so one device's state change doesn't re-render the whole list. */
+function ConnectionStatus({ stateStore, deviceId }: { stateStore: StateStore; deviceId: string }) {
+  const [connection, setConnection] = useState(() => stateStore.get(deviceId).connection);
+
+  useEffect(() => {
+    setConnection(stateStore.get(deviceId).connection);
+    return stateStore.subscribe(deviceId, (state) => setConnection(state.connection));
+  }, [stateStore, deviceId]);
+
+  const color = connection === "connected" ? theme.statusOn : connection === "disconnected" ? theme.statusError : theme.statusOff;
+  const label = connection === "connected" ? "Connected" : connection === "disconnected" ? "Disconnected" : "Unknown";
+
+  return (
+    <View style={styles.connectionRow}>
+      <View style={[styles.connectionDot, { backgroundColor: color }]} />
+      <Text style={styles.connectionLabel}>{label}</Text>
+    </View>
+  );
+}
+
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
 export function DeviceListScreen({
   devices,
+  stateStore,
   onSelect,
   onAddDevice,
   onDiscover,
@@ -126,6 +150,7 @@ export function DeviceListScreen({
                 <Text style={styles.deviceMeta}>
                   {item.manufacturer} {item.model}
                 </Text>
+                <ConnectionStatus stateStore={stateStore} deviceId={item.id} />
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
             </Pressable>
@@ -254,6 +279,9 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1 },
   deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
   deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
+  connectionRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, marginTop: theme.spacing.xs },
+  connectionDot: { width: 7, height: 7, borderRadius: theme.radius.full },
+  connectionLabel: { color: theme.textTertiary, fontSize: theme.type.caption },
   emptyState: {
     alignItems: "center",
     gap: theme.spacing.sm,

@@ -306,6 +306,7 @@ export default function App() {
       {screen.name === "list" && (
         <DeviceListScreen
           devices={devices}
+          stateStore={runtime.stateStore}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
           onDiscover={() => setScreen({ name: "discover" })}
