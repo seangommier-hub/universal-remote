@@ -4,12 +4,18 @@ Date: 2026-09-10
 
 ## Status
 
-**Definitively abandoned 2026-09-10** — see the final update below.
-Confirmed across three independent Xcode 26.x releases, then closed by
-Sean's own explicit call once the real tradeoff (untested changes to the
-JSI bridge every native call depends on, with no Mac anywhere to verify
-them) was on the table: waiting for Apple Developer Program enrollment
-([[hearth-apple-developer-pending]]) is the only remaining path.
+**Reopened 2026-09-11** — see update below. Was "Definitively abandoned
+2026-09-10" (final update below) after three independent Xcode 26.x
+releases hit byte-identical compiler errors; closed at the time by Sean's
+own call to stop rather than ship untested JSI-bridge changes.
+
+Previously: **Definitively abandoned 2026-09-10** — see the final update
+below. Confirmed across three independent Xcode 26.x releases, then closed
+by Sean's own explicit call once the real tradeoff (untested changes to
+the JSI bridge every native call depends on, with no Mac anywhere to
+verify them) was on the table: waiting for Apple Developer Program
+enrollment ([[hearth-apple-developer-pending]]) is the only remaining
+path.
 
 ## Context
 
@@ -181,3 +187,34 @@ the strength of "maybe a newer Xcode fixed it" without new evidence (a
 changed dist-tag on `expo-modules-jsi`, a closed upstream issue, or
 Apple shipping a new major Xcode version, not just another 26.x point
 release) — three data points already rule that out for the 26.x line.
+
+## Update 2026-09-11: reopened — Sean accepts the untested-bridge-code risk
+
+**Question (ADR-GLOBAL-002):** Apple Developer approval still hadn't come
+through (`eas-cli device:list` still returns "No Apple teams found for
+account seangommier", re-checked live today) and Sean tried to open the
+app expecting the old Expo-Go workflow to still work — a mismatch with
+[[hearth-apple-developer-pending]]'s "wait for approval" status. Presented
+three options directly: re-check Apple approval, find a Mac/Xcode to
+verify on properly first, or resume the bit-pattern-pointer sideload fix
+and accept the "only verified by compiling in CI, never on a real device"
+risk that made Sean stop this exact path the night before.
+
+**Answer:** Sean chose to resume the sideload fix anyway, overriding his
+own prior "this needs to absolutely be airtight" stance from the
+2026-09-10 final update above.
+
+**Rationale (inferred from the choice, not separately stated):** getting
+something running on the phone now outweighs the residual risk, given no
+Mac is available to verify more safely and Apple approval has no known
+ETA.
+
+**How to apply:** Proceed with the previously-scoped, reasoning-sound fix
+— convert the risky pointers in `JavaScriptRuntime.swift` to their
+integer bit pattern before crossing into the `assumeIsolated` closure,
+reconstruct the real pointer inside. Do this on `feature/ios-unsigned-build`
+only, never `main`. This does not retroactively make the fix "verified on
+device" — that gap is known and accepted by Sean's own choice here, not
+resolved. If the app misbehaves after install (crashes, memory corruption,
+anything touching native bridge calls), that risk was disclosed and
+accepted at this decision point, not discovered fresh.
