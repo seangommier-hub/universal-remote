@@ -140,3 +140,41 @@ exact workflow is the fastest way to find out. Don't re-attempt patches
 project's real path to a real iOS app remains
 [[hearth-apple-developer-pending]] — check that first in any future
 session before returning to this one.
+
+## Update 2026-09-11: reopened by Sean, and the compiler bug is actually cleared
+
+`main`'s copy of this ADR has the full decision record for reopening this
+path (Sean chose to accept the "only verified by compiling in CI, never on
+a real device" risk he'd stopped on the night before — see that file for
+the ADR-GLOBAL-002 question/answer/rationale). Summarizing the technical
+result here since it happened on this branch:
+
+**The bit-pattern round-trip fix works.** Converted `thisPtr`/`argumentsPtr`/
+`resultPtr` at all 7 call sites to their integer bit pattern before crossing
+into `JavaScriptActor.assumeIsolated`, reconstructing the real pointer from
+those bits inside the closure (`.github/workflows/patch-expo-modules-jsi.py`).
+Pushed to this branch (commit `38df65c`) and the "Build unsigned .app" step
+— the one that failed identically across three separate Xcode 26.x releases
+— **passed**. The "sending 'x' risks causing data races" error is gone.
+
+Also fixed, discovered only because the build finally got this far: a
+latent Windows-only bug in the patch script's own `open()` calls (missing
+`encoding="utf-8"`, silently decoding via the Windows locale/cp1252 instead
+and mangling every em-dash in the source, breaking any match spanning one)
+— never surfaced before since CI runs on macOS. Fixed for reliable local
+testing; irrelevant to the CI runner itself.
+
+The build then hit a **new, unrelated, and trivial** failure: the packaging
+step's `find build/Build/Products -maxdepth 1 -name "*.app"` didn't find
+anything, because Xcode puts the `.app` one directory deeper, under
+`Release-iphoneos/`. This was never reached before (compile always failed
+first) — not a regression from anything above. Fixed by widening to
+`-maxdepth 2`.
+
+**Still open, not yet verified**: whether the packaging step now succeeds,
+whether AltServer can actually sign and install the resulting `.ipa` on
+Sean's iPhone without admin rights ([[hearth-windows-not-admin]]), and the
+accepted-but-real risk that this pointer round-trip has still only been
+checked by "compiles," never exercised on a real device through the JSI
+bridge. Next: confirm the CI run passes end-to-end and produces a
+downloadable `Hearth-unsigned.ipa` artifact.
