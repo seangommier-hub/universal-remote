@@ -167,6 +167,32 @@ testing.
 - [ ] **Sean: pair a real Hue bridge and light in the running app ("+ Add" → Philips Hue), confirm the light actually responds** — first real-hardware checkpoint for this integration; everything above has only been verified via `tsc`/`jest`/typecheck, never against a real bridge.
 - [ ] First cross-category proof: one `Room` screen (see Phase 7) showing a TV and a light together
 
+## Phase 5.5 — Smart outlets via SmartThings (ADR-HEARTH-042)
+
+Sean: "start thinking about and wiring up amazon alexa for the smart outlets, this should be
+something that is sso and easy for the user... the user should be able to add anything they want
+with a few clicks from their phone." Alexa has no public API for a third-party app to control a
+user's already-connected devices (confirmed via docs/DEVICE_FEASIBILITY.md, sourced from Amazon's
+own docs) — a dead end regardless of effort. SmartThings is the platform that actually delivers
+"SSO and easy," and — as an aggregator across many outlet/plug brands — is also the first real step
+toward "add anything with a few clicks" as a general pattern, not just outlets specifically.
+
+- [x] New `"outlet"` `DeviceCategory`.
+- [x] `smartThingsConfig.ts` (OAuth token storage, all-SecureStore), `SmartThingsClient.ts` (REST
+  wrapper: list/read/set switch state), `SmartThingsOutletDriver.ts` (`power` capability, proactive
+  token refresh). 207/207 tests, `tsc` clean.
+- [ ] **Sean: register an OAuth-integrated app at the SmartThings Developer Workspace** — the one
+  external dependency this can't proceed past unilaterally (same shape as Apple Developer Program
+  approval or the Cloudflare account earlier in this project). Note whether it registers as a
+  public/PKCE client or a confidential/secret client — that answer determines whether the pairing
+  screen's token exchange happens purely client-side or needs a small Family Command Center relay
+  endpoint (see ADR-HEARTH-042's Rationale section).
+- [ ] OAuth pairing screen (`expo-auth-session`, installed) + outlet picker (mirrors
+  `AddHueDeviceScreen.tsx`'s two-step shape), once the above is answered.
+- [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`, wire "+ Add SmartThings" into
+  `DeviceListScreen`.
+- [ ] First real-hardware checkpoint: Sean pairing a real SmartThings-connected outlet.
+
 ## Phase 6 — Robot vacuum
 
 - [ ] SwitchBot per feasibility doc's recommendation (the one vacuum ecosystem with a genuinely official public API)
