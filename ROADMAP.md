@@ -206,17 +206,24 @@ toward "add anything with a few clicks" as a general pattern, not just outlets s
   `smartthings-context-store.ts` (Supabase-backed `ContextStore`, service-role only) and a
   `mainPage` device picker (switch capability, multi-select), wired into the SmartApp instance
   along with `clientId`/`clientSecret` for automatic token refresh. 23/23 new tests, `tsc` clean.
+- [x] **Family Command Center proxy endpoints built**:
+  `GET /api/integrations/hearth/smartthings/outlets` (list, with state) and
+  `POST .../outlets/[deviceId]` (`{state: "on"|"off"}`), both gated by the same `HEARTH_API_TOKEN`
+  bearer every other Hearth route uses. Uses the SDK's `withContext()` pattern (token refresh
+  handled by the SDK itself via `clientId`/`clientSecret`, not reimplemented). Split the SmartApp
+  singleton into its own `smartthings-app.ts` module (ADR-GLOBAL-003) once this second concern
+  needed it. **Removed the now-confirmed-dead OAuth token-exchange endpoint and its lib/tests** —
+  a WEBHOOK_SMART_APP never receives an authorization code to exchange. 5 new tests, 139/139
+  project-wide, clean build.
 - [ ] **Blocked on Sean**: migration 0077 needs to run against the real Supabase project once —
   the session's own Chrome/GitHub login resolves to a different, empty Supabase org than the one
-  hosting this project's database, so it couldn't be applied directly. Once applied: rebuild and
-  restart the Family Command Center service (code is committed and pushed, just not live yet).
-- [ ] New Family Command Center proxy endpoints (e.g.
-  `GET/POST /api/integrations/hearth/smartthings/outlets`) using the stored context to list/control
-  devices on Hearth's behalf — Hearth's phone should never hold a SmartThings token directly under
-  this app type, so this replaces the old pairing-screen plan.
+  hosting this project's database, so it couldn't be applied directly (tried and ruled out: no
+  `supabase` CLI, no `psql`, no `.pgpass`, no Management API token anywhere on the Pi — see memory
+  `family_command_center_supabase_access.md`). Once applied: rebuild and restart the Family Command
+  Center service — code is committed, pushed, and tested, just not live yet, to avoid a real
+  INSTALL/UPDATE lifecycle event 500'ing against a table that doesn't exist yet.
 - [ ] Rewrite `SmartThingsOutletDriver.ts` to call the FCC proxy above instead of SmartThings
-  directly; delete `smartThingsConfig.ts` (wrong shape now, not adaptable) and the now-dead
-  token-exchange endpoint.
+  directly; delete `smartThingsConfig.ts` (wrong shape now, not adaptable).
 - [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`; `DeviceListScreen` gets a "Sync from
   SmartThings" action instead of a pairing/OAuth screen — there's nothing to pair from Hearth's
   side, only devices to pull in after Sean installs the app on the SmartThings side.
