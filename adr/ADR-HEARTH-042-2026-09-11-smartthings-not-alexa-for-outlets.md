@@ -115,3 +115,39 @@ pairing screen that kicks off authorization) depends on the answer.
   FCC-proxied token exchange), an outlet picker (mirroring
   `AddHueDeviceScreen.tsx`'s bridge-then-light-picker shape), and
   registering the driver in `bootstrap.ts`.
+
+## Update 2026-09-11 (same day, later): the open question is answered — confidential client
+
+Sean registered the "Hearth" Automation SmartApp in the SmartThings
+Developer Workspace. Its Target URL PING check passed against a new
+webhook built specifically for this in the Family Command Center codebase
+(`family-command-center/adr/0157-smartthings-smartapp-webhook.md`), reached
+through a new, path-scoped Cloudflare Tunnel running on the Pi itself
+(`fcc-webhook.carddna.app`, scoped to exactly that one route — nothing
+else on that household dashboard is internet-reachable).
+
+On save, SmartThings issued **both a Client ID and a Client Secret** —
+this is a confidential client, not public/PKCE. That settles this ADR's
+open question: `SmartThingsOutletDriver`'s injected `refreshAccessToken`
+must be implemented as a call to a small token-exchange endpoint on the
+Family Command Center, never a direct-from-phone PKCE exchange — a real
+client secret cannot safely live in a distributed mobile app binary.
+
+The Client ID/Secret were captured once (SmartThings shows the secret
+exactly one time) and stored directly in the Family Command Center's own
+`.env.local` (`SMARTTHINGS_CLIENT_ID`/`SMARTTHINGS_CLIENT_SECRET`) —
+never entered into Hearth's own codebase, never committed to git, matching
+the same app-level-secret convention adr/0157 already established for
+that project (the same category as `HEARTH_API_TOKEN`, not the
+per-household connector vault). The service was restarted to pick up the
+new variables; the webhook was re-verified live afterward (still `200`,
+challenge still echoed correctly).
+
+**Still open, now the only remaining piece**: the actual token-exchange
+endpoint on the Family Command Center (e.g.
+`POST /api/integrations/hearth/smartthings/token`, proxying to
+SmartThings' own OAuth token endpoint with the client secret attached
+server-side) doesn't exist yet — only the webhook lifecycle route does.
+Building it is comparatively small scoped work now that every upstream
+unknown (client type, credential storage location, app registration
+itself) is resolved.
