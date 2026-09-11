@@ -4,7 +4,7 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { LgUnreachableError, LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
+import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
 
@@ -167,15 +167,25 @@ export class LgWebOsDriver implements DeviceDriver {
   }
 
   /**
-   * Connects with one specific fallback: if the socket never opens at all (LgUnreachableError —
-   * as opposed to opening fine but the pairing handshake timing out) and this device carries a
-   * `hwaddr` (only true for devices added via Family Command Center discovery), checks whether
-   * the Center currently sees that MAC at a *different* IP than the one saved — real-hardware
-   * finding (2026-09-10), Sean directly, repeatedly: "it needs to never ever again disconnect...
-   * no matter what the device wifi is on." A device moving to a different WiFi network/VLAN in
-   * the house is exactly the case a saved static IP can never recover from on its own, no matter
-   * how patient the retry backoff is. Only retries once with the corrected address — a second
-   * real failure propagates normally into the caller's own backoff loop.
+   * Connects with one specific fallback: on ANY connect failure — not just `LgUnreachableError`
+   * (socket never opens) — if this device carries a `hwaddr` (only true for devices added via
+   * Family Command Center discovery), checks whether the Center currently sees that MAC at a
+   * *different* IP than the one saved.
+   *
+   * Real-hardware finding (2026-09-10), live during a "reconnect still isn't working" report:
+   * originally this only fired on `LgUnreachableError`, on the assumption a stale IP always means
+   * "nothing answers there anymore." Live logs proved that assumption wrong — a saved-but-now-wrong
+   * IP can have something else answer the WebSocket handshake (DHCP handed the freed address to a
+   * different device once the TV moved off it), which produces a normal pairing-timeout failure,
+   * not `LgUnreachableError`. That failure mode was invisible to this recovery path, so the driver
+   * kept retrying the same wrong IP forever instead of ever checking whether the TV had moved.
+   * Broadened to attempt re-discovery on any failure — safe to try unconditionally (same reasoning
+   * already applied to `HueLightDriver`'s equivalent recovery): if the MAC lookup returns the same
+   * IP already configured (the TV genuinely is still there and genuinely did forget its pairing),
+   * nothing changes and the original, correctly-worded error still surfaces unchanged.
+   *
+   * Only retries once with the corrected address — a second real failure propagates normally into
+   * the caller's own backoff loop.
    */
   private async connectClient(device: Device, config: LgWebOsConfig): Promise<{ client: LgWebOsClient; clientKey: string | undefined }> {
     const client = new LgWebOsClient(config);
@@ -184,8 +194,8 @@ export class LgWebOsDriver implements DeviceDriver {
       return { client, clientKey };
     } catch (err) {
       const hwaddr = device.config?.hwaddr;
-      if (!(err instanceof LgUnreachableError) || typeof hwaddr !== "string") throw err;
-      logger.warn(LOG_SCOPE, `${device.name} unreachable at ${config.ipAddress} — checking Family Command Center for its current address`);
+      if (typeof hwaddr !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
       const freshIp = await findCurrentIpByMac(hwaddr);
       if (!freshIp || freshIp === config.ipAddress) throw err; // nothing better found — surface the original failure
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);

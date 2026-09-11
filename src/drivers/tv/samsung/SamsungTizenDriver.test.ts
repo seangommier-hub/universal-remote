@@ -163,6 +163,44 @@ describe("SamsungTizenDriver", () => {
       expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.219");
     });
 
+    // Parity with LgWebOsDriver.test.ts's identical case (real-hardware finding, 2026-09-10): the
+    // old instanceof-gated re-discovery missed a stale IP where something else now answers the
+    // socket but never completes the pairing handshake — a plain timeout, not
+    // SamsungUnreachableError. Own device object, since the first test above already mutates
+    // `deviceWithMac` in place to "192.168.1.219".
+    test("re-discovery ALSO triggers on a pairing-timeout failure at the stale address, not just an outright-unreachable one", async () => {
+      jest.useFakeTimers();
+      try {
+        const deviceAtStaleIp: Device = { ...device, config: { ipAddress: "192.168.1.60", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+        mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+        (global.fetch as jest.Mock).mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.219" }] }),
+        });
+
+        const connectPromise = driver.connect(deviceAtStaleIp);
+
+        const staleSocket = MockWebSocket.latest();
+        staleSocket.simulateOpen(); // opens fine — something else answers, not the TV
+        await flushMicrotasks();
+        jest.advanceTimersByTime(30000); // ms.channel.connect never arrives — pairing-timeout, not SamsungUnreachableError
+        await flushMicrotasks(20);
+
+        const retrySocket = MockWebSocket.latest();
+        expect(retrySocket.url).toContain("192.168.1.219");
+        retrySocket.simulateOpen();
+        await flushMicrotasks();
+        retrySocket.simulateMessage({ event: "ms.channel.connect", data: {} });
+        await flushMicrotasks();
+
+        await connectPromise;
+        expect((await driver.getState(deviceAtStaleIp)).connection).toBe("connected");
+        expect(deviceAtStaleIp.config?.ipAddress).toBe("192.168.1.219");
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     test("a device with no saved hwaddr just fails normally — no lookup attempted", async () => {
       const manualDevice: Device = { ...device, config: { ipAddress: "192.168.1.60" } };
 

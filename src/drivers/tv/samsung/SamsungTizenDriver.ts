@@ -3,7 +3,7 @@ import { CapabilityId, NavigationDirection } from "../../../core/types/Capabilit
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
-import { SamsungTizenClient, SamsungTizenConfig, SamsungUnreachableError } from "./SamsungTizenClient";
+import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
 import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
@@ -175,7 +175,15 @@ export class SamsungTizenDriver implements DeviceDriver {
     }
   }
 
-  /** See LgWebOsDriver.ts's identical method and comment (ADR-HEARTH-017 update, 2026-09-10) — re-locates a discovered device by MAC through the Family Command Center if its saved IP stops opening a socket at all, and retries once at whatever current address it finds. */
+  /**
+   * See LgWebOsDriver.ts's identical method and comment (ADR-HEARTH-017/021 updates,
+   * 2026-09-10) — re-locates a discovered device by MAC through the Family Command Center on ANY
+   * connect failure, not just `SamsungUnreachableError`, and retries once at whatever current
+   * address it finds. Broadened for the same reason as LG's parity fix: a stale saved IP can have
+   * something else answer the socket (DHCP reassigning the freed address once the TV actually
+   * moved), producing a failure that was never `SamsungUnreachableError` — gating recovery on that
+   * one error type left this driver retrying the same wrong address forever in exactly that case.
+   */
   private async connectClient(device: Device, config: SamsungTizenConfig): Promise<SamsungTizenClient> {
     const client = new SamsungTizenClient(config);
     try {
@@ -183,8 +191,8 @@ export class SamsungTizenDriver implements DeviceDriver {
       return client;
     } catch (err) {
       const hwaddr = device.config?.hwaddr;
-      if (!(err instanceof SamsungUnreachableError) || typeof hwaddr !== "string") throw err;
-      logger.warn(LOG_SCOPE, `${device.name} unreachable at ${config.ipAddress} — checking Family Command Center for its current address`);
+      if (typeof hwaddr !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
       const freshIp = await findCurrentIpByMac(hwaddr);
       if (!freshIp || freshIp === config.ipAddress) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);

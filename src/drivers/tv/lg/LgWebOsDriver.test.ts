@@ -314,6 +314,55 @@ describe("LgWebOsDriver", () => {
       expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218"); // updated in place, same as a fresh client-key
     });
 
+    // Real-hardware finding (2026-09-10), live during a "reconnect still isn't working" report:
+    // this recovery originally only fired on LgUnreachableError (socket never opens). Live logs
+    // showed the actual failure at the stale IP was a normal pairing-timeout — the socket opened
+    // fine (something else now answers at that address after DHCP handed it out again once the
+    // TV left) but never completed the SSAP register handshake. That was invisible to the old
+    // instanceof check, so the driver just retried the same wrong IP forever. Uses its own device
+    // object rather than `deviceWithMac` above, which the first test in this describe already
+    // mutates in place to "192.168.1.218" — reusing it here would start from the wrong premise.
+    test("re-discovery ALSO triggers on a pairing-timeout failure at the stale address, not just an outright-unreachable one", async () => {
+      jest.useFakeTimers();
+      try {
+        const deviceAtStaleIp: Device = { ...device, config: { ipAddress: "10.20.30.40", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+        mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+        (global.fetch as jest.Mock).mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.218" }] }),
+        });
+
+        const connectPromise = driver.connect(deviceAtStaleIp);
+
+        const staleSocket = MockWebSocket.latest();
+        expect(staleSocket.url).toBe("wss://10.20.30.40:3001");
+        staleSocket.simulateOpen(); // opens fine — something else answers, not the TV
+        await flushMicrotasks();
+        jest.advanceTimersByTime(30000); // register never arrives — pairing-timeout, not LgUnreachableError
+        await flushMicrotasks(20);
+
+        const retrySocket = MockWebSocket.latest();
+        expect(retrySocket.url).toBe("wss://192.168.1.218:3001");
+        retrySocket.simulateOpen();
+        await flushMicrotasks();
+        const registerSent = JSON.parse(retrySocket.sentMessages[0]);
+        retrySocket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "rediscovered-key-2" } });
+        await flushMicrotasks();
+        const volumeRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+        retrySocket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 5, mute: false } });
+        await flushMicrotasks();
+        const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+        retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+        await flushMicrotasks();
+
+        await connectPromise;
+        expect((await driver.getState(deviceAtStaleIp)).connection).toBe("connected");
+        expect(deviceAtStaleIp.config?.ipAddress).toBe("192.168.1.218");
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     test("a device with no saved hwaddr (manually added, not discovered) just fails normally — no lookup attempted", async () => {
       const manualDevice: Device = { ...device, config: { ipAddress: "10.20.30.40" } }; // no hwaddr
 
