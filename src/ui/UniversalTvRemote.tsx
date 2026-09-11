@@ -144,10 +144,21 @@ const DPAD_HEIGHT = theme.circleDiameter.sm * 2 + theme.circleDiameter.lg + them
 // floating circles with a label between them, on the card's own plain background. Giving each
 // rocker its own matching disc (same radius/border/surface treatment) makes all three columns
 // read as one consistent family of controls instead of one styled differently from the other
-// two. theme.circleDiameter.lg (68) reused rather than a new magic number — already the
-// diameter of the d-pad's own Select button, a natural, already-established width for a control
-// column built around 52px buttons.
-const ROCKER_WIDTH = theme.circleDiameter.lg;
+// two.
+//
+// Real-device regression, caught same day: the hub row's total width was already exactly
+// tuned to fit a 375pt screen (ADR-HEARTH-016: "316px... ~11px to spare") assuming each rocker
+// was exactly as wide as its own 52px button (no extra container width, just centered content).
+// An earlier version of this fix used circleDiameter.lg (68) per rocker, adding ~32px total
+// across both rockers — 21px past that budget, which is exactly the kind of overflow that pushes
+// a row into wrapping onto a second line ("now the icons at the bottom span two lines"). Using
+// circleDiameter.sm (52, the button's own diameter) instead keeps the disc exactly as wide as
+// the button it holds — same total hub-row width as before this whole rocker-disc change, so the
+// original, already-verified-fitting arithmetic is preserved exactly. The button sits tangent to
+// the pill's own rounded sides, the same "arrow tangent to its disc's rim" relationship the
+// d-pad's own arrows already have to their disc (ADR-HEARTH-037) — a deliberate visual echo, not
+// a compromise.
+const ROCKER_WIDTH = theme.circleDiameter.sm;
 
 const KEYPAD_ROWS = [
   ["1", "2", "3"],
@@ -955,7 +966,18 @@ const styles = StyleSheet.create({
   // already exceeds a 375pt screen's available width before a single gap is added, let alone at
   // the old spacing.xl gaps. flexWrap lets a row that's grown past its device's original 4-item
   // assumption fold onto a second line instead of overflowing into whatever renders next.
-  utilityRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
+  //
+  // Real-device regression (2026-09-11): "i want the remote page to be 1 page, now the icons at
+  // the bottom span two lines" — checked the arithmetic this row was never actually verified
+  // against, unlike the hub row's own cited "316px, ~11px to spare" calculation. At the previous
+  // spacing.lg (16) gap, even LG's plain 4-item set (mute/back/home/menu, no settings/sleepTimer
+  // at all) needs 4×64 + 3×16 = 304px against this card's ~295px available content width (375
+  // baseline − 32px outer content padding − 48px utilityCard's own padding) — 9px over budget,
+  // enough to force an unwanted wrap for a device that was never meant to need one. Tightened to
+  // spacing.sm (8): 4×64 + 3×8 = 280px, comfortably under budget. Samsung's 6-item case (already
+  // over budget even at 52px alone) still wraps by design — that's expected, not a bug; only the
+  // unintended LG-sized wrap is what this fixes.
+  utilityRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, alignItems: "flex-start", justifyContent: "center" },
   // Real-device finding (2026-09-10): "the settings label/button is still overlapping" — an
   // unconstrained-width column meant a longer caption ("Settings") could wrap to a second line
   // while its siblings ("Mute", "Home") stayed single-line, giving that one item a different
