@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -49,6 +50,10 @@ export function DeviceListScreen({
   onRemove,
   onEditAddress,
 }: DeviceListScreenProps) {
+  // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
+  // iPhone notch never accounted for Android's own, differently-sized status bar.
+  const insets = useSafeAreaInsets();
+
   function showDeviceActions(device: Device) {
     const hasAddress = typeof device.config?.ipAddress === "string";
     Alert.alert(device.name, undefined, [
@@ -66,7 +71,7 @@ export function DeviceListScreen({
     ]);
   }
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.header}>
         <View style={styles.brandMark}>
           <View style={styles.emberDot} />
@@ -158,7 +163,7 @@ export function DeviceListScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background, paddingTop: 64, paddingHorizontal: theme.spacing.xl },
+  container: { flex: 1, backgroundColor: theme.background, paddingHorizontal: theme.spacing.xl },
   header: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: theme.spacing.xl },
   headerText: { flex: 1 },
   fccButton: {

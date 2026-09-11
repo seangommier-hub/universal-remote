@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
@@ -23,6 +24,7 @@ interface AddLgDeviceScreenProps {
  * relay configured there's nothing to fall back to.
  */
 export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDeviceScreenProps) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState("LG TV");
   const [ipAddress, setIpAddress] = useState("");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
@@ -61,7 +63,7 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded }: AddLgDe
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />

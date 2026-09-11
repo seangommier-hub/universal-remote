@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { logger } from "../core/logging/logger";
 import { CapabilityButton } from "./CapabilityButton";
@@ -57,6 +58,9 @@ function parsePairingPayload(raw: string): { baseUrl: string; token: string } | 
  * for a non-technical household member. Manual entry stays available as a fallback.
  */
 export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onUseManualEntry }: ScanFamilyCommandCenterQrScreenProps) {
+  // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
+  // iPhone notch never accounted for Android's own, differently-sized status bar.
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [status, setStatus] = useState<ScanStatus>("scanning");
   const [errorMessage, setErrorMessage] = useState("");
@@ -129,7 +133,7 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onUseManual
       />
 
       <View style={styles.overlay}>
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, { paddingTop: insets.top + theme.spacing.lg }]}>
           <CapabilityButton icon="chevron-back" label="Cancel" variant="ghost" onPress={onCancel} containerStyle={styles.cancelButton} />
         </View>
 
@@ -180,7 +184,7 @@ const styles = StyleSheet.create({
   permissionTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
   permissionBody: { color: theme.textSecondary, fontSize: theme.type.label, textAlign: "center" },
   overlay: { flex: 1, justifyContent: "space-between", backgroundColor: "rgba(0,0,0,0.4)" },
-  headerRow: { paddingTop: 56, paddingHorizontal: theme.spacing.lg },
+  headerRow: { paddingHorizontal: theme.spacing.lg },
   // The default ghost-button border (theme.border, a subtle navy) is tuned for the app's own
   // dark surfaces — over an unpredictable live camera feed it can read as a stray dark smudge
   // instead of a button. A translucent-black pill with a visible white border stays legible

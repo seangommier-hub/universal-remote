@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
@@ -16,6 +17,7 @@ interface AddRokuDeviceScreenProps {
 
 /** Pairs a real Roku device by IP — no PSK, no on-screen approval, no pairing wait (ECP has no auth). */
 export function AddRokuDeviceScreen({ driverRegistry, onCancel, onAdded }: AddRokuDeviceScreenProps) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState("Roku");
   const [ipAddress, setIpAddress] = useState("");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
@@ -54,7 +56,7 @@ export function AddRokuDeviceScreen({ driverRegistry, onCancel, onAdded }: AddRo
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="play-circle-outline" size={20} color={theme.accentEnd} />

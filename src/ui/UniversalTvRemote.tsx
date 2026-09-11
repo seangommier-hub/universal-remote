@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
 import { CapabilityId, StreamingService } from "../core/types/Capability";
@@ -131,6 +132,9 @@ const MAX_CHANNEL_DIGITS = 4; // no real-world channel number needs more than th
  * device's declared capabilities — this file has no Samsung- or LG-specific logic at all.
  */
 export function UniversalTvRemote({ device, commandEngine, stateStore, onReconnect, onRename, onBack }: UniversalTvRemoteProps) {
+  // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
+  // iPhone notch never accounted for Android's own, differently-sized status bar.
+  const insets = useSafeAreaInsets();
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [channelInput, setChannelInput] = useState("");
   const [editingName, setEditingName] = useState(false);
@@ -260,7 +264,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const controlsDisabled = !isConnected;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
       {/* Sean, directly: "power off should be top left or right." Sourced: LG's own official
           ThinQ remote app puts Power in a compact top row alongside volume/mute/home, not as a
           large standalone button — every physical remote and every real remote app treats power
@@ -428,6 +432,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 label="Up"
                 onPress={() => send("directionalNavigation", { direction: "up" })}
                 disabled={controlsDisabled}
+                containerStyle={styles.dpadArrow}
               />
               <View style={styles.dpadMiddleRow}>
                 <CapabilityButton
@@ -436,6 +441,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   label="Left"
                   onPress={() => send("directionalNavigation", { direction: "left" })}
                   disabled={controlsDisabled}
+                  containerStyle={styles.dpadArrow}
                 />
                 {has(device, "select") ? (
                   <CapabilityButton
@@ -456,6 +462,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   label="Right"
                   onPress={() => send("directionalNavigation", { direction: "right" })}
                   disabled={controlsDisabled}
+                  containerStyle={styles.dpadArrow}
                 />
               </View>
               <CapabilityButton
@@ -464,6 +471,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 label="Down"
                 onPress={() => send("directionalNavigation", { direction: "down" })}
                 disabled={controlsDisabled}
+                containerStyle={styles.dpadArrow}
               />
             </View>
             {(has(device, "channelUp") || has(device, "channelDown")) && (
@@ -665,9 +673,10 @@ const styles = StyleSheet.create({
   // overflow:hidden. Caught by building an exact-dimension reconstruction and doing the actual
   // arithmetic, not by eyeballing it. Tightened to spacing.lg — a physical remote's controls sit
   // close together anyway, so tighter edges read as intentional, not cramped.
-  // paddingTop restores the top safe-area clearance that used to live in App.tsx's now-removed
-  // `backRow` wrapper — the Back button moved into headerRow below (real-device feedback,
-  // 2026-09-10: "tv name should be next to the back button"). No flexGrow here — it existed only
+  // Top safe-area clearance (now computed per-device via useSafeAreaInsets, applied inline at
+  // the call site) restores what used to live in App.tsx's now-removed `backRow` wrapper — the
+  // Back button moved into headerRow below (real-device feedback, 2026-09-10: "tv name should be
+  // next to the back button"). No flexGrow here — it existed only
   // to support a flex:1 bottom-anchor spacer that's since been removed (real-device finding: it
   // pushed the Input card off the scrollable area).
   // gap tightened from spacing.md to spacing.sm — real-device ask (2026-09-10): "make it one page,
@@ -675,7 +684,7 @@ const styles = StyleSheet.create({
   // streaming, input, utility row) adds up to real height across six-plus stacked cards; every
   // gap between them is one of a handful of places left to reclaim without shrinking a touch
   // target or undoing spacing just asked for elsewhere (the utility card's own padding).
-  content: { padding: theme.spacing.lg, paddingTop: 56, gap: theme.spacing.sm },
+  content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   headerDivider: { color: theme.border, fontSize: theme.type.title, fontWeight: "300" },
   headerText: { flex: 1 },
@@ -815,7 +824,15 @@ const styles = StyleSheet.create({
   // is a fixed 4-entry list), and the arithmetic (4 × 22% + 3 gaps of spacing.sm) fits with real
   // margin on a 375pt screen — verified by calculation, not assumed, same discipline as the hub
   // row's own overflow fix (ADR-HEARTH-016).
-  streamingRow: { flexDirection: "row", gap: theme.spacing.sm },
+  // Real-device finding (2026-09-10): "things need to be spread out and spaced properly" —
+  // a fixed spacing.sm (8px) gap between four fixed-22%-width tiles left ~12% of the row's
+  // width unused on the right, so the tiles read as clustered to the left rather than filling
+  // the card. justifyContent:"space-between" distributes that leftover width as the gap
+  // between tiles instead of leaving it stranded — doesn't touch each tile's own width/sizing
+  // (still fixed %, no flexGrow, no flexWrap), so the "boxes not the same size" bug the comment
+  // below describes can't recur; that bug was specifically about flexGrow+flexWrap sizing, not
+  // about how the parent row distributes its own free space.
+  streamingRow: { flexDirection: "row", justifyContent: "space-between" },
   streamingTile: {
     width: "22%",
     aspectRatio: 1.6,
@@ -828,7 +845,38 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.35 },
   keypadHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   keypadDisplay: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700", letterSpacing: 2, minWidth: 48, textAlign: "right" },
-  dpad: { alignItems: "center", gap: theme.spacing.md },
+  // Design pass (2026-09-10) on "the arrows on the front page" — four
+  // individually-boxed circle buttons in a plus shape read as generic UI
+  // chrome, indistinguishable from every other button on the screen, for
+  // what's actually the most-used control in the whole app. A real remote's
+  // d-pad is one physical wheel, not four separate switches. DPAD_HEIGHT
+  // (196px) is exactly the width of the middle row too (sm+md+lg+md+sm =
+  // 52+12+68+12+52 = 196) — not a coincidence, the existing rocker-column
+  // alignment fix already made this container a perfect square — so giving
+  // it that same fixed size + full border-radius turns it into a circular
+  // disc the arrows sit ON, with each arrow's outer edge landing exactly
+  // tangent to the disc's rim (verified by the same arithmetic: an arrow
+  // centered 72px from the disc's center, with its own 26px radius, reaches
+  // exactly 98px = the disc's own radius). The select button stays boxed
+  // and accent-colored — the one control that should still stand out.
+  dpad: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.md,
+    width: DPAD_HEIGHT,
+    height: DPAD_HEIGHT,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.surfaceRaised,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
   dpadMiddleRow: { flexDirection: "row", gap: theme.spacing.md, alignItems: "center" },
   dpadCenterSpacer: { width: theme.circleDiameter.sm, height: theme.circleDiameter.sm },
+  // Removes the individual button chrome (background+border) CapabilityButton
+  // normally draws for shape="circle" — on the shared disc above, a second
+  // ring around each arrow would compete with the disc's own edge instead of
+  // reading as one wheel. containerStyle is CapabilityButton's existing
+  // escape hatch (built for a non-default background), applied here instead
+  // of adding a new variant since this is the only call site that needs it.
+  dpadArrow: { backgroundColor: "transparent", borderWidth: 0 },
 });

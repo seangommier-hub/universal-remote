@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
 import { CapabilityId } from "../core/types/Capability";
@@ -42,6 +43,9 @@ function has(device: Device, capability: CapabilityId): boolean {
 
 /** One light's controls (ADR-HEARTH-032) — power, brightness, color. Deliberately not a scaled-down UniversalTvRemote: a light's capability set (power/setBrightness/setColor) shares no real controls with a TV remote's, so reusing that screen would mean hiding almost everything in it rather than actually fitting the device. */
 export function LightControlScreen({ device, commandEngine, stateStore, onReconnect, onRename, onBack }: LightControlScreenProps) {
+  // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
+  // iPhone notch never accounted for Android's own, differently-sized status bar.
+  const insets = useSafeAreaInsets();
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(device.name);
@@ -106,7 +110,7 @@ export function LightControlScreen({ device, commandEngine, stateStore, onReconn
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={8}>
           <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
@@ -200,7 +204,7 @@ export function LightControlScreen({ device, commandEngine, stateStore, onReconn
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
-  content: { padding: theme.spacing.lg, paddingTop: 56, gap: theme.spacing.sm },
+  content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   headerDivider: { color: theme.textTertiary, fontSize: theme.type.subtitle },
   headerText: { flex: 1 },

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { HueBridgeClient, HuePairingPendingError } from "../drivers/lighting/hue/HueBridgeClient";
@@ -31,6 +32,7 @@ type Phase =
  * adding a light are two distinct steps here.
  */
 export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHueDeviceScreenProps) {
+  const insets = useSafeAreaInsets();
   const [bridgeIpAddress, setBridgeIpAddress] = useState("");
   const [phase, setPhase] = useState<Phase>({ name: "pairing" });
 
@@ -87,7 +89,7 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHue
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
           <View style={styles.iconBadge}>
             <Ionicons name="bulb-outline" size={20} color={theme.accentEnd} />

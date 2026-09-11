@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
@@ -232,10 +233,12 @@ export default function App() {
 
   if (!ready) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={theme.accentEnd} size="large" />
-        <StatusBar style="light" />
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.loading}>
+          <ActivityIndicator color={theme.accentEnd} size="large" />
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
@@ -246,6 +249,7 @@ export default function App() {
   };
 
   return (
+    <SafeAreaProvider>
     <View style={styles.container}>
       {screen.name === "remote" && screen.device.category === "lighting" && (
         <LightControlScreen
@@ -313,6 +317,7 @@ export default function App() {
       )}
       <StatusBar style="light" />
     </View>
+    </SafeAreaProvider>
   );
 }
 

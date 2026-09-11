@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
@@ -19,6 +20,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * whatever was typed and failing silently the next time Discover runs.
  */
 export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyCommandCenterSettingsScreenProps) {
+  const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("http://192.168.1.172:3210");
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
@@ -48,7 +50,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
   const canSubmit = baseUrl.trim().length > 0 && token.trim().length > 0 && status !== "checking";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="link-outline" size={20} color={theme.accentEnd} />

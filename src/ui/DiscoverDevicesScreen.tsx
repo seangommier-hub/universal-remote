@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
@@ -26,6 +27,12 @@ type ConnectState = "idle" | "connecting" | "error";
  * rather than silently hidden.
  */
 export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpenSettings }: DiscoverDevicesScreenProps) {
+  // Real-hardware finding (2026-09-10): every screen in this app used a hardcoded paddingTop
+  // (56 here) guessed to clear an iPhone's notch — never verified against Android, where the
+  // status bar's actual height varies by device/emulator and can be taller than that guess,
+  // pushing this screen's own header (title + Cancel) up underneath it. Now derived from the
+  // real device inset via react-native-safe-area-context instead of a fixed number.
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<"scanning" | "done" | "error">("scanning");
   const [errorMessage, setErrorMessage] = useState("");
   const [found, setFound] = useState<DiscoveredDevice[]>([]);
@@ -88,7 +95,7 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
   if (status === "error") {
     const notConfigured = errorMessage.includes("isn't connected yet");
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.centered}>
+      <ScrollView style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]} contentContainerStyle={styles.centered}>
         <Ionicons name="wifi-outline" size={40} color={theme.textTertiary} />
         <Text style={styles.errorTitle}>Couldn't scan your network</Text>
         <Text style={styles.errorBody}>{errorMessage}</Text>
@@ -105,7 +112,7 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Discover Devices</Text>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} />
@@ -164,7 +171,7 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background, paddingTop: 56, paddingHorizontal: theme.spacing.xl },
+  container: { flex: 1, backgroundColor: theme.background, paddingHorizontal: theme.spacing.xl },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing.xs },
   title: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700" },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.label, marginBottom: theme.spacing.lg },

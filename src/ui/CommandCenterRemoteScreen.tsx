@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { buildVncRelayUrl } from "../discovery/familyCommandCenterVncRelay";
 import { RfbButton, RfbClient, RfbServerInfo } from "../drivers/inputRelay/vnc/RfbClient";
@@ -37,6 +38,9 @@ const KEYBOARD_ROWS = [
  * the ADR for why that's the right scope for "no keyboard/mouse needed," not a corner cut.
  */
 export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenProps) {
+  // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
+  // iPhone notch never accounted for Android's own, differently-sized status bar.
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [errorMessage, setErrorMessage] = useState("");
   const [serverInfo, setServerInfo] = useState<RfbServerInfo | null>(null);
@@ -143,7 +147,7 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" hitSlop={8}>
           <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
@@ -268,7 +272,7 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background, padding: theme.spacing.lg, paddingTop: 56, gap: theme.spacing.md },
+  container: { flex: 1, backgroundColor: theme.background, padding: theme.spacing.lg, gap: theme.spacing.md },
   headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
   headerDivider: { color: theme.textTertiary, fontSize: theme.type.subtitle },
   headerText: { flex: 1 },

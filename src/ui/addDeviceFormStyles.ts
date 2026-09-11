@@ -9,7 +9,9 @@ import { theme } from "./theme";
  */
 export const addDeviceFormStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
-  content: { padding: theme.spacing.xl, paddingTop: 64, gap: theme.spacing.sm },
+  // Top safe-area clearance is applied dynamically per-screen (useSafeAreaInsets), not baked in
+  // here — a fixed guess never accounted for Android's own, differently-sized status bar.
+  content: { padding: theme.spacing.xl, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: 4 },
   iconBadge: {
     width: 40,

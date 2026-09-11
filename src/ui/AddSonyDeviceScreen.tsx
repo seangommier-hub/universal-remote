@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
@@ -21,6 +22,7 @@ interface AddSonyDeviceScreenProps {
  * connection before accepting the device; never adds a device it hasn't actually reached.
  */
 export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSonyDeviceScreenProps) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState("Sony TV");
   const [ipAddress, setIpAddress] = useState("");
   const [psk, setPsk] = useState("");
@@ -64,7 +66,7 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
           <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />
