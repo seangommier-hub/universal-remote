@@ -18,6 +18,19 @@ interface CapabilityButtonProps {
   size?: "sm" | "lg";
   /** Escape hatch for a call site whose background isn't the app's own surface colors (e.g. a live camera feed) — the built-in variants assume they're sitting on `theme.background`/`theme.surface`. Merged in last, so it can override anything. */
   containerStyle?: StyleProp<ViewStyle>;
+  /** Device-width-derived scale factor (see useResponsiveScale.ts), applied to a circle
+   * button's diameter and icon size only — defaults to 1 (the original, unscaled size), so
+   * every existing call site across the app renders exactly as before this prop existed. Only
+   * a screen that's actually adopted responsive scaling (currently just the remote screen's
+   * d-pad/rocker/keypad/utility controls) passes a real value. No effect on shape="pill". */
+  scale?: number;
+  /** Caps the label to one line, shrinking to fit rather than wrapping — for a fixed-width grid
+   * (e.g. an input-selection tile) where a longer label wrapping to two lines would give that
+   * one button a different height than its siblings, the same class of bug already fixed for
+   * the utility row. Undefined (the default) renders exactly as before this prop existed — every
+   * existing call site is unaffected. No effect on shape="circle", which is a single glyph/digit
+   * and never has this problem. */
+  numberOfLines?: number;
 }
 
 /** A single tappable control in a Universal remote screen. Rendering which of these appear is the UI's only per-device logic — everything else comes from the device's declared capabilities. */
@@ -30,10 +43,22 @@ export function CapabilityButton({
   shape = "pill",
   size = "sm",
   containerStyle,
+  scale = 1,
+  numberOfLines,
 }: CapabilityButtonProps) {
   const isCircle = shape === "circle";
   const isLarge = isCircle && size === "lg";
   const iconColor = variant === "accent" ? theme.background : disabled ? theme.textTertiary : theme.textPrimary;
+  // Only computed (and only ever applied) for a circle whose caller passed a
+  // real scale -- scale===1 renders byte-for-byte the same style array as
+  // before this prop existed, so no existing call site's layout changes.
+  const scaledCircleStyle =
+    isCircle && scale !== 1
+      ? (() => {
+          const diameter = (isLarge ? theme.circleDiameter.lg : theme.circleDiameter.sm) * scale;
+          return { width: diameter, height: diameter, borderRadius: diameter / 2 };
+        })()
+      : undefined;
 
   return (
     <Pressable
@@ -49,6 +74,7 @@ export function CapabilityButton({
         variant === "ghost" && styles.ghostButton,
         pressed && styles.pressed,
         disabled && styles.disabled,
+        scaledCircleStyle,
         containerStyle,
       ]}
     >
@@ -56,7 +82,7 @@ export function CapabilityButton({
         {icon && (
           <Ionicons
             name={icon}
-            size={isLarge ? 28 : isCircle ? 22 : 18}
+            size={(isLarge ? 28 : isCircle ? 22 : 18) * (isCircle ? scale : 1)}
             color={iconColor}
             style={!isCircle && label ? styles.iconWithLabel : undefined}
           />
@@ -71,6 +97,9 @@ export function CapabilityButton({
               variant === "ghost" && styles.ghostLabel,
               disabled && styles.disabledLabel,
             ]}
+            numberOfLines={numberOfLines}
+            adjustsFontSizeToFit={numberOfLines !== undefined}
+            minimumFontScale={numberOfLines !== undefined ? 0.75 : undefined}
           >
             {label}
           </Text>

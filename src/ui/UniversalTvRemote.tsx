@@ -9,6 +9,7 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
+import { useResponsiveScale } from "./useResponsiveScale";
 
 interface UniversalTvRemoteProps {
   device: Device;
@@ -44,16 +45,18 @@ function UtilityAction({
   onPress,
   disabled,
   active,
+  scale,
 }: {
   icon: IconName;
   label: string;
   onPress: () => void;
   disabled: boolean;
   active?: boolean;
+  scale: number;
 }) {
   return (
-    <View style={styles.utilityAction}>
-      <CapabilityButton shape="circle" icon={icon} label={label} variant={active ? "accent" : "ghost"} onPress={onPress} disabled={disabled} />
+    <View style={[styles.utilityAction, { width: 64 * scale }]}>
+      <CapabilityButton shape="circle" scale={scale} icon={icon} label={label} variant={active ? "accent" : "ghost"} onPress={onPress} disabled={disabled} />
       <Text style={styles.utilityActionLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -70,9 +73,17 @@ function UtilityAction({
 // assumes, and no amount of wrapper/box fixing can correct that from outside the font. A text
 // wordmark, like the other three tiles already use and have now had their alignment confirmed
 // fixed, is the more reliable choice — one rendering mechanism for all four tiles, not two.
-const STREAMING_APPS: { service: StreamingService; label: string; bg: string; fg: string }[] = [
+// Real-device ask (2026-09-10): "adjust the size of the hulu button to match" — all four tiles
+// are already the exact same box size (styles.streamingTile, same width/aspectRatio for all),
+// so this was never about the box; it's the wordmark itself. Hulu's real logotype is short and
+// entirely lowercase (no tall ascenders like "l" aside, no caps), which reads visually smaller
+// than "NETFLIX"/"YouTube" at the identical declared font size — a real typographic effect
+// (x-height vs. cap-height), not a sizing bug in the layout. `fontScale` (default 1, so every
+// other tile renders exactly as before) lets one wordmark compensate without touching the shared
+// box/tile styling every entry uses.
+const STREAMING_APPS: { service: StreamingService; label: string; bg: string; fg: string; fontScale?: number }[] = [
   { service: "netflix", label: "NETFLIX", bg: "#141414", fg: "#E50914" },
-  { service: "hulu", label: "hulu", bg: "#1CE783", fg: "#0B0B0B" },
+  { service: "hulu", label: "hulu", bg: "#1CE783", fg: "#0B0B0B", fontScale: 1.35 },
   { service: "primeVideo", label: "prime video", bg: "#0F171E", fg: "#00A8E1" },
   { service: "youtube", label: "YouTube", bg: "#141414", fg: "#FF0000" },
 ];
@@ -81,12 +92,14 @@ function StreamingAppTile({
   label,
   bg,
   fg,
+  fontScale = 1,
   onPress,
   disabled,
 }: {
   label: string;
   bg: string;
   fg: string;
+  fontScale?: number;
   onPress: () => void;
   disabled: boolean;
 }) {
@@ -105,7 +118,12 @@ function StreamingAppTile({
           adjustsFontSizeToFit forces every wordmark onto one line, shrinking down rather than
           wrapping, so centering is guaranteed the same way for all four tiles now that they all
           go through this one rendering path. */}
-      <Text style={[styles.streamingTileWordmark, { color: fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+      <Text
+        style={[styles.streamingTileWordmark, { color: fg, fontSize: theme.type.label * fontScale }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
         {label}
       </Text>
     </Pressable>
@@ -119,6 +137,17 @@ function StreamingAppTile({
 // their up/down buttons sat ~30px away from the d-pad's own up/down buttons instead of aligning
 // with them. A real remote's side rockers align top-to-bottom with its d-pad; this one didn't.
 const DPAD_HEIGHT = theme.circleDiameter.sm * 2 + theme.circleDiameter.lg + theme.spacing.md * 2;
+// Real-device ask (2026-09-10): "fix the navigation of the up down arrows for volume and
+// navigation to be more neatly oriented." The rockers already align top-to-bottom with the
+// d-pad (the height-matching fix above) — what's left is that the d-pad reads as one wheel
+// (ADR-HEARTH-037: a shared disc the arrows sit ON) while the Vol/Ch rockers are still two bare
+// floating circles with a label between them, on the card's own plain background. Giving each
+// rocker its own matching disc (same radius/border/surface treatment) makes all three columns
+// read as one consistent family of controls instead of one styled differently from the other
+// two. theme.circleDiameter.lg (68) reused rather than a new magic number — already the
+// diameter of the d-pad's own Select button, a natural, already-established width for a control
+// column built around 52px buttons.
+const ROCKER_WIDTH = theme.circleDiameter.lg;
 
 const KEYPAD_ROWS = [
   ["1", "2", "3"],
@@ -135,6 +164,21 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
+  // Real-device design pass (2026-09-11), Sean directly: "dynamic for any
+  // device." Scales every circular touch target on this screen (d-pad,
+  // rockers, keypad, utility row) relative to the actual window width
+  // instead of the fixed-pixel sizes they were tuned against on one
+  // reference screen — see useResponsiveScale.ts for why this is the
+  // right axis to scale (and font size/spacing deliberately are not).
+  const scale = useResponsiveScale();
+  // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
+  // (the "196 = 196, arrows land tangent to the disc" math in the styles
+  // below is derived from it) -- this is that same value scaled for the
+  // current device, applied at each JSX call site that needs a real
+  // (non-percentage) pixel size, same reasoning as CapabilityButton's own
+  // scale prop.
+  const scaledDpadSize = DPAD_HEIGHT * scale;
+  const scaledSmDiameter = theme.circleDiameter.sm * scale;
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [channelInput, setChannelInput] = useState("");
   const [editingName, setEditingName] = useState(false);
@@ -306,6 +350,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         {has(device, "power") && (
           <CapabilityButton
             shape="circle"
+            scale={scale}
             icon="power"
             label="Power"
             variant="accent"
@@ -316,6 +361,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         {has(device, "powerOn") && (
           <CapabilityButton
             shape="circle"
+            scale={scale}
             icon="power"
             label="Power On"
             variant="accent"
@@ -326,6 +372,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         {has(device, "powerOff") && (
           <CapabilityButton
             shape="circle"
+            scale={scale}
             icon="power-outline"
             label="Power Off"
             variant="ghost"
@@ -415,19 +462,36 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         <View style={styles.hubCard}>
           <View style={styles.hubRow}>
             {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-              <View style={styles.rockerColumn}>
+              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
                 {has(device, "volumeUp") && (
-                  <CapabilityButton shape="circle" icon="chevron-up" label="Vol +" onPress={() => send("volumeUp")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-up"
+                    label="Vol +"
+                    onPress={() => send("volumeUp")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
                 <Text style={styles.rockerColumnLabel}>Vol</Text>
                 {has(device, "volumeDown") && (
-                  <CapabilityButton shape="circle" icon="chevron-down" label="Vol -" onPress={() => send("volumeDown")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-down"
+                    label="Vol -"
+                    onPress={() => send("volumeDown")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
               </View>
             )}
-            <View style={styles.dpad}>
+            <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2 }]}>
               <CapabilityButton
                 shape="circle"
+                scale={scale}
                 icon="chevron-up"
                 label="Up"
                 onPress={() => send("directionalNavigation", { direction: "up" })}
@@ -437,6 +501,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               <View style={styles.dpadMiddleRow}>
                 <CapabilityButton
                   shape="circle"
+                  scale={scale}
                   icon="chevron-back"
                   label="Left"
                   onPress={() => send("directionalNavigation", { direction: "left" })}
@@ -446,6 +511,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 {has(device, "select") ? (
                   <CapabilityButton
                     shape="circle"
+                    scale={scale}
                     size="lg"
                     icon="checkmark"
                     label="Select"
@@ -454,10 +520,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                     disabled={controlsDisabled}
                   />
                 ) : (
-                  <View style={styles.dpadCenterSpacer} />
+                  <View style={[styles.dpadCenterSpacer, { width: scaledSmDiameter, height: scaledSmDiameter }]} />
                 )}
                 <CapabilityButton
                   shape="circle"
+                  scale={scale}
                   icon="chevron-forward"
                   label="Right"
                   onPress={() => send("directionalNavigation", { direction: "right" })}
@@ -467,6 +534,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               </View>
               <CapabilityButton
                 shape="circle"
+                scale={scale}
                 icon="chevron-down"
                 label="Down"
                 onPress={() => send("directionalNavigation", { direction: "down" })}
@@ -475,13 +543,29 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               />
             </View>
             {(has(device, "channelUp") || has(device, "channelDown")) && (
-              <View style={styles.rockerColumn}>
+              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
                 {has(device, "channelUp") && (
-                  <CapabilityButton shape="circle" icon="chevron-up" label="Ch +" onPress={() => send("channelUp")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-up"
+                    label="Ch +"
+                    onPress={() => send("channelUp")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
                 <Text style={styles.rockerColumnLabel}>Ch</Text>
                 {has(device, "channelDown") && (
-                  <CapabilityButton shape="circle" icon="chevron-down" label="Ch -" onPress={() => send("channelDown")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-down"
+                    label="Ch -"
+                    onPress={() => send("channelDown")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
               </View>
             )}
@@ -497,24 +581,56 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           <Text style={styles.cardLabel}>Volume &amp; Channel</Text>
           <View style={styles.rockerRow}>
             {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-              <View style={styles.rockerColumn}>
+              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
                 {has(device, "volumeUp") && (
-                  <CapabilityButton shape="circle" icon="chevron-up" label="Vol +" onPress={() => send("volumeUp")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-up"
+                    label="Vol +"
+                    onPress={() => send("volumeUp")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
                 <Text style={styles.rockerColumnLabel}>Vol</Text>
                 {has(device, "volumeDown") && (
-                  <CapabilityButton shape="circle" icon="chevron-down" label="Vol -" onPress={() => send("volumeDown")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-down"
+                    label="Vol -"
+                    onPress={() => send("volumeDown")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
               </View>
             )}
             {(has(device, "channelUp") || has(device, "channelDown")) && (
-              <View style={styles.rockerColumn}>
+              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
                 {has(device, "channelUp") && (
-                  <CapabilityButton shape="circle" icon="chevron-up" label="Ch +" onPress={() => send("channelUp")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-up"
+                    label="Ch +"
+                    onPress={() => send("channelUp")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
                 <Text style={styles.rockerColumnLabel}>Ch</Text>
                 {has(device, "channelDown") && (
-                  <CapabilityButton shape="circle" icon="chevron-down" label="Ch -" onPress={() => send("channelDown")} disabled={controlsDisabled} />
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    icon="chevron-down"
+                    label="Ch -"
+                    onPress={() => send("channelDown")}
+                    disabled={controlsDisabled}
+                    containerStyle={styles.dpadArrow}
+                  />
                 )}
               </View>
             )}
@@ -536,6 +652,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 label={app.label}
                 bg={app.bg}
                 fg={app.fg}
+                fontScale={app.fontScale}
                 onPress={() => send("launchApp", { service: app.service })}
                 disabled={controlsDisabled}
               />
@@ -560,12 +677,17 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       {has(device, "inputSelection") && (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Input</Text>
-          <View style={styles.row}>
-            {/* Real-device finding (2026-09-10): "the input box... has not labeling" — CapabilityButton
-                only ever renders an icon OR a label, never both (see its own render logic), so passing
-                both here silently dropped every button's visible text — every input button rendered as
-                an identical bare tv-outline glyph with no way to tell HDMI 1 from HDMI 2. No icon prop
-                here at all now; the label is the only thing that needs to be visible. */}
+          {/* Real-device ask (2026-09-10): "change the arrangement of the inputs to be fewer
+              rows" — the old styles.row (plain flexWrap, no column count) let the number of
+              buttons per row vary with each label's own width, so a TV reporting several inputs
+              with longer names (e.g. "Component", "Antenna") could wrap down to 2 per row,
+              stretching a 6-7-input list to 3-4 rows. Fixed at 3 columns regardless of label
+              length — deterministic row count (ceil(inputs/3)) instead of however-many-happen-
+              to-fit. numberOfLines=1 on each button (CapabilityButton's own new, optional prop)
+              keeps a longer label from wrapping to a second line and giving just that one tile a
+              different height than its row-mates — same fix already applied to the utility row
+              for the same reason. */}
+          <View style={styles.inputGrid}>
             {(dynamicInputs ?? ["hdmi1", "hdmi2", "hdmi3"].map((id) => ({ id, label: id.toUpperCase() }))).map((option) => (
               <CapabilityButton
                 key={option.id}
@@ -573,6 +695,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 variant={input === option.id ? "accent" : "default"}
                 onPress={() => send("inputSelection", { input: option.id })}
                 disabled={controlsDisabled}
+                numberOfLines={1}
+                containerStyle={styles.inputTile}
               />
             ))}
           </View>
@@ -596,6 +720,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           <View style={styles.utilityRow}>
             {has(device, "mute") && (
               <UtilityAction
+                scale={scale}
                 icon={muted ? "volume-mute" : "volume-medium-outline"}
                 label={muted ? "Unmute" : "Mute"}
                 active={muted}
@@ -603,23 +728,23 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 disabled={controlsDisabled}
               />
             )}
-            {has(device, "back") && <UtilityAction icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
-            {has(device, "home") && <UtilityAction icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
-            {has(device, "menu") && <UtilityAction icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
+            {has(device, "back") && <UtilityAction scale={scale} icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
+            {has(device, "home") && <UtilityAction scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
+            {has(device, "menu") && <UtilityAction scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
             {/* Real-hardware ask (2026-09-10): "settings and sleep timer should be next to
                 eachother" — Samsung only; verified real KEY_TOOLS/KEY_SLEEP codes exist for this
                 protocol specifically (see Capability.ts). LG/Roku don't declare these capabilities
                 because their own public APIs genuinely have no equivalent — not omitted by
                 oversight. */}
-            {has(device, "settings") && <UtilityAction icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
-            {has(device, "sleepTimer") && <UtilityAction icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
+            {has(device, "settings") && <UtilityAction scale={scale} icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
+            {has(device, "sleepTimer") && <UtilityAction scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
             {/* Real-hardware research (2026-09-10): Samsung's KEY_SOURCE opens the TV's own
                 on-screen source picker rather than jumping to a named input directly — a
                 genuinely different mechanism from inputSelection, not the same feature under a
                 different name (see ADR-HEARTH-027 and Capability.ts). The user drives the opened
                 picker with the d-pad/select this driver already has. */}
             {has(device, "openSourceList") && (
-              <UtilityAction icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
+              <UtilityAction scale={scale} icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
             )}
           </View>
         </View>
@@ -636,22 +761,24 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           {KEYPAD_ROWS.map((digitRow) => (
             <View key={digitRow.join("")} style={styles.row}>
               {digitRow.map((digit) => (
-                <CapabilityButton key={digit} shape="circle" label={digit} onPress={() => appendChannelDigit(digit)} disabled={controlsDisabled} />
+                <CapabilityButton key={digit} shape="circle" scale={scale} label={digit} onPress={() => appendChannelDigit(digit)} disabled={controlsDisabled} />
               ))}
             </View>
           ))}
           <View style={styles.row}>
             <CapabilityButton
               shape="circle"
+              scale={scale}
               icon="backspace-outline"
               label="Clear"
               variant="ghost"
               onPress={() => setChannelInput("")}
               disabled={controlsDisabled || channelInput.length === 0}
             />
-            <CapabilityButton shape="circle" label="0" onPress={() => appendChannelDigit("0")} disabled={controlsDisabled} />
+            <CapabilityButton shape="circle" scale={scale} label="0" onPress={() => appendChannelDigit("0")} disabled={controlsDisabled} />
             <CapabilityButton
               shape="circle"
+              scale={scale}
               icon="checkmark"
               label="Enter"
               variant="accent"
@@ -771,8 +898,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   row: { flexDirection: "row", gap: theme.spacing.md, alignItems: "center", justifyContent: "center", flexWrap: "wrap" },
+  // Fixed 3-column grid for input-selection (see the call site's own comment) — same
+  // flexBasis-percentage + gap technique DeviceListScreen.tsx's addGrid already uses for its own
+  // 2-column layout: 3 × 31% = 93%, leaving real margin for the gap between tiles (2 gaps of
+  // spacing.sm ≈ 5% of this card's interior width) without overflowing 100%.
+  inputGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  // No flexGrow: a remainder tile on the last row (e.g. 7 inputs = two full rows + one leftover)
+  // must NOT stretch to fill the row on its own — that's the exact "boxes not the same size" bug
+  // the streaming row's own fix (above) already had to correct for the same reason.
+  inputTile: { flexBasis: "31%" },
   rockerRow: { flexDirection: "row", gap: theme.spacing.xl, alignItems: "center", justifyContent: "center" },
-  rockerColumn: { alignItems: "center", justifyContent: "space-between", height: DPAD_HEIGHT },
+  // Real-device ask (2026-09-10): "fix the navigation of the up down arrows... to be more
+  // neatly oriented" — see the ROCKER_WIDTH comment above. Same surface/border treatment as
+  // `dpad` below (theme.surfaceRaised fill, theme.border outline) so the Vol/Ch columns read as
+  // matching discs beside the d-pad's own, not two differently-styled control types next to each
+  // other. paddingVertical keeps the Up/Down buttons from touching the pill's own rounded caps.
+  rockerColumn: {
+    alignItems: "center",
+    justifyContent: "space-between",
+    height: DPAD_HEIGHT,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.surfaceRaised,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
   rockerColumnLabel: {
     color: theme.textTertiary,
     fontSize: theme.type.caption,
