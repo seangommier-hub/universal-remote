@@ -76,3 +76,27 @@ controls.
   up/down paddle), that's a bigger, separate redesign — flagged as the
   next candidate if this pass doesn't land right, not attempted here on a
   guess.
+
+## Update 2026-09-11: the rocker-disc change broke the hub row's own width fit
+
+Sean, immediately after: "i want the remote page to be 1 page, now the
+icons at the bottom span two lines." Two real regressions, both from
+gaps in verified-width arithmetic:
+
+1. The rocker's `circleDiameter.lg` (68) disc width added ~32px to the
+   hub row, 21px past the 375pt-screen budget ADR-HEARTH-016 already
+   established (316px, ~11px spare). Reverted to `circleDiameter.sm`
+   (52 — the button's own diameter) so the disc costs zero extra width
+   over the plain circle it replaced.
+2. Separately, and not caused by tonight's changes: the utility row's
+   own width was never verified the way the hub row was. Even LG's
+   plain 4-item set (no settings gear at all) needed 304px against
+   ~295px available at the row's `spacing.lg` gap — a real, pre-existing
+   9px overflow forcing an unwanted wrap. Tightened to `spacing.sm`.
+
+190/190 tests passing, `tsc --noEmit` clean. Also resolves what Sean
+described separately as "a lingering item under the settings gear" —
+traced to the same utility-row wrap (a literal `settings-outline` icon
+exists in that row for Samsung's `settings` capability); LG's device
+never had a gear at all, so eliminating LG's unwanted wrap removes the
+only render path that could place a second-line item near one.
