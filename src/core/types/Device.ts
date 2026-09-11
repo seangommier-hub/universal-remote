@@ -6,6 +6,7 @@ export type DeviceCategory =
   | "streaming"
   | "audio"
   | "lighting"
+  | "outlet"
   | "climate"
   | "vacuum"
   | "lock"

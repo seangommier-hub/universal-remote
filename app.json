@@ -44,7 +44,8 @@
         {
           "cameraPermission": "Hearth uses the camera to scan a Family Command Center QR code for easy pairing."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
