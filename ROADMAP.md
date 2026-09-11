@@ -181,14 +181,18 @@ toward "add anything with a few clicks" as a general pattern, not just outlets s
 - [x] `smartThingsConfig.ts` (OAuth token storage, all-SecureStore), `SmartThingsClient.ts` (REST
   wrapper: list/read/set switch state), `SmartThingsOutletDriver.ts` (`power` capability, proactive
   token refresh). 207/207 tests, `tsc` clean.
-- [ ] **Sean: register an OAuth-integrated app at the SmartThings Developer Workspace** — the one
-  external dependency this can't proceed past unilaterally (same shape as Apple Developer Program
-  approval or the Cloudflare account earlier in this project). Note whether it registers as a
-  public/PKCE client or a confidential/secret client — that answer determines whether the pairing
-  screen's token exchange happens purely client-side or needs a small Family Command Center relay
-  endpoint (see ADR-HEARTH-042's Rationale section).
+- [x] **"Hearth" app registered at the SmartThings Developer Workspace** — came back a
+  **confidential client** (Client ID + Secret, not public/PKCE), settling ADR-HEARTH-042's open
+  question: the token exchange must be proxied through the Family Command Center.
+- [x] SmartThings' registration-time PING verification passed against a new webhook
+  (`family-command-center/adr/0157`) reached through a path-scoped Cloudflare Tunnel running on
+  the Pi itself (`fcc-webhook.carddna.app`, limited to exactly that one route). Client
+  ID/Secret captured once and stored in the Pi's `.env.local`, never in Hearth's own codebase.
+- [ ] Token-exchange endpoint on the Family Command Center (e.g.
+  `POST /api/integrations/hearth/smartthings/token`) — the one piece still unbuilt now that
+  every upstream unknown is resolved.
 - [ ] OAuth pairing screen (`expo-auth-session`, installed) + outlet picker (mirrors
-  `AddHueDeviceScreen.tsx`'s two-step shape), once the above is answered.
+  `AddHueDeviceScreen.tsx`'s two-step shape), calling the token-exchange endpoint above.
 - [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`, wire "+ Add SmartThings" into
   `DeviceListScreen`.
 - [ ] First real-hardware checkpoint: Sean pairing a real SmartThings-connected outlet.
