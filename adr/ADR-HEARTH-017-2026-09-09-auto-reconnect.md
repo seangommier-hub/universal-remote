@@ -347,3 +347,22 @@ unchanged. MAC-based re-discovery wasn't ported to Sony/Roku in this pass
 `LgUnreachableError`-equivalent distinction to hook), so the same
 mechanism doesn't drop in as directly; worth its own pass if Sony/Roku
 hardware testing ever surfaces a real stale-IP case for them.
+
+## Update 2026-09-10 (same day, later still): re-discovery was gated on the wrong error type
+
+Real-hardware finding, live during a "reconnect still isn't working" report: even after
+everything above, Sean's LG TV stayed stuck retrying `10.20.30.40` — its old, pre-move address —
+forever. Live Metro logs showed why: the socket to that stale IP was opening successfully and
+then timing out waiting for the pairing handshake ("This TV isn't recognizing a previous pairing
+anymore"), not throwing `LgUnreachableError`. Something else was answering the freed address —
+almost certainly DHCP handing it to a different device once the TV actually left — and MAC
+re-discovery was gated specifically on `LgUnreachableError` (socket never opens at all), so this
+exact failure mode never triggered it.
+
+**Fix**: `LgWebOsDriver.connectClient()`/`SamsungTizenDriver.connectClient()` now attempt MAC
+re-discovery on *any* connect failure, not just the unreachable case — the same "safe to try
+unconditionally" reasoning ADR-HEARTH-032 already established for `HueLightDriver`: if the lookup
+returns the same IP already configured, nothing changes and the original error still surfaces
+unchanged, so broadening this can't make a genuine "TV forgot its pairing" case worse. 185/185
+tests passing (2 new — one per driver, proving re-discovery now fires on a pairing-timeout at the
+stale address, not only on an outright-unreachable one), `tsc --noEmit` clean.
