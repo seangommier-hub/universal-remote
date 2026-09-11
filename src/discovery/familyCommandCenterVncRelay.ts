@@ -1,9 +1,15 @@
 import { FamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
-// The proposed VNC-relay WebSocket endpoint (ADR-HEARTH-033) — mirrors httpRelayFallback.ts's
-// RELAY_PATH naming for the existing HTTP relay, just the WebSocket sibling. Not yet implemented
-// on the Family Command Center's side; this is Hearth's half of a documented contract.
-const VNC_RELAY_PATH = "/api/integrations/hearth/relay/vnc";
+// The VNC-relay WebSocket endpoint (ADR-HEARTH-033). Originally specced as a path on the Family
+// Command Center's own Next.js app (same host+port as config.baseUrl) — corrected once the Family
+// Command Center side was actually built: `next start` doesn't expose the HTTP Upgrade event to
+// application code, the exact same limitation that forced the Samsung/LG WS relay
+// (wsRelayFallback.ts, ADR-HEARTH-011) onto its own standalone process and port rather than a
+// Next.js route. This mirrors that proven pattern exactly: same hostname as config.baseUrl, a
+// dedicated port for the relay process, plain ws:// (the query-string token is the real auth
+// boundary, same reasoning wsRelayFallback.ts documents for the TV relay).
+const VNC_RELAY_PORT = 3212;
+const RELAY_SCHEME = "ws";
 
 /**
  * Builds the relay's WebSocket URL for a paired Family Command Center, carrying the device's own
@@ -14,6 +20,6 @@ const VNC_RELAY_PATH = "/api/integrations/hearth/relay/vnc";
  * access per device (see ADR-HEARTH-033's "multiple phones, with permission" section).
  */
 export function buildVncRelayUrl(config: FamilyCommandCenterConfig): string {
-  const wsBaseUrl = config.baseUrl.replace(/^http/, "ws");
-  return `${wsBaseUrl}${VNC_RELAY_PATH}?token=${encodeURIComponent(config.token)}`;
+  const relayHost = new URL(config.baseUrl).hostname;
+  return `${RELAY_SCHEME}://${relayHost}:${VNC_RELAY_PORT}/?token=${encodeURIComponent(config.token)}`;
 }
