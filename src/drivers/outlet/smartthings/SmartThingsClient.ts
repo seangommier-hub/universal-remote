@@ -1,21 +1,23 @@
-// SmartThings Cloud REST API (https://api.smartthings.com/v1) — cloud-only by nature (there's no
-// local-network equivalent; SmartThings devices are controlled through Samsung's own cloud), so
-// unlike every other driver in this codebase (LG/Samsung TV, Sony, Roku, Hue — all local-network-
-// first with a relay fallback) this one has no direct-connection path to fall back FROM. See
-// ADR-HEARTH-042 for why SmartThings was chosen over building against Alexa directly (Amazon has
-// no public API for a third-party app to control a user's already-connected devices at all).
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 
-const API_BASE = "https://api.smartthings.com/v1";
-const SWITCH_CAPABILITY = "switch";
-const MAIN_COMPONENT = "main";
+// Course correction (ADR-HEARTH-042's 2026-09-11 update): a WEBHOOK_SMART_APP doesn't use a
+// browser OAuth flow, so Hearth's phone never holds a SmartThings access token at all — SmartThings
+// delivers tokens straight to the Family Command Center via the INSTALL/UPDATE lifecycle, and the
+// Center is what actually calls SmartThings' Cloud API. This client talks to the Center's own proxy
+// endpoints instead (family-command-center/adr/0157's matching update), reusing the same
+// baseUrl+token pairing Hearth already has from Family Command Center discovery (ADR-HEARTH-010) —
+// there's no separate SmartThings credential to store or refresh here at all.
 
-export interface SmartThingsDevice {
-  deviceId: string;
+const OUTLETS_PATH = "/api/integrations/hearth/smartthings/outlets";
+
+export type SwitchState = "on" | "off" | "unknown";
+
+export interface SmartThingsOutlet {
+  id: string;
   /** The user-assigned name in the SmartThings app — what Hearth shows, same as every other discovered device's name being whatever the source system calls it. */
   label: string;
+  state: SwitchState;
 }
-
-export type SwitchState = "on" | "off";
 
 export class SmartThingsApiError extends Error {
   constructor(
@@ -26,47 +28,34 @@ export class SmartThingsApiError extends Error {
   }
 }
 
-/** Thin wrapper around the SmartThings Cloud API for exactly what an outlet/plug driver needs: list devices with a switch, read/set that switch. Every call takes the access token explicitly rather than holding one internally — SmartThingsOutletDriver owns the refresh-before-expiry logic and always passes a known-fresh token in. */
-export class SmartThingsClient {
-  constructor(private accessToken: string) {}
+/** Thrown when Family Command Center isn't paired yet — SmartThings outlets are reached entirely through it, so there's nothing to sync without it, unlike a driver that could otherwise degrade to "not connected" per-device. */
+export class FamilyCommandCenterNotConfiguredError extends Error {}
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", ...init?.headers },
-    });
-    if (!response.ok) {
-      throw new SmartThingsApiError(`SmartThings returned ${response.status}`, response.status);
-    }
-    return (await response.json()) as T;
+async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const config = await loadFamilyCommandCenterConfig();
+  if (!config) {
+    throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then SmartThings outlets can sync.");
   }
 
-  /** Every device on the account with a `switch` capability on its main component — the only shape this outlet driver understands. A user's SmartThings account may have many other device types (sensors, locks, thermostats); those are silently excluded here, not surfaced as "unsupported" the way FamilyCommandCenterDiscoveryProvider does for TVs, since SmartThings itself is the discovery/pairing UI for this integration, not Hearth's own scan screen. */
-  async listOutlets(): Promise<SmartThingsDevice[]> {
-    const { items } = await this.request<{ items: RawDevice[] }>("/devices?capability=switch");
-    return items
-      .filter((item) => item.components?.some((c) => c.id === MAIN_COMPONENT && c.capabilities?.some((cap) => cap.id === SWITCH_CAPABILITY)))
-      .map((item) => ({ deviceId: item.deviceId, label: item.label ?? item.name }));
+  const response = await fetch(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!response.ok) {
+    throw new SmartThingsApiError(`Family Command Center returned ${response.status}`, response.status);
   }
-
-  async getSwitchState(deviceId: string): Promise<SwitchState> {
-    const status = await this.request<{ switch: { value: SwitchState } }>(
-      `/devices/${deviceId}/components/${MAIN_COMPONENT}/capabilities/${SWITCH_CAPABILITY}/status`
-    );
-    return status.switch.value;
-  }
-
-  async setSwitchState(deviceId: string, state: SwitchState): Promise<void> {
-    await this.request(`/devices/${deviceId}/commands`, {
-      method: "POST",
-      body: JSON.stringify({ commands: [{ component: MAIN_COMPONENT, capability: SWITCH_CAPABILITY, command: state }] }),
-    });
-  }
+  return (await response.json()) as T;
 }
 
-interface RawDevice {
-  deviceId: string;
-  label?: string;
-  name: string;
-  components?: { id: string; capabilities?: { id: string }[] }[];
+/** Every switch-capability device the household granted Hearth access to when installing the SmartApp in the SmartThings mobile app — there's no separate "unsupported device" filtering to do here the way FamilyCommandCenterDiscoveryProvider does for TVs, since SmartThings' own install-time device picker is the discovery/pairing UI for this integration, not Hearth's. */
+export async function listOutlets(): Promise<SmartThingsOutlet[]> {
+  const { outlets } = await fccRequest<{ outlets: SmartThingsOutlet[] }>(OUTLETS_PATH);
+  return outlets;
+}
+
+export async function setOutletState(deviceId: string, state: "on" | "off"): Promise<void> {
+  await fccRequest(`${OUTLETS_PATH}/${deviceId}`, {
+    method: "POST",
+    body: JSON.stringify({ state }),
+  });
 }

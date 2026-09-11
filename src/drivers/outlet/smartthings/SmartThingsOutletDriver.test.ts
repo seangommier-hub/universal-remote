@@ -1,14 +1,10 @@
-import { RefreshAccessToken, SmartThingsOutletDriver, SMARTTHINGS_OUTLET_DRIVER_ID } from "./SmartThingsOutletDriver";
+import { SMARTTHINGS_OUTLET_DRIVER_ID, SmartThingsOutletDriver } from "./SmartThingsOutletDriver";
 import { Device } from "../../../core/types/Device";
-import { loadSmartThingsConfig, saveSmartThingsConfig } from "../../../discovery/smartThingsConfig";
+import { listOutlets, setOutletState } from "./SmartThingsClient";
 
-jest.mock("../../../discovery/smartThingsConfig");
-const mockLoadConfig = loadSmartThingsConfig as jest.MockedFunction<typeof loadSmartThingsConfig>;
-const mockSaveConfig = saveSmartThingsConfig as jest.MockedFunction<typeof saveSmartThingsConfig>;
-
-function jsonResponse(body: unknown, ok = true, status = 200) {
-  return { ok, status, json: async () => body } as Response;
-}
+jest.mock("./SmartThingsClient");
+const mockListOutlets = listOutlets as jest.MockedFunction<typeof listOutlets>;
+const mockSetOutletState = setOutletState as jest.MockedFunction<typeof setOutletState>;
 
 const device: Device = {
   id: "outlet-1",
@@ -20,80 +16,70 @@ const device: Device = {
   config: { deviceId: "st-device-1" },
 };
 
-const FRESH_CONFIG = { accessToken: "fresh-access", refreshToken: "refresh-1", expiresAt: Date.now() + 60 * 60 * 1000 };
-
 describe("SmartThingsOutletDriver", () => {
   let driver: SmartThingsOutletDriver;
-  let refreshAccessToken: jest.MockedFunction<RefreshAccessToken>;
 
   beforeEach(() => {
-    refreshAccessToken = jest.fn();
-    driver = new SmartThingsOutletDriver(refreshAccessToken);
-    global.fetch = jest.fn();
-    mockLoadConfig.mockReset();
-    mockSaveConfig.mockReset();
+    driver = new SmartThingsOutletDriver();
+    mockListOutlets.mockReset();
+    mockSetOutletState.mockReset();
   });
 
   test("declares only power — the whole capability set an outlet has", () => {
     expect(driver.getCapabilities()).toEqual(["power"]);
   });
 
-  test("connect() reads the real switch state without needing a refresh when the token is fresh", async () => {
-    mockLoadConfig.mockResolvedValue(FRESH_CONFIG);
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ switch: { value: "on" } }));
+  test("connect() reads the real switch state from the Family Command Center's outlet list", async () => {
+    mockListOutlets.mockResolvedValue([{ id: "st-device-1", label: "Living Room Lamp", state: "on" }]);
 
     await driver.connect(device);
 
-    expect((await driver.getState(device))).toMatchObject({ connection: "connected", values: { power: "on" } });
-    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(await driver.getState(device)).toMatchObject({ connection: "connected", values: { power: "on" } });
   });
 
-  test("connect() refreshes the token first when it's expired, then persists the new one", async () => {
-    mockLoadConfig.mockResolvedValue({ accessToken: "stale-access", refreshToken: "refresh-1", expiresAt: Date.now() - 1000 });
-    refreshAccessToken.mockResolvedValue({ accessToken: "new-access", refreshToken: "new-refresh", expiresIn: 86400 });
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ switch: { value: "off" } }));
+  test("connect() fails safe to 'off' when SmartThings reports an unknown switch value", async () => {
+    mockListOutlets.mockResolvedValue([{ id: "st-device-1", label: "Living Room Lamp", state: "unknown" }]);
 
     await driver.connect(device);
 
-    expect(refreshAccessToken).toHaveBeenCalledWith("refresh-1");
-    expect(mockSaveConfig).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "new-access", refreshToken: "new-refresh" }));
-    expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer new-access" }) }));
+    expect((await driver.getState(device)).values.power).toBe("off");
   });
 
-  test("connect() throws a clear error when SmartThings was never connected at all", async () => {
-    mockLoadConfig.mockResolvedValue(null);
+  test("connect() throws and marks disconnected when the outlet isn't in the Center's current list", async () => {
+    mockListOutlets.mockResolvedValue([]);
 
-    await expect(driver.connect(device)).rejects.toThrow(/isn't connected yet/);
-    expect(global.fetch).not.toHaveBeenCalled();
+    await expect(driver.connect(device)).rejects.toThrow(/isn't in Family Command Center/);
+    expect((await driver.getState(device)).connection).toBe("disconnected");
+  });
+
+  test("connect() throws and marks disconnected when the Family Command Center call itself fails", async () => {
+    mockListOutlets.mockRejectedValue(new Error("Family Command Center isn't paired yet"));
+
+    await expect(driver.connect(device)).rejects.toThrow(/isn't paired yet/);
+    expect((await driver.getState(device)).connection).toBe("disconnected");
   });
 
   test("power command toggles from the current cached state and sends the right SmartThings command", async () => {
-    mockLoadConfig.mockResolvedValue(FRESH_CONFIG);
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ switch: { value: "off" } }));
+    mockListOutlets.mockResolvedValue([{ id: "st-device-1", label: "Living Room Lamp", state: "off" }]);
     await driver.connect(device);
 
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({}));
+    mockSetOutletState.mockResolvedValue(undefined);
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "power" });
 
     expect(result.state?.power).toBe("on");
-    expect(global.fetch).toHaveBeenLastCalledWith(
-      "https://api.smartthings.com/v1/devices/st-device-1/commands",
-      expect.objectContaining({ body: JSON.stringify({ commands: [{ component: "main", capability: "switch", command: "on" }] }) })
-    );
+    expect(mockSetOutletState).toHaveBeenCalledWith("st-device-1", "on");
   });
 
   test("executeCommand throws for any capability other than power", async () => {
-    mockLoadConfig.mockResolvedValue(FRESH_CONFIG);
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" })).rejects.toThrow(/does not implement/);
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockSetOutletState).not.toHaveBeenCalled();
   });
 
   test("a failed command marks the device disconnected", async () => {
-    mockLoadConfig.mockResolvedValue(FRESH_CONFIG);
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ switch: { value: "on" } }));
+    mockListOutlets.mockResolvedValue([{ id: "st-device-1", label: "Living Room Lamp", state: "on" }]);
     await driver.connect(device);
 
-    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({}, false, 500));
+    mockSetOutletState.mockRejectedValue(new Error("Family Command Center returned 502"));
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow();
 
     expect((await driver.getState(device)).connection).toBe("disconnected");

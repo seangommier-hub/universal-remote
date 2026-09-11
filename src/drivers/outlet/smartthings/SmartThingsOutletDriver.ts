@@ -3,26 +3,10 @@ import { CapabilityId } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
-import { loadSmartThingsConfig, saveSmartThingsConfig } from "../../../discovery/smartThingsConfig";
-import { SmartThingsClient } from "./SmartThingsClient";
+import { listOutlets, setOutletState } from "./SmartThingsClient";
 
 export const SMARTTHINGS_OUTLET_DRIVER_ID = "smartthings-outlet";
 const OUTLET_CAPABILITIES: CapabilityId[] = ["power"];
-// Refresh proactively once within 5 minutes of expiry, rather than waiting for a request to fail
-// with 401 and reacting — SmartThings access tokens are typically short-lived (~24h), so a
-// background reconnect or an idle app reopened after a while is exactly when this matters.
-const REFRESH_MARGIN_MS = 5 * 60 * 1000;
-
-/** What a fresh token exchange/refresh returns — the shape every OAuth token endpoint returns regardless of how the exchange itself happens (direct PKCE from the phone, or proxied through Family Command Center if SmartThings' registered app type turns out to need a confidential client — see ADR-HEARTH-042). */
-export interface RefreshedTokens {
-  accessToken: string;
-  refreshToken: string;
-  /** Seconds until the new accessToken expires, as returned by the token endpoint — converted to an absolute epoch-ms expiresAt for storage. */
-  expiresIn: number;
-}
-
-/** Performs a refresh-token exchange, returning a fresh access token. Injected rather than hardcoded so this driver doesn't need to know or care whether the exchange happens directly against SmartThings (a public/PKCE client) or via a Family Command Center proxy endpoint (a confidential client) — that's an auth-flow decision, not a device-control one. */
-export type RefreshAccessToken = (refreshToken: string) => Promise<RefreshedTokens>;
 
 function requireOutletId(device: Device): string {
   const outletId = device.config?.deviceId;
@@ -33,10 +17,12 @@ function requireOutletId(device: Device): string {
 }
 
 /**
- * Driver for one SmartThings-connected outlet/plug (ADR-HEARTH-042). Each outlet is its own
- * `Device`, `config.deviceId` holding the SmartThings device id — the OAuth tokens themselves are
- * account-wide (loaded via smartThingsConfig.ts), not per-device, unlike Hue's per-bridge
- * username.
+ * Driver for one SmartThings-connected outlet/plug (ADR-HEARTH-042, course-corrected
+ * 2026-09-11). Each outlet is its own `Device`, `config.deviceId` holding the SmartThings device
+ * id — everything else (which household this is, which tokens are valid) lives entirely on the
+ * Family Command Center side, reached through `SmartThingsClient.ts`'s FCC proxy calls. Unlike
+ * every earlier version of this file, there is no OAuth token to load, refresh, or store here at
+ * all — that entire concern doesn't exist for a WEBHOOK_SMART_APP.
  */
 export class SmartThingsOutletDriver implements DeviceDriver {
   id = SMARTTHINGS_OUTLET_DRIVER_ID;
@@ -45,8 +31,6 @@ export class SmartThingsOutletDriver implements DeviceDriver {
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
 
-  constructor(private refreshAccessToken: RefreshAccessToken) {}
-
   getCapabilities(): CapabilityId[] {
     return OUTLET_CAPABILITIES;
   }
@@ -54,9 +38,16 @@ export class SmartThingsOutletDriver implements DeviceDriver {
   async connect(device: Device): Promise<void> {
     const outletId = requireOutletId(device);
     try {
-      const client = await this.getValidClient();
-      const state = await client.getSwitchState(outletId);
-      this.setState(device.id, { connection: "connected", values: { power: state }, lastUpdated: Date.now() });
+      const outlets = await listOutlets();
+      const outlet = outlets.find((o) => o.id === outletId);
+      if (!outlet) {
+        throw new Error(`Outlet ${outletId} isn't in Family Command Center's current SmartThings device list`);
+      }
+      // A genuinely "unknown" switch value from SmartThings is rare (a device mid-pairing or
+      // offline) — fail safe to "off" rather than surface a third power state the rest of the
+      // app's power-toggle UI was never built to render.
+      const power = outlet.state === "unknown" ? "off" : outlet.state;
+      this.setState(device.id, { connection: "connected", values: { power }, lastUpdated: Date.now() });
     } catch (err) {
       const current = this.states.get(device.id);
       this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
@@ -79,10 +70,9 @@ export class SmartThingsOutletDriver implements DeviceDriver {
       throw new Error(`SmartThingsOutletDriver does not implement capability: ${command.capability}`);
     }
     try {
-      const client = await this.getValidClient();
       const current = this.states.get(device.id)?.values.power;
       const next = current === "on" ? "off" : "on";
-      await client.setSwitchState(outletId, next);
+      await setOutletState(outletId, next);
       this.setState(device.id, { connection: "connected", values: { power: next }, lastUpdated: Date.now() });
     } catch (err) {
       const current = this.states.get(device.id);
@@ -98,20 +88,6 @@ export class SmartThingsOutletDriver implements DeviceDriver {
     set.add(listener);
     this.listeners.set(device.id, set);
     return () => set.delete(listener);
-  }
-
-  /** Loads the saved OAuth config, refreshing it first if it's expired or about to be — every call site gets a client backed by a token that's actually valid right now, never one left to fail with a 401 mid-command. */
-  private async getValidClient(): Promise<SmartThingsClient> {
-    let config = await loadSmartThingsConfig();
-    if (!config) {
-      throw new Error("SmartThings isn't connected yet — add it from the device list first.");
-    }
-    if (Date.now() >= config.expiresAt - REFRESH_MARGIN_MS) {
-      const refreshed = await this.refreshAccessToken(config.refreshToken);
-      config = { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, expiresAt: Date.now() + refreshed.expiresIn * 1000 };
-      await saveSmartThingsConfig(config);
-    }
-    return new SmartThingsClient(config.accessToken);
   }
 
   private setState(deviceId: string, state: DeviceState): void {

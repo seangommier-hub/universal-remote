@@ -1,90 +1,58 @@
-import { SmartThingsApiError, SmartThingsClient } from "./SmartThingsClient";
+import { FamilyCommandCenterNotConfiguredError, SmartThingsApiError, listOutlets, setOutletState } from "./SmartThingsClient";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 
-function jsonResponse(body: unknown, ok = true, status = 200) {
-  return { ok, status, json: async () => body } as Response;
-}
+jest.mock("../../../discovery/familyCommandCenterConfig");
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
-describe("SmartThingsClient", () => {
-  beforeEach(() => {
-    global.fetch = jest.fn();
+const FCC_CONFIG = { baseUrl: "http://192.168.1.172:3210", token: "fcc-token" };
+
+beforeEach(() => {
+  mockLoadConfig.mockReset();
+  global.fetch = jest.fn();
+});
+
+describe("listOutlets", () => {
+  test("fetches the outlet list from the Family Command Center's proxy endpoint, bearer-authenticated", async () => {
+    mockLoadConfig.mockResolvedValue(FCC_CONFIG);
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ outlets: [{ id: "d1", label: "Living Room Lamp", state: "on" }] }),
+    });
+
+    const outlets = await listOutlets();
+
+    expect(outlets).toEqual([{ id: "d1", label: "Living Room Lamp", state: "on" }]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.172:3210/api/integrations/hearth/smartthings/outlets",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer fcc-token" }) })
+    );
   });
 
-  describe("listOutlets", () => {
-    test("returns only devices with a switch capability on their main component", async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce(
-        jsonResponse({
-          items: [
-            {
-              deviceId: "outlet-1",
-              label: "Living Room Lamp",
-              name: "Smart Plug",
-              components: [{ id: "main", capabilities: [{ id: "switch" }] }],
-            },
-            {
-              deviceId: "sensor-1",
-              label: "Front Door Sensor",
-              name: "Contact Sensor",
-              components: [{ id: "main", capabilities: [{ id: "contactSensor" }] }],
-            },
-          ],
-        })
-      );
-      const client = new SmartThingsClient("test-token");
+  test("throws FamilyCommandCenterNotConfiguredError when Family Command Center isn't paired yet", async () => {
+    mockLoadConfig.mockResolvedValue(null);
 
-      const outlets = await client.listOutlets();
-
-      expect(outlets).toEqual([{ deviceId: "outlet-1", label: "Living Room Lamp" }]);
-      expect(global.fetch).toHaveBeenCalledWith(
-        "https://api.smartthings.com/v1/devices?capability=switch",
-        expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer test-token" }) })
-      );
-    });
-
-    test("falls back to the device's own name when it has no user-assigned label", async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce(
-        jsonResponse({
-          items: [{ deviceId: "outlet-1", name: "Smart Plug", components: [{ id: "main", capabilities: [{ id: "switch" }] }] }],
-        })
-      );
-      const client = new SmartThingsClient("test-token");
-
-      expect(await client.listOutlets()).toEqual([{ deviceId: "outlet-1", label: "Smart Plug" }]);
-    });
+    await expect(listOutlets()).rejects.toThrow(FamilyCommandCenterNotConfiguredError);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  describe("getSwitchState / setSwitchState", () => {
-    test("getSwitchState reads the current value", async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ switch: { value: "on" } }));
-      const client = new SmartThingsClient("test-token");
+  test("throws SmartThingsApiError with the real status on a non-ok response", async () => {
+    mockLoadConfig.mockResolvedValue(FCC_CONFIG);
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 502 });
 
-      expect(await client.getSwitchState("outlet-1")).toBe("on");
-      expect(global.fetch).toHaveBeenCalledWith(
-        "https://api.smartthings.com/v1/devices/outlet-1/components/main/capabilities/switch/status",
-        expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer test-token" }) })
-      );
-    });
-
-    test("setSwitchState sends the SmartThings command shape", async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({}));
-      const client = new SmartThingsClient("test-token");
-
-      await client.setSwitchState("outlet-1", "off");
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        "https://api.smartthings.com/v1/devices/outlet-1/commands",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ commands: [{ component: "main", capability: "switch", command: "off" }] }),
-        })
-      );
-    });
+    await expect(listOutlets()).rejects.toMatchObject({ status: 502 });
   });
+});
 
-  test("throws SmartThingsApiError (carrying the real status) on any non-OK response", async () => {
-    (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}, false, 401));
-    const client = new SmartThingsClient("expired-token");
+describe("setOutletState", () => {
+  test("POSTs the new state to the device-specific proxy route", async () => {
+    mockLoadConfig.mockResolvedValue(FCC_CONFIG);
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
 
-    await expect(client.getSwitchState("outlet-1")).rejects.toBeInstanceOf(SmartThingsApiError);
-    await expect(client.getSwitchState("outlet-1")).rejects.toMatchObject({ status: 401 });
+    await setOutletState("d1", "off");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.172:3210/api/integrations/hearth/smartthings/outlets/d1",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ state: "off" }) })
+    );
   });
 });
