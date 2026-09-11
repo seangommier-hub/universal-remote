@@ -7,6 +7,7 @@ import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
 import { RokuEcpDriver } from "../drivers/streaming/roku/RokuEcpDriver";
 import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
+import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -16,7 +17,7 @@ export interface HearthRuntime {
 }
 
 /**
- * Composition root: registers the four real drivers. No seed/mock devices — the mocks proved
+ * Composition root: registers the real drivers. No seed/mock devices — the mocks proved
  * the driver abstraction (see src/drivers/tv/SimulatedTvDriver.ts and its tests, still exercised
  * directly by the test suite) but real-hardware testing is now the priority, so the app starts
  * with an empty device list and the user pairs real devices via "+ Add" or Discover.
@@ -31,6 +32,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new LgWebOsDriver());
   driverRegistry.register(new RokuEcpDriver());
   driverRegistry.register(new HueLightDriver());
+  driverRegistry.register(new SmartThingsOutletDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

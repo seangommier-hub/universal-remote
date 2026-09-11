@@ -15,6 +15,7 @@ import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
+import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
@@ -276,6 +277,7 @@ export default function App() {
       {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "roku" && <AddRokuDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
+      {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}

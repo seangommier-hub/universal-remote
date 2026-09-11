@@ -7,7 +7,7 @@ import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -17,6 +17,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "lg", label: "LG TV", icon: "tv-outline" },
   { brand: "roku", label: "Roku", icon: "play-circle-outline" },
   { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
+  { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
