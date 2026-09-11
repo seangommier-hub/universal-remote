@@ -127,3 +127,66 @@ already covered by decisions above, not new work:
   X11 keysyms, not raw scancodes or JS key names) — a real, sizeable
   lookup table, built as its own piece so it's independently testable
   rather than folded into the protocol client.
+
+## Update 2026-09-11: Phase 2 built — no longer "cannot be built from this repo/session"
+
+That framing was true at the time (no established access to the Pi from
+this session), not a permanent architectural limit. SSH access to the Pi
+became a working, established capability later the same night (see
+`family_command_center_ssh_access.md` memory) — once that was true, this
+became a normal implementation task like any other.
+
+**Real finding that changes Phase 1's own text above**: this Pi's kiosk
+runs under **labwc**, a Wayland compositor — confirmed live via `ps aux`
+and `deploy/kiosk/start-kiosk.sh`'s own comments ("This Pi's labwc session
+doesn't run XWayland"). `x11vnc` (mentioned above, also actually installed
+on the Pi) **cannot work here at all** — it needs a real X11 display to
+attach to, and there isn't one. **`wayvnc`** — also already installed,
+bundled with Raspberry Pi Connect — is the correct tool for a wlroots
+compositor like labwc.
+
+Built, deliberately NOT reusing Raspberry Pi Connect's own bundled wayvnc
+(`/etc/wayvnc/config`, its own `wayvnc.service`/`wayvnc-control.service`,
+confirmed inactive/unused — left completely untouched):
+
+- `hearth-vnc-server.service` — a dedicated wayvnc instance, running as
+  `seangommier` (needed to reach that user's real compositor socket),
+  `--websocket` mode (speaks WS-framed RFB directly, so the relay below is
+  a pure message forwarder, not a byte-stream translator), bound to
+  `127.0.0.1:5901` only.
+- `hearth-relay-vnc.service` — a new standalone Node relay
+  (`scripts/hearth-relay/vnc-relay-ws-server.js`), same
+  `HEARTH_API_TOKEN` bearer-in-query-param auth as the Samsung/LG relay
+  (`relay-ws-server.js`, ADR-HEARTH-011), but a **separate file**, not an
+  extension of it: that relay's whole security model is "never let the
+  caller target this Pi itself"; this one's only valid target *is* this
+  Pi's own loopback wayvnc. Mixing the two would mean adding a
+  self-target exception to a script whose entire point is forbidding
+  that — cleaner and more auditable as two small, single-purpose scripts
+  (ADR-GLOBAL-003).
+
+**Hearth's side corrected to match reality**: `familyCommandCenterVncRelay.ts`
+originally assumed the relay would be a path on the Center's own app
+(`ws://<baseUrl>/api/integrations/hearth/relay/vnc`) — wrong for the same
+reason the Samsung/LG relay isn't a Next.js route either (`next start`
+doesn't expose the HTTP Upgrade event to application code). Fixed to
+mirror `wsRelayFallback.ts`'s own proven pattern exactly: same hostname as
+`config.baseUrl`, dedicated port (3212), plain `ws://`.
+
+**Verified live, end-to-end, without sending a single input event**: a
+throwaway script connected through the real deployed relay with the real
+`HEARTH_API_TOKEN` and received a genuine RFB handshake
+(`"RFB 003.008\n"`) — proof the full chain (auth → relay → wayvnc → the
+actual compositor) works, without any risk of a stray click or keystroke
+landing on the live kiosk display the family uses today. Deliberately
+stopped there: real pointer/keyboard verification is exactly the
+"Sean, real-hardware checkpoint" step already called for below — opening
+`CommandCenterRemoteScreen` in the real app and confirming the Pi's actual
+cursor moves.
+
+**Still open** from Phase 1's original text, unchanged by this update: VNC
+Authentication (DES) unsupported (relay's bearer token is the real
+boundary), no framebuffer viewing (deliberately out of scope), and the
+per-device VNC-relay permission grant/revoke UI ("multiple phones, with
+permission") — today every device holding a valid paired FCC token can
+reach the relay, an all-or-nothing grant rather than a per-device one.
