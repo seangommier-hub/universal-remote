@@ -151,3 +151,29 @@ server-side) doesn't exist yet — only the webhook lifecycle route does.
 Building it is comparatively small scoped work now that every upstream
 unknown (client type, credential storage location, app registration
 itself) is resolved.
+
+## Update 2026-09-11 (same day, later still): token-exchange endpoint built and live
+
+`POST /api/integrations/hearth/smartthings/token` now exists
+(`family-command-center/adr/0157`'s later update), gated by the same
+`HEARTH_API_TOKEN` bearer every other Hearth-authenticated FCC route
+uses, accepting `{grantType: "authorization_code", code, redirectUri}`
+or `{grantType: "refresh_token", refreshToken}` and returning
+`{accessToken, refreshToken, expiresIn}` — the exact shape
+`SmartThingsOutletDriver.ts`'s own `RefreshedTokens` interface already
+expects, so wiring `refreshAccessToken` to call it needs no reshaping.
+
+Real finding while building it: SmartThings' token endpoint requires
+client credentials via HTTP Basic Auth, not form-body params (unlike
+Google's, which this project's existing OAuth code uses as a template) —
+caught live via a real request that failed with a bare `401`, fixed, and
+re-verified end-to-end.
+
+**What's actually left now**: Hearth's own OAuth pairing screen
+(`expo-auth-session`, already installed) that opens SmartThings'
+`/oauth/authorize` in-browser, receives the redirect with a code, and
+calls the token-exchange endpoint above; an outlet picker; and
+registering `SmartThingsOutletDriver` in `bootstrap.ts` /
+`DeviceListScreen`'s add menu. No more unknowns — this is now
+implementation work with everything it depends on already resolved and
+verified live.
