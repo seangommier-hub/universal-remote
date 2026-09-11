@@ -115,3 +115,54 @@ Still blocked on the same real-hardware checkpoint as before — a human
 physically accepting the prompt on the TV — this update only makes the
 diagnosis and the resulting message clearer, not the underlying
 requirement optional.
+
+## Update 2026-09-10 (same day, later still): the actual reason "allowed it 15 times" kept happening
+
+Sean, directly, after the above: "yes i have ALLOWED IT like 15 times, i
+don't want to again." The "TV cleared its trust list" diagnosis above
+explained one bad night, not fifteen repeats — that pointed at a real
+bug in Hearth's own persistence, not the TV.
+
+Traced it: this ADR's original fix only re-saves `device.config` from two
+call sites — `App.tsx`'s `reconnectAllDevices()` and `handleReconnect()`
+— both of which call `driver.connect(device)` directly and then
+`saveDeviceQuietly(device)` right after. But ADR-HEARTH-017's later
+auto-reconnect work gave every TV/Hue driver its own internal
+`scheduleReconnect()` loop that calls `this.connect(device)` on *itself*,
+entirely inside the driver, whenever a connection drops unexpectedly —
+this path never runs through App.tsx at all. Any client-key learned
+during one of those autonomous background retries (the single most
+common way a TV actually reconnects day-to-day — WiFi blips, TV standby,
+router hiccups — far more common than a user tapping "Reconnect")
+mutated `device.config` in memory exactly as designed, then was silently
+dropped the next time the app reloaded. From Sean's side this looked
+identical to the TV forgetting its key: the on-screen prompt returning
+over and over, no matter how many times he accepted it.
+
+Fixed at the one place every reconnect path — manual tap, initial
+`reconnectAllDevices()` at startup, the AppState foreground listener, and
+every driver's own `scheduleReconnect()` — already converges: the shared
+`StateStore` bridge (`stateStoreBridge.ts`, ADR-HEARTH-020).
+`bridgeDeviceState()` now takes an optional `onConnected(device)` callback,
+fired exactly once on a genuine `disconnected/unknown -> connected`
+transition (guarded by an `initialized` flag so a device that's already
+connected at wiring time doesn't spuriously fire, and so repeated
+`"connected"` updates from ordinary successful commands don't re-fire).
+`App.tsx`'s `attachStateBridge()` now passes `saveDeviceQuietly` as that
+callback — one line, covering all four reconnect paths uniformly instead
+of teaching each driver about persistence individually. The two existing
+direct `saveDeviceQuietly()` calls in `reconnectAllDevices`/`handleReconnect`
+are now redundant with this but harmless (idempotent, best-effort) — left
+in place rather than removed, since removing them buys nothing and adds
+risk for no reason.
+
+183/183 tests passing (3 new: fires once on a real transition, does not
+re-fire on repeated already-connected updates, fires again after a
+disconnect/reconnect cycle — matching a driver's own autonomous retry).
+`tsc --noEmit` clean.
+
+This should make the LG TV's next re-pairing (via `EditDeviceAddressScreen`
+at its current address, or a fresh on-screen accept if the TV really did
+clear its trust list) the **last** one required — any key it hands back
+from that point on, through any reconnect path, now actually reaches
+disk.

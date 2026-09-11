@@ -157,6 +157,7 @@ testing.
 - [ ] Router-based fallback for IP re-discovery (if the Family Command Center lookup itself ever fails) — Sean asked for this directly; not built, router APIs vary too much by brand/model to scope safely in the same pass as the fix above. Candidate for its own investigation.
 - [ ] Multi-network household support as a first-class concept, not just IP re-discovery after the fact — Sean: "hearth should interact with all networks within the household ecosystem for any house if it is an effective app." Noted as a real direction; today's fix (re-locate by MAC when a saved IP goes stale) is the narrow, reactive version of this, not the full thing.
 - [ ] Sony and Roku real-hardware checkpoints — still open from earlier tonight, unchanged.
+- [x] **Real persistence bug, root-caused after "i have ALLOWED IT like 15 times, i don't want to again"** — a driver's own autonomous background reconnect (`scheduleReconnect()`, the day's earlier fix) calls its own `connect()` directly, never through `App.tsx`'s `saveDeviceQuietly()` wrapper, so a client-key it learned only ever lived in memory and was lost on next reload — the actual reason accepting the TV's on-screen prompt never seemed to "stick." Fixed at the one place every reconnect path converges: `stateStoreBridge.ts`'s `bridgeDeviceState()` now takes an `onConnected` callback fired once per genuine disconnected→connected transition, and `App.tsx` wires `saveDeviceQuietly` into it. 183/183 tests, `tsc` clean. See ADR-HEARTH-021's final update.
 
 ## Phase 5 — Smart lighting
 

@@ -70,11 +70,17 @@ export default function App() {
   // id so handleRemoveDevice can unsubscribe it and a device can't accidentally be bridged twice.
   const stateBridges = useRef(new Map<string, () => void>()).current;
 
+  // Sean, directly (2026-09-10): "i have ALLOWED IT like 15 times, i don't want to again." A
+  // driver's own autonomous background retry (LgWebOsDriver.scheduleReconnect and its
+  // Samsung/Hue equivalents) calls connect() on itself, never through handleReconnect/
+  // reconnectAllDevices above — so a pairing key it learns only ever lived in memory. Passing
+  // saveDeviceQuietly as bridgeDeviceState's onConnected hook means EVERY path that reaches
+  // "connected" state persists device.config, not just the two App.tsx-initiated ones.
   function attachStateBridge(device: Device) {
     if (stateBridges.has(device.id)) return;
     const driver = runtime.driverRegistry.get(device.driverId);
     if (!driver) return;
-    stateBridges.set(device.id, bridgeDeviceState(driver, device, runtime.stateStore));
+    stateBridges.set(device.id, bridgeDeviceState(driver, device, runtime.stateStore, saveDeviceQuietly));
   }
 
   // Real-device finding (2026-09-10): "there are no buttons for streaming" — a device persisted

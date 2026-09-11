@@ -82,4 +82,49 @@ describe("bridgeDeviceState", () => {
 
     expect(stateStore.get(device.id).connection).toBe("connected"); // unchanged — no longer listening
   });
+
+  // Real-hardware finding (2026-09-10), Sean directly: "i have ALLOWED IT like 15 times, i don't
+  // want to again." A driver's own autonomous background reconnect (never routed through
+  // App.tsx's saveDeviceQuietly) learns a fresh pairing key that then only ever lived in memory.
+  describe("onConnected", () => {
+    test("fires once a device transitions from disconnected to connected, regardless of which code path caused it", async () => {
+      const stateStore = new StateStore();
+      const driver = fakeDriver({ connection: "disconnected", values: {}, lastUpdated: 1 });
+      const onConnected = jest.fn();
+      bridgeDeviceState(driver, device, stateStore, onConnected);
+      await flushMicrotasks();
+
+      expect(onConnected).not.toHaveBeenCalled();
+
+      driver.emit({ connection: "connected", values: {}, lastUpdated: 2 });
+      expect(onConnected).toHaveBeenCalledTimes(1);
+      expect(onConnected).toHaveBeenCalledWith(device);
+    });
+
+    test("does not re-fire on every subsequent already-connected state update (e.g. a successful command)", async () => {
+      const stateStore = new StateStore();
+      const driver = fakeDriver({ connection: "connected", values: {}, lastUpdated: 1 });
+      const onConnected = jest.fn();
+      bridgeDeviceState(driver, device, stateStore, onConnected);
+      await flushMicrotasks();
+
+      expect(onConnected).not.toHaveBeenCalled(); // already connected at wiring time — not a transition
+
+      driver.emit({ connection: "connected", values: { power: "on" }, lastUpdated: 2 });
+      driver.emit({ connection: "connected", values: { power: "off" }, lastUpdated: 3 });
+      expect(onConnected).not.toHaveBeenCalled();
+    });
+
+    test("fires again after a disconnect/reconnect cycle, matching a driver's own auto-reconnect learning a fresh client-key", async () => {
+      const stateStore = new StateStore();
+      const driver = fakeDriver({ connection: "connected", values: {}, lastUpdated: 1 });
+      const onConnected = jest.fn();
+      bridgeDeviceState(driver, device, stateStore, onConnected);
+      await flushMicrotasks();
+
+      driver.emit({ connection: "disconnected", values: {}, lastUpdated: 2 });
+      driver.emit({ connection: "connected", values: {}, lastUpdated: 3 }); // e.g. scheduleReconnect's own retry, not App.tsx-initiated
+      expect(onConnected).toHaveBeenCalledTimes(1);
+    });
+  });
 });
