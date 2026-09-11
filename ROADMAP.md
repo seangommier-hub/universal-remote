@@ -216,13 +216,12 @@ toward "add anything with a few clicks" as a general pattern, not just outlets s
   needed it. **Removed the now-confirmed-dead OAuth token-exchange endpoint and its lib/tests** —
   a WEBHOOK_SMART_APP never receives an authorization code to exchange. 5 new tests, 139/139
   project-wide, clean build.
-- [ ] **Blocked on Sean**: migration 0077 needs to run against the real Supabase project once —
-  the session's own Chrome/GitHub login resolves to a different, empty Supabase org than the one
-  hosting this project's database, so it couldn't be applied directly (tried and ruled out: no
-  `supabase` CLI, no `psql`, no `.pgpass`, no Management API token anywhere on the Pi — see memory
-  `family_command_center_supabase_access.md`). Once applied: rebuild and restart the Family Command
-  Center service — code is committed, pushed, and tested, just not live yet, to avoid a real
-  INSTALL/UPDATE lifecycle event 500'ing against a table that doesn't exist yet.
+- [x] **Migration 0077 applied by Sean (2026-09-11), service rebuilt and restarted** — verified
+  live: `smartthings_context` table exists, the webhook still answers PING correctly post-restart,
+  and `GET /api/integrations/hearth/smartthings/outlets` now returns the real, graceful "SmartThings
+  isn't installed yet" error instead of a 500 — confirms the full code path (route → outlets lib →
+  context store → real Supabase table) works end-to-end, waiting only on the actual SmartThings-app
+  install step below.
 - [x] **Hearth-side rewrite complete**: `SmartThingsOutletDriver.ts`/`SmartThingsClient.ts` now call
   the FCC proxy above via the household's existing Family Command Center pairing (no separate
   SmartThings credential on the phone at all); `smartThingsConfig.ts` deleted (wrong shape, not
