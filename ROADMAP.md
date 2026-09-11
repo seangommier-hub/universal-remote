@@ -178,24 +178,76 @@ own docs) — a dead end regardless of effort. SmartThings is the platform that 
 toward "add anything with a few clicks" as a general pattern, not just outlets specifically.
 
 - [x] New `"outlet"` `DeviceCategory`.
-- [x] `smartThingsConfig.ts` (OAuth token storage, all-SecureStore), `SmartThingsClient.ts` (REST
-  wrapper: list/read/set switch state), `SmartThingsOutletDriver.ts` (`power` capability, proactive
-  token refresh). 207/207 tests, `tsc` clean.
-- [x] **"Hearth" app registered at the SmartThings Developer Workspace** — came back a
-  **confidential client** (Client ID + Secret, not public/PKCE), settling ADR-HEARTH-042's open
-  question: the token exchange must be proxied through the Family Command Center.
+- [x] ~~`smartThingsConfig.ts` (OAuth token storage, all-SecureStore)~~ — **superseded, see course
+  correction below**; kept `SmartThingsClient.ts`/`SmartThingsOutletDriver.ts` as the shape to
+  rebuild against a Family Command Center proxy instead of SmartThings directly. 207/207 tests,
+  `tsc` clean at the time.
+- [x] **"Hearth" app registered at the SmartThings Developer Workspace** as a confidential client
+  (Client ID + Secret). Client ID/Secret captured once, stored in the Pi's `.env.local`, never in
+  Hearth's own codebase.
 - [x] SmartThings' registration-time PING verification passed against a new webhook
   (`family-command-center/adr/0157`) reached through a path-scoped Cloudflare Tunnel running on
-  the Pi itself (`fcc-webhook.carddna.app`, limited to exactly that one route). Client
-  ID/Secret captured once and stored in the Pi's `.env.local`, never in Hearth's own codebase.
-- [ ] Token-exchange endpoint on the Family Command Center (e.g.
-  `POST /api/integrations/hearth/smartthings/token`) — the one piece still unbuilt now that
-  every upstream unknown is resolved.
-- [ ] OAuth pairing screen (`expo-auth-session`, installed) + outlet picker (mirrors
-  `AddHueDeviceScreen.tsx`'s two-step shape), calling the token-exchange endpoint above.
-- [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`, wire "+ Add SmartThings" into
-  `DeviceListScreen`.
-- [ ] First real-hardware checkpoint: Sean pairing a real SmartThings-connected outlet.
+  the Pi itself (`fcc-webhook.carddna.app`, limited to exactly that one route).
+- [x] Token-exchange endpoint built on the Family Command Center
+  (`POST /api/integrations/hearth/smartthings/token`) — **now dead code**, see course correction.
+- [x] **CONFIRMATION lifecycle bug found and fixed** — the webhook's own defense-in-depth
+  host/path pin expected SmartThings' documented confirmation URL shape
+  (`/v1/apps/<id>/confirm-registration`), but the real URL SmartThings sends has no `/v1/` segment.
+  Caught live from the Pi's service log during a real "VERIFY APP REGISTRATION" attempt, fixed,
+  redeployed, re-verified. Project moved from Draft to **Deployed to Test** in the SmartThings
+  Developer Workspace.
+- [x] **Course correction (ADR-HEARTH-042's 2026-09-11 update, `family-command-center/adr/0157`'s
+  matching update)**: confirmed against the `@smartthings/smartapp` SDK's own README/source that a
+  WEBHOOK_SMART_APP (what "Hearth" is registered as) does **not** use a browser OAuth flow at all —
+  that only applies to a different app type (`API_ONLY`). Instead, the user installs "Hearth"
+  through the **SmartThings mobile app** itself, picks devices via a config page rendered inside
+  that app, and SmartThings delivers tokens directly through the INSTALL/UPDATE lifecycle events.
+  Built to match: `supabase/migrations/0077_smartthings_context.sql` +
+  `smartthings-context-store.ts` (Supabase-backed `ContextStore`, service-role only) and a
+  `mainPage` device picker (switch capability, multi-select), wired into the SmartApp instance
+  along with `clientId`/`clientSecret` for automatic token refresh. 23/23 new tests, `tsc` clean.
+- [ ] **Blocked on Sean**: migration 0077 needs to run against the real Supabase project once —
+  the session's own Chrome/GitHub login resolves to a different, empty Supabase org than the one
+  hosting this project's database, so it couldn't be applied directly. Once applied: rebuild and
+  restart the Family Command Center service (code is committed and pushed, just not live yet).
+- [ ] New Family Command Center proxy endpoints (e.g.
+  `GET/POST /api/integrations/hearth/smartthings/outlets`) using the stored context to list/control
+  devices on Hearth's behalf — Hearth's phone should never hold a SmartThings token directly under
+  this app type, so this replaces the old pairing-screen plan.
+- [ ] Rewrite `SmartThingsOutletDriver.ts` to call the FCC proxy above instead of SmartThings
+  directly; delete `smartThingsConfig.ts` (wrong shape now, not adaptable) and the now-dead
+  token-exchange endpoint.
+- [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`; `DeviceListScreen` gets a "Sync from
+  SmartThings" action instead of a pairing/OAuth screen — there's nothing to pair from Hearth's
+  side, only devices to pull in after Sean installs the app on the SmartThings side.
+- [ ] First real-hardware checkpoint: Sean installs "Hearth" via the SmartThings app (Developer
+  Mode, since it isn't published), picks a real outlet, confirms it controls from Hearth.
+- [ ] Worth flagging directly, not glossed over: this pairing flow has more friction than the
+  original ask ("a few clicks from their phone, not me asking you to code it") — it's simply how
+  an unpublished WEBHOOK_SMART_APP works, not a design choice made along the way.
+
+## Out-of-band — cross-network device scan (2026-09-11)
+
+Sean: "scan all networks that are the ones i told you and related to the router and add all
+devices possible. create connections for those that are having issues. it is any device connected
+to this network and any of it's affiliated guest, iot, or other." Turns out to already be a known,
+previously-authorized gap: `family-command-center/adr/0148` (router-admin-credential-storage) and
+`adr/0149` (editable-network-and-settings-controls) were both already "Accepted, not yet
+implemented" from an earlier session, blocked on the same missing credential.
+
+- [x] Confirmed the router is a Verizon Fios gateway at `192.168.1.1`, admin username "Admin".
+  Current password not retrievable (write-only field) — located at System → System Settings →
+  User Settings, already open in Sean's browser.
+- [ ] **Blocked on Sean, hard boundary, not a judgment call**: entering any password into any
+  field — including a brand-new one Sean asks to be set — is outside what this session can do,
+  enforced by Claude Code's own permission classifier, not a preference. Sean needs to set a new
+  router admin password himself and report it back before this can proceed.
+- [ ] Once the password exists: wire it into Family Command Center's credential storage per
+  ADR-0148, then build the Guest/IoT-network device visibility + auto-pairing ADR-0149 already
+  specced but never implemented.
+- [ ] Sean separately asked to avoid per-device physical pairing taps where possible ("find a way
+  to do it otherwise. if ABSOLUTELY NEEDED i will.") — worth designing the auto-pairing flow
+  around this constraint once the router credential unblocks the rest.
 
 ## Phase 6 — Robot vacuum
 

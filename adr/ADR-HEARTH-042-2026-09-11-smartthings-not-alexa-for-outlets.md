@@ -4,9 +4,13 @@ Date: 2026-09-11
 
 ## Status
 
-Accepted for the direction; driver foundation built. Blocked on Sean
-registering a SmartThings developer app before the pairing screen can be
-finished — see Consequences.
+Accepted for the direction (SmartThings, not Alexa). The pairing
+*mechanism* described below has been superseded — see the 2026-09-11
+"course correction" update near the bottom: a WEBHOOK_SMART_APP does not
+use a browser OAuth flow, so the driver/token-storage shape this ADR
+originally specced needs to be rebuilt against the SmartThings mobile
+app + FCC-context-store model instead. Read that update before touching
+`SmartThingsOutletDriver.ts` or `smartThingsConfig.ts`.
 
 ## Context
 
@@ -177,3 +181,79 @@ registering `SmartThingsOutletDriver` in `bootstrap.ts` /
 `DeviceListScreen`'s add menu. No more unknowns — this is now
 implementation work with everything it depends on already resolved and
 verified live.
+
+## Update 2026-09-11 (same day, later still): course correction — no OAuth browser flow for this app type, driver needs a rebuild
+
+Everything above through the previous update was built on one wrong
+assumption, discovered while investigating exactly *how* Hearth's pairing
+screen should kick off authorization. Checked directly against the
+`@smartthings/smartapp` SDK's own README and source
+(`family-command-center/node_modules/@smartthings/smartapp/lib/smart-app.js`),
+not secondhand:
+
+**A WEBHOOK_SMART_APP (Automation type — what "Hearth" is registered as
+in the Developer Workspace, confirmed by its "CPT-AUTOMATION" project
+category) does not use a browser OAuth authorization-code flow at all.**
+That flow is real, but it belongs to a different SmartThings app type
+(`API_ONLY`), which this project isn't. Instead:
+
+- The user installs "Hearth" through the **SmartThings mobile app**
+  (Developer Mode, since it isn't published to the marketplace) — not a
+  screen inside Hearth.
+- SmartThings renders a config page *inside its own app* during
+  install/reconfigure, letting the user pick which devices to expose. The
+  Family Command Center's webhook now defines this page (`.page("mainPage", ...)`,
+  requesting `switch`-capability devices, multi-select).
+- On INSTALL/UPDATE, SmartThings hands the webhook an access/refresh
+  token pair directly in the lifecycle event body — no separate code
+  exchange. The SDK persists and auto-refreshes these through a
+  `ContextStore`, which is mandatory (its README: "there is no in-memory
+  context store; you must use a context store plugin").
+
+Family Command Center's side is now corrected (see
+`family-command-center/adr/0157`'s matching update): a Supabase-backed
+`ContextStore` (migration `0077_smartthings_context.sql`), `clientId`/
+`clientSecret` wired into the `SmartApp` instance, and the `mainPage`
+device picker. **Not yet deployed** — the migration needs to run against
+the real Supabase project first (blocked on Sean signing into the correct
+Supabase account; the session's own Chrome/GitHub SSO session resolves to
+a different, empty Supabase org than the one hosting this project's
+database).
+
+**What this means for Hearth's own code, none of which is built yet
+beyond what ADR-HEARTH-042's earlier updates already shipped**:
+
+- `smartThingsConfig.ts` (SecureStore-based OAuth token storage on the
+  phone) is the wrong shape entirely — Hearth's phone should never hold a
+  SmartThings access/refresh token, because there's no OAuth exchange for
+  it to receive one from under this app type. This file should be
+  deleted, not adapted.
+- `SmartThingsOutletDriver.ts`'s `RefreshAccessToken` injection point
+  (calling `/api/integrations/hearth/smartthings/token`) is solving a
+  problem that doesn't exist for this app type. The driver needs to be
+  rewritten to call a **new Family Command Center proxy endpoint**
+  instead (e.g. `GET/POST /api/integrations/hearth/smartthings/outlets`,
+  not yet built) that uses the FCC's own stored context internally —
+  the same "backend does what the phone architecturally can't do safely"
+  pattern already established for the relay (ADR-HEARTH-011), except here
+  it's "shouldn't have to," not "can't": there's simply no token for the
+  phone to hold.
+- The already-built `/api/integrations/hearth/smartthings/token` endpoint
+  on the Family Command Center is now dead code for this integration and
+  should be removed once the new outlet-proxy endpoints exist.
+- There is no "+ Add SmartThings" pairing screen to build inside Hearth
+  at all. The pairing action is "open the SmartThings app and install
+  Hearth" — which is real friction against the original ask ("a few
+  clicks from their phone, not me asking you to code it"), and worth
+  flagging to Sean directly rather than glossing over: this is simply how
+  an unpublished WEBHOOK_SMART_APP works, not a design choice.
+
+**Next implementation steps, in order**: (1) Sean applies migration 0077
+via his own Supabase login; (2) rebuild the FCC's SmartThings build and
+restart the service; (3) build the FCC outlet-list/control proxy
+endpoints; (4) rewrite `SmartThingsOutletDriver`/delete
+`smartThingsConfig.ts` on Hearth's side to call the proxy instead of
+SmartThings directly; (5) Sean installs "Hearth" via the SmartThings app
+(Developer Mode) and picks outlets through its config page; (6) Hearth's
+`DeviceListScreen` gets a "Sync from SmartThings" action (list what the
+FCC proxy already knows about) rather than a pairing/OAuth screen.
