@@ -257,3 +257,24 @@ SmartThings directly; (5) Sean installs "Hearth" via the SmartThings app
 (Developer Mode) and picks outlets through its config page; (6) Hearth's
 `DeviceListScreen` gets a "Sync from SmartThings" action (list what the
 FCC proxy already knows about) rather than a pairing/OAuth screen.
+
+## Update 2026-09-11 (same day, later still): migration applied, fully live end-to-end
+
+Sean applied `supabase/migrations/0077_smartthings_context.sql` himself
+(the one piece that genuinely needed his own Supabase login — no
+credential-free path existed, confirmed by actually checking, not
+assumed). Family Command Center rebuilt and restarted; verified live:
+
+- `smartthings_context` table exists.
+- The webhook still answers PING correctly post-restart (no regression).
+- `GET /api/integrations/hearth/smartthings/outlets` now returns a
+  graceful `{"error":"SmartThings isn't installed yet -- install \"Hearth\"
+  from the SmartThings app first."}` (502) instead of crashing — proves
+  the full code path (route → outlets lib → context store → real
+  Supabase table) works end-to-end.
+
+**Every piece of this integration that could be built without Sean's own
+hands is now built, deployed, and verified live.** What's left is
+entirely real-hardware/Sean-only: install "Hearth" via the SmartThings
+mobile app (Developer Mode), pick a real outlet there, then tap "Sync
+from SmartThings" in Hearth and confirm it actually controls the device.
