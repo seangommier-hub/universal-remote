@@ -222,13 +222,19 @@ toward "add anything with a few clicks" as a general pattern, not just outlets s
   `family_command_center_supabase_access.md`). Once applied: rebuild and restart the Family Command
   Center service — code is committed, pushed, and tested, just not live yet, to avoid a real
   INSTALL/UPDATE lifecycle event 500'ing against a table that doesn't exist yet.
-- [ ] Rewrite `SmartThingsOutletDriver.ts` to call the FCC proxy above instead of SmartThings
-  directly; delete `smartThingsConfig.ts` (wrong shape now, not adaptable).
-- [ ] Register `SmartThingsOutletDriver` in `bootstrap.ts`; `DeviceListScreen` gets a "Sync from
-  SmartThings" action instead of a pairing/OAuth screen — there's nothing to pair from Hearth's
-  side, only devices to pull in after Sean installs the app on the SmartThings side.
-- [ ] First real-hardware checkpoint: Sean installs "Hearth" via the SmartThings app (Developer
-  Mode, since it isn't published), picks a real outlet, confirms it controls from Hearth.
+- [x] **Hearth-side rewrite complete**: `SmartThingsOutletDriver.ts`/`SmartThingsClient.ts` now call
+  the FCC proxy above via the household's existing Family Command Center pairing (no separate
+  SmartThings credential on the phone at all); `smartThingsConfig.ts` deleted (wrong shape, not
+  adaptable — Hearth never receives a token to store). Driver registered in `bootstrap.ts`;
+  `DeviceListScreen` has a new "Sync from SmartThings" add-menu entry
+  (`AddSmartThingsOutletsScreen.tsx`) that lists outlets and lets the user pick one per visit, same
+  shape as every other Add screen — no pairing step, since there's nothing to pair from Hearth's
+  side under this app type. 202/202 tests, `tsc` clean. **Hearth's side of this integration is now
+  code-complete** — everything left is the Supabase migration (above) and real-hardware
+  verification (below).
+- [ ] First real-hardware checkpoint: Sean applies the migration, installs "Hearth" via the
+  SmartThings app (Developer Mode, since it isn't published), picks a real outlet there, then taps
+  "Sync from SmartThings" in Hearth and confirms it actually controls the real device.
 - [ ] Worth flagging directly, not glossed over: this pairing flow has more friction than the
   original ask ("a few clicks from their phone, not me asking you to code it") — it's simply how
   an unpublished WEBHOOK_SMART_APP works, not a design choice made along the way.
