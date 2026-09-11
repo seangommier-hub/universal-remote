@@ -185,3 +185,17 @@ accepted-but-real risk that the bit-pattern round-trip has still only been
 checked by "compiles and packages," never exercised on a real device
 through the JSI bridge. That gap doesn't close until the app actually runs
 on the phone.
+
+**2026-09-11, staged AltServer:** downloaded the official installer
+(`https://cdn.altstore.io/file/altstore/altinstaller.zip`, with Sean's
+explicit OK per download policy) and extracted it to
+`C:\Users\SeanGommier\Downloads\altserver-staging\extracted\` (`setup.exe`,
+`AltInstaller.msi`). Attempted to launch `setup.exe` non-interactively to
+see how far it gets before hitting the admin-rights wall; it hung waiting
+for GUI interaction (installer wizard / likely a UAC prompt) with no way
+to observe or drive it headlessly, so the process was killed rather than
+leave an unexpected prompt sitting on Sean's screen. **This step is now
+squarely Sean's**, per [[hearth-windows-not-admin]] and ADR-GLOBAL-008's
+"only hand Sean the piece that genuinely requires him": run `setup.exe`
+from that folder himself, install iTunes first if prompted, and report
+what happens (including the exact error if admin elevation is refused).
