@@ -83,6 +83,21 @@ export default function App() {
     stateBridges.set(device.id, bridgeDeviceState(driver, device, runtime.stateStore, saveDeviceQuietly));
   }
 
+  // Real bug, found in review (2026-09-10) while pointing Sean at EditDeviceAddressScreen:
+  // attachStateBridge's own guard ("if already bridged, do nothing") means the very first Device
+  // object reference ever bridged for an id is the one whose config the onConnected hook above
+  // keeps re-saving, forever — even after handleRenameDevice/handleAddressUpdated below swap in a
+  // corrected object everywhere else (the registry, the `devices` array). Without this, the very
+  // next "connected" transition after a manual address fix would re-persist the OLD, stale
+  // ipAddress right back over the just-saved correct one, silently undoing the fix with no error
+  // shown anywhere. Tears down the stale subscription and re-attaches fresh against the corrected
+  // object whenever identity-bearing fields (name, config) change out from under a device.
+  function rebindStateBridge(updated: Device) {
+    stateBridges.get(updated.id)?.();
+    stateBridges.delete(updated.id);
+    attachStateBridge(updated);
+  }
+
   // Real-device finding (2026-09-10): "there are no buttons for streaming" — a device persisted
   // from an earlier pairing carries whatever `driver.getCapabilities()` returned AT THAT TIME
   // (AddLgDeviceScreen.tsx and its siblings set `capabilities` once, before this session's
@@ -172,6 +187,7 @@ export default function App() {
   function handleRenameDevice(device: Device, newName: string) {
     const updated: Device = { ...device, name: newName };
     runtime.deviceRegistry.add(updated);
+    rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
     setScreen((current) => (current.name === "remote" && current.device.id === device.id ? { name: "remote", device: updated } : current));
     saveDeviceQuietly(updated);
@@ -183,6 +199,7 @@ export default function App() {
   // as handleRenameDevice.
   function handleAddressUpdated(updated: Device) {
     runtime.deviceRegistry.add(updated);
+    rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
     setScreen({ name: "list" });
     saveDeviceQuietly(updated);
