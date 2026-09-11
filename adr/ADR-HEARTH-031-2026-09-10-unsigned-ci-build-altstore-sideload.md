@@ -171,10 +171,17 @@ anything, because Xcode puts the `.app` one directory deeper, under
 first) — not a regression from anything above. Fixed by widening to
 `-maxdepth 2`.
 
-**Still open, not yet verified**: whether the packaging step now succeeds,
-whether AltServer can actually sign and install the resulting `.ipa` on
-Sean's iPhone without admin rights ([[hearth-windows-not-admin]]), and the
-accepted-but-real risk that this pointer round-trip has still only been
-checked by "compiles," never exercised on a real device through the JSI
-bridge. Next: confirm the CI run passes end-to-end and produces a
-downloadable `Hearth-unsigned.ipa` artifact.
+**Confirmed 2026-09-11: the packaging fix worked too.** Run
+[34656177634](https://github.com/seangommier-hub/universal-remote/actions/runs/34656177634)
+went fully green, all steps, and uploaded a real `Hearth-unsigned-ipa`
+artifact (10.1 MB, expires 2026-09-25) for the first time in this project's
+history — four attempts across three Xcode releases to get here.
+
+**Still open, not yet verified**: whether AltServer can actually sign and
+install this `.ipa` on Sean's iPhone without admin rights
+([[hearth-windows-not-admin]]) — the next real unknown, flagged but not
+pre-verified per Sean's own call in the original decision above — and the
+accepted-but-real risk that the bit-pattern round-trip has still only been
+checked by "compiles and packages," never exercised on a real device
+through the JSI bridge. That gap doesn't close until the app actually runs
+on the phone.
