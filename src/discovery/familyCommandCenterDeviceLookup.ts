@@ -13,6 +13,7 @@ const LOOKUP_TIMEOUT_MS = 8000;
 interface LanDevice {
   hwaddr: string;
   ip: string;
+  name: string | null;
 }
 
 async function fetchLanDevices(): Promise<LanDevice[] | undefined> {
@@ -59,4 +60,24 @@ export async function findCurrentIpByMac(hwaddr: string): Promise<string | undef
 export async function findMacByIp(ip: string): Promise<string | undefined> {
   const devices = await fetchLanDevices();
   return devices?.find((device) => device.ip === ip)?.hwaddr;
+}
+
+/**
+ * Looks up a device's current IP by its DHCP hostname instead of its MAC — the fallback for a
+ * device that has no `hwaddr` on file at all.
+ *
+ * Real-hardware finding (2026-09-10), live during Sean's "reconnect still isn't working" report:
+ * a device added via Family Command Center discovery *before* `hwaddr` started being saved
+ * (`DiscoverDevicesScreen.tsx`, ADR-HEARTH-017) has no MAC recorded and can never be re-discovered
+ * by `findCurrentIpByMac`, no matter how many failure types that function is taught to react to —
+ * there's simply nothing to look up with. But that same discovery flow already sets the device's
+ * `name` to the Center's own reported hostname (`FamilyCommandCenterDiscoveryProvider.ts`:
+ * `name: device.name ?? device.ip`), which is exactly what the Center's inventory is keyed on too
+ * — so a hostname match serves the identical purpose for exactly this legacy case. Same
+ * "never throws for not found" contract as the MAC lookups; a device whose name was later
+ * changed via Hearth's own rename feature, or that never matches, just finds nothing.
+ */
+export async function findCurrentIpByName(name: string): Promise<string | undefined> {
+  const devices = await fetchLanDevices();
+  return devices?.find((device) => device.name?.toLowerCase() === name.toLowerCase())?.ip;
 }

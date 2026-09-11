@@ -1,4 +1,4 @@
-import { findCurrentIpByMac, findMacByIp } from "./familyCommandCenterDeviceLookup";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "./familyCommandCenterDeviceLookup";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 jest.mock("./familyCommandCenterConfig");
@@ -91,5 +91,46 @@ describe("findMacByIp", () => {
     mockLoadConfig.mockResolvedValue(null);
 
     expect(await findMacByIp("192.168.1.218")).toBeUndefined();
+  });
+});
+
+// Real-hardware finding (2026-09-10): a device discovered before hwaddr-saving existed
+// (ADR-HEARTH-017) has no MAC on file, so findCurrentIpByMac can never re-locate it — this
+// hostname-based fallback exists for exactly that legacy case.
+describe("findCurrentIpByName", () => {
+  beforeEach(() => {
+    mockLoadConfig.mockReset();
+    global.fetch = jest.fn();
+  });
+
+  test("returns the current IP for a device matching the given name, case-insensitively", async () => {
+    mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        devices: [
+          { hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.50", name: "SonyTV.lan" },
+          { hwaddr: "11:22:33:44:55:66", ip: "192.168.1.218", name: "LGwebOSTV.lan" },
+        ],
+      }),
+    });
+
+    expect(await findCurrentIpByName("lgwebostv.lan")).toBe("192.168.1.218");
+  });
+
+  test("returns undefined when no device has a matching name", async () => {
+    mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.50", name: null }] }),
+    });
+
+    expect(await findCurrentIpByName("LGwebOSTV.lan")).toBeUndefined();
+  });
+
+  test("returns undefined (not a throw) when Family Command Center isn't configured", async () => {
+    mockLoadConfig.mockResolvedValue(null);
+
+    expect(await findCurrentIpByName("LGwebOSTV.lan")).toBeUndefined();
   });
 });

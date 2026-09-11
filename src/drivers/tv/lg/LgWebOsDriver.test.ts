@@ -363,7 +363,7 @@ describe("LgWebOsDriver", () => {
       }
     });
 
-    test("a device with no saved hwaddr (manually added, not discovered) just fails normally — no lookup attempted", async () => {
+    test("a device with no saved hwaddr and no Family Command Center configured just fails normally — nothing to look up", async () => {
       const manualDevice: Device = { ...device, config: { ipAddress: "10.20.30.40" } }; // no hwaddr
 
       const connectPromise = driver.connect(manualDevice);
@@ -371,13 +371,60 @@ describe("LgWebOsDriver", () => {
       await flushMicrotasks();
 
       await expect(connectPromise).rejects.toThrow();
-      expect(global.fetch).not.toHaveBeenCalled(); // never even tried to look itself up
+      expect(global.fetch).not.toHaveBeenCalled(); // FCC isn't configured (mockLoadConfig defaults unconfigured) — nothing to call
 
       // The failed connect() schedules a real background retry timer (by design, this session's
       // own fix) — cancel it before the test ends so it can't fire during a later, unrelated test
       // and corrupt its MockWebSocket state, the same reason other tests in this file explicitly
       // disconnect() when a scheduled reconnect isn't the thing under test.
       await driver.disconnect(manualDevice);
+    });
+
+    // Real-hardware finding (2026-09-10): the actual device stuck in Sean's live "reconnect still
+    // isn't working" report had no hwaddr at all (discovered before ADR-HEARTH-017 started saving
+    // one) — findCurrentIpByMac could never help it no matter how many failure types it reacted
+    // to. This is the fallback that actually fixes that exact device: matching on the name
+    // discovery already gave it (set from the Center's own reported hostname).
+    test("a device with no saved hwaddr falls back to a name-based lookup and re-locates itself", async () => {
+      const deviceWithNoMac: Device = { ...device, name: "LGwebOSTV.lan", config: { ipAddress: "10.20.30.40" } };
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.218", name: "LGwebOSTV.lan" }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.218", name: "LGwebOSTV.lan" }] }),
+        });
+
+      const connectPromise = driver.connect(deviceWithNoMac);
+      const directSocket = MockWebSocket.latest();
+      directSocket.simulateError();
+      await flushMicrotasks();
+      const relaySocket = MockWebSocket.latest();
+      relaySocket.simulateError();
+      await flushMicrotasks(20);
+
+      const retrySocket = MockWebSocket.latest();
+      expect(retrySocket.url).toBe("wss://192.168.1.218:3001");
+      retrySocket.simulateOpen();
+      await flushMicrotasks();
+      const registerSent = JSON.parse(retrySocket.sentMessages[0]);
+      retrySocket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "name-matched-key" } });
+      await flushMicrotasks();
+      const volumeRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 8, mute: false } });
+      await flushMicrotasks();
+      const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+      await flushMicrotasks();
+
+      await connectPromise;
+      expect((await driver.getState(deviceWithNoMac)).connection).toBe("connected");
+      expect(deviceWithNoMac.config?.ipAddress).toBe("192.168.1.218");
+      // Backfilled going forward — the next stale-IP case for this device uses the faster MAC lookup.
+      expect(deviceWithNoMac.config?.hwaddr).toBe("11:22:33:44:55:66");
     });
   });
 

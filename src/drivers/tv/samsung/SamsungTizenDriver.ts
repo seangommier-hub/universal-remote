@@ -6,7 +6,7 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
-import { findCurrentIpByMac } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -191,12 +191,20 @@ export class SamsungTizenDriver implements DeviceDriver {
       return client;
     } catch (err) {
       const hwaddr = device.config?.hwaddr;
-      if (typeof hwaddr !== "string") throw err;
       logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
-      const freshIp = await findCurrentIpByMac(hwaddr);
+      // See LgWebOsDriver.ts's identical comment: a device discovered before hwaddr-saving
+      // existed has no MAC to look up by at all — falls back to a hostname match on this
+      // device's own `name` (discovery already set it from the Center's reported hostname).
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
       if (!freshIp || freshIp === config.ipAddress) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp;
+      // Backfills the missing MAC so the *next* move is caught by the faster, more precise
+      // findCurrentIpByMac instead of needing this name-fallback again.
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
       const retryClient = new SamsungTizenClient({ ...config, ipAddress: freshIp });
       await retryClient.connect();
       return retryClient;

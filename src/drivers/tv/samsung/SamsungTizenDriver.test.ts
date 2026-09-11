@@ -201,7 +201,7 @@ describe("SamsungTizenDriver", () => {
       }
     });
 
-    test("a device with no saved hwaddr just fails normally — no lookup attempted", async () => {
+    test("a device with no saved hwaddr and no Family Command Center configured just fails normally — nothing to look up", async () => {
       const manualDevice: Device = { ...device, config: { ipAddress: "192.168.1.60" } };
 
       const connectPromise = driver.connect(manualDevice);
@@ -209,8 +209,45 @@ describe("SamsungTizenDriver", () => {
       await flushMicrotasks();
 
       await expect(connectPromise).rejects.toThrow();
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled(); // FCC isn't configured (mockLoadConfig defaults unconfigured) — nothing to call
       await driver.disconnect(manualDevice); // cancel the scheduled retry so it can't leak into a later test
+    });
+
+    // See LgWebOsDriver.test.ts's identical case: a device discovered before hwaddr-saving
+    // existed has no MAC to re-locate by — falls back to matching its own `name` (set from the
+    // Center's reported hostname at discovery time) against the Center's current inventory.
+    test("a device with no saved hwaddr falls back to a name-based lookup and re-locates itself", async () => {
+      const deviceWithNoMac: Device = { ...device, name: "SamsungTV.lan", config: { ipAddress: "192.168.1.60" } };
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.219", name: "SamsungTV.lan" }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.219", name: "SamsungTV.lan" }] }),
+        });
+
+      const connectPromise = driver.connect(deviceWithNoMac);
+      const directSocket = MockWebSocket.latest();
+      directSocket.simulateError();
+      await flushMicrotasks();
+      const relaySocket = MockWebSocket.latest();
+      relaySocket.simulateError();
+      await flushMicrotasks(20);
+
+      const retrySocket = MockWebSocket.latest();
+      expect(retrySocket.url).toContain("192.168.1.219");
+      retrySocket.simulateOpen();
+      await flushMicrotasks();
+      retrySocket.simulateMessage({ event: "ms.channel.connect", data: {} });
+      await flushMicrotasks();
+
+      await connectPromise;
+      expect((await driver.getState(deviceWithNoMac)).connection).toBe("connected");
+      expect(deviceWithNoMac.config?.ipAddress).toBe("192.168.1.219");
+      expect(deviceWithNoMac.config?.hwaddr).toBe("11:22:33:44:55:66");
     });
   });
 });
