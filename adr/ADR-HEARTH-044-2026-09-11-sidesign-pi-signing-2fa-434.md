@@ -170,3 +170,55 @@ When Sean is ready to try again:
 
 ADR-HEARTH-043 (the prior, confirmed-dead-end Pi sideload path),
 [[feedback_pi5_dev_target]], [[hearth-apple-developer-pending]]
+
+## Update 2026-09-12: patched header got past 434, but a new error appeared — root cause found and fixed, unverified
+
+The `authApp` header patch from this ADR's original write-up worked: a real
+attempt this morning got a genuine `-21669` ("Incorrect verification code")
+response instead of `434` — proof the endpoint now accepts the request at
+all. A follow-up attempt with the correct code got **past 2FA entirely**
+("2FA code verified successfully!") for the first time ever, then failed at
+the very next step — a full re-authentication SRP handshake the CLI runs
+immediately after 2FA to obtain real session tokens — with a new, different
+error: `-22413: This Action Cannot Be Completed`. Not documented anywhere
+(checked SideStore/SideSign's GitHub issues directly: none exist yet for
+this code; checked AltStore/AltServer forks: only the cosmetically similar
+but distinct `-22411` appears, itself undocumented).
+
+**Root cause found:** `sidesign_login_flow.py` was answering sidesign's
+"Enter password to encrypt/for device data" prompt (the local `machine.dat`
+device-identity cache, handled by `CLI/DeviceDataManager.swift`) with a
+blank line. `CommandHandler.swift`'s `guard ... !entered.isEmpty else`
+around every `DeviceDataManager.load`/`.save` call means a blank answer
+silently skips persistence entirely — confirmed directly: `data/adi/`
+never contained anything but the two static ADI `.so` libraries, and
+`~/.sidesign/session` reported "No saved sessions found" even after a
+2FA-verified run. Every single login attempt was therefore minting a
+brand-new random device identity from scratch (confirmed: `X-Mme-Device-Id`
+differed between the 00:19 and 00:34 runs tonight, e.g.
+`E0293E43-1ED8-4ABF-B069-D8249E03E21F` vs `A5EE3EFE-6464-4795-A604-A4A8106FC101`)
+— consistent *within* one process run, but a fresh throwaway "device" on
+every new run. Apple's fraud detection almost certainly treats "a
+never-before-seen device jumping straight to a sensitive
+final-authentication step, repeatedly, same account, same evening" as
+exactly the pattern `-22413` exists to block.
+
+**Fix applied:** `sidesign_login_flow.py` now generates a random 32-byte
+passphrase once (`~/.sidesign_device_passphrase`, `chmod 600`, plain file —
+this only encrypts a local device-identity cache at rest, it's not an Apple
+credential, same risk class as the SSH key already on this Pi) and sends
+that instead of a blank line at the device-data prompt. `machine.dat`
+should now persist and be reused across runs, giving Apple one consistent,
+increasingly-trusted device identity instead of a new one every attempt.
+
+**Status: fix deployed, not yet verified against a real login** — the next
+real attempt (whenever Sean runs it) is the actual test. If `-22413`
+recurs even with a persisted device identity, the next candidates are (a)
+whether the retry-authenticate step needs to carry forward a session
+cookie/header from the 2FA verification response that it currently drops,
+or (b) filing the exact symptom upstream with SideStore/SideSign now that
+it's cleanly reproducible.
+
+## Related (cont.)
+
+[[hearth-sidesign-device-persistence-fix]]
