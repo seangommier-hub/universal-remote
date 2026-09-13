@@ -168,6 +168,11 @@ export class LgWebOsDriver implements DeviceDriver {
   // can tear down the old one before it's replaced — mirrors how `clients` itself is swapped out,
   // just for a subscription instead of the whole socket.
   private playbackUnsubscribes = new Map<string, () => void>();
+  // Command-history-derived approximation of "is a video actually playing" (2026-09-13) — see the
+  // "select"/"launchApp"/"inputSelection" cases in applyCommand for the actual state machine.
+  // Cleared on disconnect() below — a stale assumption from a dropped connection shouldn't survive
+  // a reconnect.
+  private assumedInStreamingApp = new Map<string, boolean>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -315,6 +320,7 @@ export class LgWebOsDriver implements DeviceDriver {
     this.clearReconnectTimer(device.id);
     this.playbackUnsubscribes.get(device.id)?.();
     this.playbackUnsubscribes.delete(device.id);
+    this.assumedInStreamingApp.delete(device.id);
     this.clients.get(device.id)?.close();
     this.clients.delete(device.id);
     const current = this.states.get(device.id);
@@ -420,17 +426,37 @@ export class LgWebOsDriver implements DeviceDriver {
         await client.call("ssap://tv/channelDown");
         this.patchValues(device.id, { lastAction: "channelDown" });
         return;
-      case "select":
+      case "select": {
         await client.sendButton("ENTER");
-        this.patchValues(device.id, { lastAction: "select" });
+        // Real-hardware finding (2026-09-13): this TV's firmware has no endpoint that reports
+        // true playback state — confirmed live, during Sean's own active viewing, across every
+        // plausible SSAP query. Fire TV's remote can dynamically become play/pause because Fire OS
+        // has real internal knowledge of its player; this TV genuinely doesn't expose that to any
+        // client. Deriving an approximation from OUR OWN command history instead: once a streaming
+        // app has been launched (see "launchApp" below) and the user presses Select inside it,
+        // that's a real, meaningful signal — selecting a title is how you start playback in every
+        // one of these apps — so this specific Select press is the one that flips the center
+        // button over to play/pause for whatever comes next. Pressing Home resets it. Not perfect
+        // (selecting something that isn't "play this," e.g. a show's detail page, still flips it),
+        // but far narrower and more accurate than guessing from foreground-app-id alone, which was
+        // wrong the entire time a user was just browsing an app's menus, not just at one moment.
+        if (this.assumedInStreamingApp.get(device.id)) {
+          this.patchValues(device.id, { playbackState: "playing" });
+        } else {
+          this.patchValues(device.id, { lastAction: "select" });
+        }
         return;
+      }
       case "back":
         await client.sendButton("BACK");
         this.patchValues(device.id, { lastAction: "back" });
         return;
       case "home":
         await client.sendButton("HOME");
-        this.patchValues(device.id, { lastAction: "home" });
+        // Leaving to the launcher is an unambiguous "not watching anything, not browsing an app
+        // either" signal — reset both the streaming-app assumption and the center button.
+        this.assumedInStreamingApp.set(device.id, false);
+        this.patchValues(device.id, { lastAction: "home", playbackState: "stopped" });
         return;
       case "menu":
         await client.sendButton("MENU");
@@ -461,7 +487,11 @@ export class LgWebOsDriver implements DeviceDriver {
         // ssap://system.launcher/launch — sourced from hobbyquaker/lgtv2, same reference this
         // driver already cites for the button list and pairing manifest.
         await client.call("ssap://system.launcher/launch", { id: appId });
-        this.patchValues(device.id, { lastAction: `launch:${service}` });
+        // Fresh app launch always lands on that app's own browse/home screen, never straight into
+        // playback — Select stays the center button until a real Select press inside it (see the
+        // "select" case above) signals the user actually started watching something.
+        this.assumedInStreamingApp.set(device.id, true);
+        this.patchValues(device.id, { lastAction: `launch:${service}`, playbackState: "stopped" });
         return;
       }
       case "inputSelection": {
@@ -470,7 +500,9 @@ export class LgWebOsDriver implements DeviceDriver {
         // ssap://tv/switchInput — sourced from hobbyquaker/lgtv2. `input` here is one of the real
         // ids refreshInputList() read off this specific TV, not a guessed/hardcoded value.
         await client.call("ssap://tv/switchInput", { inputId: input });
-        this.patchValues(device.id, { input });
+        // Switching to e.g. an HDMI input leaves whatever app was open — same reset as Home.
+        this.assumedInStreamingApp.set(device.id, false);
+        this.patchValues(device.id, { input, playbackState: "stopped" });
         return;
       }
       case "playPause": {

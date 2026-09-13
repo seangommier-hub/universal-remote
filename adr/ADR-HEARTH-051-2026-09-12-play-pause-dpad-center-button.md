@@ -200,3 +200,74 @@ feature, since nothing about it assumes what the caller does on failure.
 All 259 tests pass after the revert (`LgWebOsDriver.test.ts`'s existing subscription-failure test
 already only asserted `connect()` succeeds regardless, not polling behavior — nothing needed
 updating).
+
+## Update 2026-09-13: Fire TV correction, one more exhaustive live sweep, then a command-history heuristic
+
+Sean, live while actively watching content on the real LG TV, restated the ask in terms that
+changed the design target: **"think of an amazon firestick remote, the center button functions for
+all three depending on the state of the firestick"** — one dynamic button (Select / Play / Pause),
+not the separate always-visible Play and Pause buttons this session had proposed and briefly
+implemented in `Capability.ts` (reverted immediately, same session, back to the single `"playPause"`
+id from the original 2026-09-12 decision above).
+
+Before assuming the 2026-09-12 firmware-404 finding was final, ran one more exhaustive live sweep
+against Sean's real TV while he confirmed he was actively watching (`lg_playstate_probe2.js`,
+scratchpad-only, query-only calls — never touched playback): `media.controls/getStatus`,
+`com.webos.media/getStatus`, `com.webos.media/getForegroundAppInfo` (still 404),
+`com.webos.applicationManager/getAppState`, `com.webos.service.mediacontroller/getStatus`,
+`audio/getStatus`, `tv/getCurrentChannel` — none of these return a playback-state field on this
+firmware; only `com.webos.applicationManager/getForegroundAppInfo` (appId only, already known)
+succeeded. Confirms the 2026-09-12 finding was not incomplete: **this TV's firmware genuinely
+exposes no true playback-state signal, full stop.**
+
+Asked Sean directly what tradeoff he'd accept given that hard constraint (three options: accept the
+appId-foregrounding heuristic already reverted once, accept no dynamic button at all, or something
+else). He didn't pick one of the three — he restated the ideal instead: **"it should allow the user
+to select things then rotate to play/pause when content is playing 3 functions of the button but
+dynamic and adjusting based on the thing that is happening. select when content isn't playing and
+then play."** Read together with the Fire TV framing, the actual requirement is: derive "is content
+playing" from *something* real, and default to Select whenever that's unknown — never guess
+"playing" without a real trigger, which is exactly what the reverted appId-polling approach got
+wrong (foregrounding a streaming app is not the same as playing something inside it).
+
+### Decision: command-history-derived approximation, not device telemetry
+
+Since no telemetry signal exists at all on this firmware, the driver instead tracks its own command
+history per device (`assumedInStreamingApp: Map<string, boolean>` in `LgWebOsDriver.ts`) as a
+best-effort proxy for "is a video plausibly playing right now":
+
+- `launchApp` (opening Netflix/Hulu/etc.) sets the flag `true`, but leaves `playbackState:
+  "stopped"` — landing in an app is landing on its browse screen, not mid-video, so the center
+  button stays on Select immediately after launch. This is the specific case Sean's restated ask
+  called out by name ("select when content isn't playing").
+- `select` (the center button itself, i.e. the user picking something in that app's UI) is the only
+  transition that flips to `"playing"`, and only if the flag is `true` — pressing OK/Enter inside a
+  streaming app is the real user action that starts playback, so it's the most honest available
+  trigger given no device-side confirmation exists. Pressing select with no streaming app open (live
+  TV, settings, home) does nothing to `playbackState`, matching pre-2026-09-12 behavior exactly.
+- `home` and `inputSelection` (switching to a live-TV input or leaving the app) both clear the flag
+  and reset `playbackState` to `"stopped"` — leaving the app is assumed to leave playback, returning
+  the center button to Select.
+- `disconnect()` clears the per-device flag entirely, so a fresh connection never inherits stale
+  assumed state.
+
+This is explicitly an approximation, not a detection: it cannot know if the user backs out to the
+app's menu without pressing Home, or pauses via the TV's own physical remote — in both cases the
+button will keep showing Pause until the user presses Home/switches input or the driver
+reconnects. That's a known, accepted gap, not a bug — there is no signal on this firmware that could
+close it, and it strictly dominates both prior states (no dynamic button at all, or the reverted
+appId-heuristic that showed Pause for the entire time a user merely browsed an app's menus).
+
+### Testing
+
+Added a new `describe("command-history playback approximation (real-hardware finding,
+2026-09-13)", ...)` block to `LgWebOsDriver.test.ts`: select does nothing before any app launch;
+`launchApp` alone leaves `playbackState: "stopped"`; select after `launchApp` flips to `"playing"`;
+`home` resets both the flag and `playbackState` back to Select; `inputSelection` resets the same way
+`home` does. All 5 pass; full suite remains green (27 suites, 264 tests); `npx tsc --noEmit` clean.
+
+**Live-verified 2026-09-13** via the Android emulator against Sean's real LG TV (Downstairs Living
+Room, connected): launching Hulu left the center button on the checkmark (Select) exactly as
+designed; pressing Select immediately after flipped it to a filled Pause icon; pressing Home reset
+it back to the checkmark. The full Select → Play/Pause → Select cycle Sean asked for, modeled on the
+Fire TV remote, is confirmed working end-to-end against real hardware, not just in unit tests.

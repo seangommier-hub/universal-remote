@@ -340,6 +340,90 @@ describe("LgWebOsDriver", () => {
     });
   });
 
+  describe("command-history playback approximation (real-hardware finding, 2026-09-13)", () => {
+    /**
+     * Completes a select/home button press. `getPointerSocket()` caches and reuses an already-open
+     * pointer socket, so only the *first* press in a test actually sends a fresh
+     * getPointerInputSocket request on the main socket — later presses go straight to the cached
+     * pointer socket with no new main-socket message at all.
+     */
+    async function pressButton(capability: "select" | "home") {
+      const mainSocket = MockWebSocket.at(0);
+      const mainMessagesBefore = mainSocket.sentMessages.length;
+      const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability });
+      await flushMicrotasks();
+      if (mainSocket.sentMessages.length > mainMessagesBefore) {
+        const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+        mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+        await flushMicrotasks();
+        MockWebSocket.latest().simulateOpen();
+      }
+      return resultPromise;
+    }
+
+    test("select does nothing to playbackState when no streaming app was launched first", async () => {
+      await connectDriver(driver);
+      const result = await pressButton("select");
+      expect(result.state?.playbackState).toBeUndefined();
+    });
+
+    test("launchApp lands on the app's own browse screen — playbackState stays 'stopped', not 'playing'", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+      const result = await resultPromise;
+      expect(result.state?.playbackState).toBe("stopped");
+    });
+
+    test("select AFTER launching a streaming app flips the center button to play/pause", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
+      await launchPromise;
+
+      const result = await pressButton("select");
+      expect(result.state?.playbackState).toBe("playing");
+    });
+
+    test("home resets both the streaming-app assumption and playbackState back to Select", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
+      await launchPromise;
+      await pressButton("select"); // now "playing"
+
+      const homeResult = await pressButton("home");
+      expect(homeResult.state?.playbackState).toBe("stopped");
+
+      // The streaming-app assumption is cleared too — a select press now, with no fresh launchApp
+      // in between, should not flip back to "playing".
+      const selectResult = await pressButton("select");
+      expect(selectResult.state?.playbackState).toBe("stopped");
+    });
+
+    test("inputSelection (e.g. switching to HDMI) resets playbackState the same way home does", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
+      await launchPromise;
+      await pressButton("select"); // now "playing"
+
+      const inputPromise = driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "HDMI_1" } });
+      const inputSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: inputSent.id, payload: { returnValue: true } });
+      const inputResult = await inputPromise;
+      expect(inputResult.state?.playbackState).toBe("stopped");
+    });
+  });
+
   test("auto-reconnects after an unexpected disconnect, without any caller action (Sean's 'should never lose connection' ask, 2026-09-09)", async () => {
     await connectDriver(driver);
     expect((await driver.getState(device)).connection).toBe("connected");
