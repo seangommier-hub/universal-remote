@@ -43,6 +43,16 @@ const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceC
   { pattern: /yamaha/i, manufacturer: "Yamaha", category: "tv", driverId: YAMAHA_MUSICCAST_DRIVER_ID },
 ];
 
+// Real household data (2026-09-13): this household's own router DHCP hostnames literally contain
+// "XboxOne" — but XboxDriver is deliberately NOT added to BRAND_MATCHERS above. Every other entry
+// there drives this screen's "Connect" button, which builds config from discovery data alone
+// (ipAddress/hwaddr) and calls driver.connect() directly — for Xbox that config can never include
+// a Live ID (nothing on the network exposes it, see XboxDriver.ts), so connect() would always throw
+// a confusing "missing liveId" error the tile gives no way to fix. Left classified as "Unknown" —
+// which the ADR-HEARTH-062 "Add manually as..." link already handles correctly for every tile,
+// known brand or not, with the IP pre-filled into AddXboxDeviceScreen's own Live ID prompt. See
+// ADR-HEARTH-064.
+
 function classify(device: LanDevice): { manufacturer: string; category: DeviceCategory; driverId: string } {
   const haystack = `${device.name ?? ""} ${device.vendor ?? ""}`;
   for (const matcher of BRAND_MATCHERS) {

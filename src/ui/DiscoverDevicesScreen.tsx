@@ -32,6 +32,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "lg", label: "LG TV" },
   { brand: "roku", label: "Roku" },
   { brand: "yamaha", label: "Yamaha Receiver" },
+  { brand: "xbox", label: "Xbox" },
 ];
 
 type ConnectState = "idle" | "connecting" | "error";

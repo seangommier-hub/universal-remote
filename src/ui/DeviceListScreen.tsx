@@ -8,7 +8,7 @@ import { Scene } from "../core/types/Scene";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -20,12 +20,14 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "yamaha", label: "Yamaha Receiver", icon: "musical-notes-outline" },
   { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
   { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
+  { brand: "xbox", label: "Xbox", icon: "game-controller-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
   tv: "tv-outline",
   streaming: "play-circle-outline",
   lighting: "bulb-outline",
+  gaming: "game-controller-outline",
 };
 
 interface DeviceListScreenProps {

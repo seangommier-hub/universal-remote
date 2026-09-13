@@ -10,6 +10,7 @@ export type DeviceCategory =
   | "climate"
   | "vacuum"
   | "lock"
+  | "gaming"
   | "other";
 
 /** A device the user has paired into their household, independent of which manufacturer or protocol actually controls it. */

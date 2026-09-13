@@ -1,6 +1,12 @@
 /** Universal capability identifiers a device can expose. Extend this union as new device categories are implemented — do not add an id until a driver or the UI actually uses it. */
 export type CapabilityId =
   | "power"
+  // Real-hardware research (2026-09-13, ADR-HEARTH-064): declared standalone (not paired with
+  // "power") specifically for XboxDriver.ts — Xbox's SmartGlass protocol has a genuine, documented,
+  // unauthenticated power-ON packet, but no equivalent for power-off/state query without a full
+  // encrypted session this driver doesn't implement. A device that can only ever be turned on, not
+  // toggled or queried, needs its own capability rather than borrowing "power" and lying about the
+  // other half of what that implies.
   | "powerOn"
   | "powerOff"
   | "volumeUp"

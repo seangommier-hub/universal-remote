@@ -18,6 +18,7 @@ import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
 import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
+import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
@@ -331,6 +332,9 @@ export default function App() {
       )}
       {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
+      {screen.name === "add" && screen.brand === "xbox" && (
+        <AddXboxDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}

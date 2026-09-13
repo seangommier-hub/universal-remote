@@ -48,3 +48,17 @@ export const LG_SETUP_GUIDE: DeviceSetupGuide = {
     "Using the TV's own remote, select Allow.",
   ],
 };
+
+// Real-hardware research (2026-09-13): Xbox's power-on protocol has no pairing step at all — it's
+// a one-way, unauthenticated broadcast (see XboxDriver.ts) — so the only real "setup" is finding
+// the console's own Live ID, which isn't visible anywhere except the console's own settings menu.
+export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Xbox",
+  steps: [
+    "On the Xbox, open Settings (press the Xbox button, then go to Profile & system → Settings).",
+    "Go to System → Console info.",
+    "Find \"Xbox Live device ID\" — a long string of numbers and letters.",
+    "Come back here and enter that ID, plus the console's IP address, below.",
+    "Make sure the Xbox is fully plugged into power — power-on only works from standby, not a fully unplugged console.",
+  ],
+};
