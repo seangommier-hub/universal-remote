@@ -271,3 +271,29 @@ Room, connected): launching Hulu left the center button on the checkmark (Select
 designed; pressing Select immediately after flipped it to a filled Pause icon; pressing Home reset
 it back to the checkmark. The full Select → Play/Pause → Select cycle Sean asked for, modeled on the
 Fire TV remote, is confirmed working end-to-end against real hardware, not just in unit tests.
+
+## Update 2026-09-13 (later, same day): the first Select after launch is a profile picker, not a title — real bug, fixed
+
+Sean, directly, after using it: "the logic for the select play/pause button doesn't work because
+often times a user needs to be selected when loading the app." Real, concrete bug in the
+command-history heuristic above: it flipped to `"playing"` on the very first Select press after
+`launchApp`, but that first press is overwhelmingly a "Who's watching?" profile picker in every
+major streaming app (Netflix, Hulu, Prime Video, YouTube's account switcher) — not a title. The
+center button was flipping to Pause while the user was still picking their profile, well before
+anything was actually playing.
+
+**Fix**: `LgWebOsDriver.ts` gained `selectPressesSinceLaunch: Map<string, number>`, counting Select
+presses since the last `launchApp` (reset to 0 by `launchApp`/`home`/`inputSelection`, the same
+three commands that already reset `assumedInStreamingApp`). Only the **second** Select press
+onward flips `playbackState` to `"playing"` — the first stays on Select, matching the profile-pick
+step every one of these apps puts first. Still an approximation, still carries this ADR's existing
+honest caveats (a show's detail page, a "next episode" prompt, or an app needing a third/fourth
+select before real playback all remain unhandled edge cases) — but it now correctly handles the
+specific, concrete failure Sean hit rather than guessing wrong on literally the first interaction
+every time.
+
+**Testing**: `LgWebOsDriver.test.ts`'s command-history block updated — the old single-select test
+split into "first select stays on Select" and "second select flips to playing," and both the
+home-reset and inputSelection-reset tests now press Select twice (profile pick + title) to reach
+`"playing"` before asserting the reset, matching the real two-step flow. 27 suites / 265 tests pass;
+`npx tsc --noEmit` clean.

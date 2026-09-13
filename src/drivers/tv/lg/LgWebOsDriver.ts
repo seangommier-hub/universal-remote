@@ -173,6 +173,15 @@ export class LgWebOsDriver implements DeviceDriver {
   // Cleared on disconnect() below — a stale assumption from a dropped connection shouldn't survive
   // a reconnect.
   private assumedInStreamingApp = new Map<string, boolean>();
+  // Real-hardware finding (2026-09-13, Sean directly: "often times a user needs to be selected
+  // when loading the app"): the very first Select press after launching a streaming app is
+  // overwhelmingly a profile picker ("Who's watching?"), not a title — every major app (Netflix,
+  // Hulu, Prime Video, YouTube's account switcher) puts one there. The original heuristic flipped
+  // to "playing" on that very first press, which is wrong far more often than it's right. Counts
+  // Select presses since the last launchApp and only treats the SECOND one onward as the real
+  // "started playback" signal — reset to 0 by launchApp/home/inputSelection, the same three
+  // commands that already reset assumedInStreamingApp.
+  private selectPressesSinceLaunch = new Map<string, number>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -321,6 +330,7 @@ export class LgWebOsDriver implements DeviceDriver {
     this.playbackUnsubscribes.get(device.id)?.();
     this.playbackUnsubscribes.delete(device.id);
     this.assumedInStreamingApp.delete(device.id);
+    this.selectPressesSinceLaunch.delete(device.id);
     this.clients.get(device.id)?.close();
     this.clients.delete(device.id);
     const current = this.states.get(device.id);
@@ -433,15 +443,21 @@ export class LgWebOsDriver implements DeviceDriver {
         // plausible SSAP query. Fire TV's remote can dynamically become play/pause because Fire OS
         // has real internal knowledge of its player; this TV genuinely doesn't expose that to any
         // client. Deriving an approximation from OUR OWN command history instead: once a streaming
-        // app has been launched (see "launchApp" below) and the user presses Select inside it,
-        // that's a real, meaningful signal — selecting a title is how you start playback in every
-        // one of these apps — so this specific Select press is the one that flips the center
-        // button over to play/pause for whatever comes next. Pressing Home resets it. Not perfect
-        // (selecting something that isn't "play this," e.g. a show's detail page, still flips it),
-        // but far narrower and more accurate than guessing from foreground-app-id alone, which was
-        // wrong the entire time a user was just browsing an app's menus, not just at one moment.
+        // app has been launched (see "launchApp" below), the SECOND Select press inside it — not
+        // the first, see selectPressesSinceLaunch's own comment — is the signal that flips the
+        // center button over to play/pause for whatever comes next. Pressing Home resets it. Not
+        // perfect (selecting something that isn't "play this," e.g. a show's detail page, still
+        // flips it), but far narrower and more accurate than guessing from foreground-app-id alone,
+        // which was wrong the entire time a user was just browsing an app's menus, not just at one
+        // moment.
         if (this.assumedInStreamingApp.get(device.id)) {
-          this.patchValues(device.id, { playbackState: "playing" });
+          const presses = (this.selectPressesSinceLaunch.get(device.id) ?? 0) + 1;
+          this.selectPressesSinceLaunch.set(device.id, presses);
+          if (presses >= 2) {
+            this.patchValues(device.id, { playbackState: "playing" });
+          } else {
+            this.patchValues(device.id, { lastAction: "select" });
+          }
         } else {
           this.patchValues(device.id, { lastAction: "select" });
         }
@@ -454,8 +470,10 @@ export class LgWebOsDriver implements DeviceDriver {
       case "home":
         await client.sendButton("HOME");
         // Leaving to the launcher is an unambiguous "not watching anything, not browsing an app
-        // either" signal — reset both the streaming-app assumption and the center button.
+        // either" signal — reset the streaming-app assumption, its select-press count, and the
+        // center button.
         this.assumedInStreamingApp.set(device.id, false);
+        this.selectPressesSinceLaunch.set(device.id, 0);
         this.patchValues(device.id, { lastAction: "home", playbackState: "stopped" });
         return;
       case "menu":
@@ -488,9 +506,10 @@ export class LgWebOsDriver implements DeviceDriver {
         // driver already cites for the button list and pairing manifest.
         await client.call("ssap://system.launcher/launch", { id: appId });
         // Fresh app launch always lands on that app's own browse/home screen, never straight into
-        // playback — Select stays the center button until a real Select press inside it (see the
-        // "select" case above) signals the user actually started watching something.
+        // playback — Select stays the center button until the real second-Select signal (see the
+        // "select" case above) says the user actually started watching something.
         this.assumedInStreamingApp.set(device.id, true);
+        this.selectPressesSinceLaunch.set(device.id, 0);
         this.patchValues(device.id, { lastAction: `launch:${service}`, playbackState: "stopped" });
         return;
       }
@@ -502,6 +521,7 @@ export class LgWebOsDriver implements DeviceDriver {
         await client.call("ssap://tv/switchInput", { inputId: input });
         // Switching to e.g. an HDMI input leaves whatever app was open — same reset as Home.
         this.assumedInStreamingApp.set(device.id, false);
+        this.selectPressesSinceLaunch.set(device.id, 0);
         this.patchValues(device.id, { input, playbackState: "stopped" });
         return;
       }

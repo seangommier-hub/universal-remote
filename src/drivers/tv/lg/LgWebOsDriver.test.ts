@@ -377,7 +377,7 @@ describe("LgWebOsDriver", () => {
       expect(result.state?.playbackState).toBe("stopped");
     });
 
-    test("select AFTER launching a streaming app flips the center button to play/pause", async () => {
+    test("the FIRST select after launching a streaming app stays on Select — real-hardware finding, 2026-09-13: this is almost always a profile picker, not a title", async () => {
       await connectDriver(driver);
       const socket = MockWebSocket.latest();
       const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
@@ -386,6 +386,19 @@ describe("LgWebOsDriver", () => {
       await launchPromise;
 
       const result = await pressButton("select");
+      expect(result.state?.playbackState).toBe("stopped");
+    });
+
+    test("the SECOND select after launching flips the center button to play/pause", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
+      await launchPromise;
+      await pressButton("select"); // profile picker
+
+      const result = await pressButton("select"); // actual title
       expect(result.state?.playbackState).toBe("playing");
     });
 
@@ -396,13 +409,14 @@ describe("LgWebOsDriver", () => {
       const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
       socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
       await launchPromise;
+      await pressButton("select"); // profile picker
       await pressButton("select"); // now "playing"
 
       const homeResult = await pressButton("home");
       expect(homeResult.state?.playbackState).toBe("stopped");
 
-      // The streaming-app assumption is cleared too — a select press now, with no fresh launchApp
-      // in between, should not flip back to "playing".
+      // The streaming-app assumption AND the select-press count are both cleared — a single
+      // select press now, with no fresh launchApp in between, should not flip back to "playing".
       const selectResult = await pressButton("select");
       expect(selectResult.state?.playbackState).toBe("stopped");
     });
@@ -414,6 +428,7 @@ describe("LgWebOsDriver", () => {
       const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
       socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
       await launchPromise;
+      await pressButton("select"); // profile picker
       await pressButton("select"); // now "playing"
 
       const inputPromise = driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "HDMI_1" } });
