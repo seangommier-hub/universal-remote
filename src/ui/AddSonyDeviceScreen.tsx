@@ -7,6 +7,8 @@ import { Device } from "../core/types/Device";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
+import { SONY_SETUP_GUIDE } from "./deviceSetupSteps";
 import { ThemedKeyboard } from "./ThemedKeyboard";
 import { theme } from "./theme";
 
@@ -34,6 +36,11 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initial
   const [pskFocused, setPskFocused] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
+  if (showSetupGuide) {
+    return <DeviceSetupGuideScreen guide={SONY_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
+  }
 
   async function handleConnect() {
     const driver = driverRegistry.get(SONY_BRAVIA_DRIVER_ID);
@@ -87,6 +94,7 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initial
           Pre-Shared Key there.
         </Text>
       </View>
+      <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />
 
       <Text style={styles.label}>Name</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Living Room TV" placeholderTextColor={theme.textTertiary} />

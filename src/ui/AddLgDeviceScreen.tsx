@@ -7,6 +7,8 @@ import { Device } from "../core/types/Device";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
+import { LG_SETUP_GUIDE } from "./deviceSetupSteps";
 import { theme } from "./theme";
 
 interface AddLgDeviceScreenProps {
@@ -31,6 +33,11 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIp
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
+  if (showSetupGuide) {
+    return <DeviceSetupGuideScreen guide={LG_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
+  }
 
   async function handleConnect() {
     const driver = driverRegistry.get(LG_WEBOS_DRIVER_ID);
@@ -87,6 +94,7 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIp
           seconds. Requires Family Command Center to already be paired (Settings → the link icon on the home screen).
         </Text>
       </View>
+      <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />
 
       <Text style={styles.label}>Name</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Bedroom TV" placeholderTextColor={theme.textTertiary} />

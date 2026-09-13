@@ -7,6 +7,8 @@ import { Device } from "../core/types/Device";
 import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
+import { SAMSUNG_SETUP_GUIDE } from "./deviceSetupSteps";
 import { theme } from "./theme";
 
 interface AddSamsungDeviceScreenProps {
@@ -28,6 +30,11 @@ export function AddSamsungDeviceScreen({ driverRegistry, onCancel, onAdded, init
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
+  if (showSetupGuide) {
+    return <DeviceSetupGuideScreen guide={SAMSUNG_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
+  }
 
   async function handleConnect() {
     const driver = driverRegistry.get(SAMSUNG_TIZEN_DRIVER_ID);
@@ -81,6 +88,7 @@ export function AddSamsungDeviceScreen({ driverRegistry, onCancel, onAdded, init
           newer firmware may reject it.
         </Text>
       </View>
+      <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />
 
       <Text style={styles.label}>Name</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Bedroom TV" placeholderTextColor={theme.textTertiary} />
