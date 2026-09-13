@@ -10,6 +10,7 @@ import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 import { useResponsiveScale } from "./useResponsiveScale";
+import { useSwipeBackGesture } from "./useSwipeBackGesture";
 
 interface UniversalTvRemoteProps {
   device: Device;
@@ -300,9 +301,21 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
   const muted = state.values.muted === true;
   const input = typeof state.values.input === "string" ? state.values.input : undefined;
-  // LG's real input ids/labels, read live off the TV (LgWebOsDriver's refreshInputList) — never
-  // knowable ahead of time the way Roku/Sony's fixed hdmi1/hdmi2/hdmi3 buttons are. Absent for
-  // every other driver, which falls back to that static list below.
+  // Real live media-playback state (ADR-HEARTH-051) — never a guess based on whether a streaming
+  // app was launched. Only Roku and LG ever populate this (see Capability.ts's playPause entry
+  // for the per-brand research: Samsung's protocol has no query mechanism at all, and Sony's
+  // documented REST surface has no reliable playback-state field). "playing"/"paused" are the
+  // only two values that swap the center d-pad button into a play/pause toggle; every other case
+  // — no playPause capability, or a value of "stopped"/undefined — falls back to the existing
+  // Select/checkmark button below. Purely additive: Select's own behavior is unchanged for every
+  // device/state this doesn't apply to.
+  const playbackState = state.values.playbackState;
+  const showPlayPause = has(device, "playPause") && (playbackState === "playing" || playbackState === "paused");
+  // LG's real input ids/labels, read live off the TV (LgWebOsDriver's refreshInputList — which
+  // also filters out "Sling TV" at the source now, ADR-HEARTH-060, so every consumer of
+  // state.values.inputs agrees, not just this screen) — never knowable ahead of time the way
+  // Roku/Sony's fixed hdmi1/hdmi2/hdmi3 buttons are. Absent for every other driver, which falls
+  // back to that static list below.
   const dynamicInputs = Array.isArray(state.values.inputs)
     ? (state.values.inputs as unknown[]).filter(
         (entry): entry is { id: string; label: string } =>
@@ -317,9 +330,15 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // confusing, since nothing on screen indicated why. Every action control below is now gated
   // on this, matching the status pill that already showed the (previously ignored) real state.
   const controlsDisabled = !isConnected;
+  const swipeBackHandlers = useSwipeBackGesture(onBack);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
+    // Sean, directly (2026-09-12): "add swiping to go back" — panHandlers on this wrapping View,
+    // not the ScrollView itself, so PanResponder's edge-zone/direction-lock logic (see
+    // useSwipeBackGesture) decides whether a touch is a horizontal swipe or a vertical scroll
+    // before either the ScrollView or the swipe gesture claims it.
+    <View style={styles.container} {...swipeBackHandlers}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
       {/* Sean, directly: "power off should be top left or right." Sourced: LG's own official
           ThinQ remote app puts Power in a compact top row alongside volume/mute/home, not as a
           large standalone button — every physical remote and every real remote app treats power
@@ -350,11 +369,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               accessibilityRole="button"
               accessibilityLabel={`Rename ${device.name}`}
             >
-              <Text style={styles.deviceName}>{device.name}</Text>
+              <Text style={styles.deviceName} numberOfLines={1}>
+                {device.name}
+              </Text>
               <Ionicons name="pencil-outline" size={14} color={theme.textTertiary} />
             </Pressable>
           )}
-          <Text style={styles.deviceMeta}>
+          <Text style={styles.deviceMeta} numberOfLines={1}>
             {device.manufacturer} {device.model}
           </Text>
         </View>
@@ -519,7 +540,18 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   disabled={controlsDisabled}
                   containerStyle={styles.dpadArrow}
                 />
-                {has(device, "select") ? (
+                {showPlayPause ? (
+                  <CapabilityButton
+                    shape="circle"
+                    scale={scale}
+                    size="lg"
+                    icon={playbackState === "playing" ? "pause" : "play"}
+                    label={playbackState === "playing" ? "Pause" : "Play"}
+                    variant="accent"
+                    onPress={() => send("playPause")}
+                    disabled={controlsDisabled}
+                  />
+                ) : has(device, "select") ? (
                   <CapabilityButton
                     shape="circle"
                     scale={scale}
@@ -801,6 +833,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 
@@ -826,12 +859,27 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   headerDivider: { color: theme.border, fontSize: theme.type.title, fontWeight: "300" },
-  headerText: { flex: 1 },
-  deviceName: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700" },
-  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, alignSelf: "flex-start" },
+  // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — same fix as
+  // DeviceListScreen's header (2026-09-12): without it, a long/renamed device name can force
+  // this box wider than the space left by the back chevron/divider/power buttons, overlapping
+  // them instead of truncating.
+  headerText: { flex: 1, minWidth: 0 },
+  // Real-hardware finding (2026-09-12, live emulator test with a realistic long device name
+  // "Downstairs Living Room"): headerText's own minWidth:0 above never actually constrained this
+  // row, because deviceNameRow's `alignSelf: "flex-start"` opts it OUT of stretching to headerText's
+  // bounded width in the first place — it sized to its own full content instead, so numberOfLines={1}
+  // on deviceName never had a narrower box to truncate against, and the pencil icon got pushed into
+  // the power button. minWidth: 0 here is the same New-Architecture Yoga fix as headerText's own
+  // (a flex row child gets an implicit min-content floor unless told otherwise); alignSelf reverts to
+  // the default "stretch" so this row is actually bounded by its parent's width.
+  // Sean, directly (2026-09-12): "make the header font smaller" — theme.type.title (24) was sized
+  // for DeviceListScreen's one-time "Hearth" wordmark, not a per-visit device name; subtitle (17)
+  // reads clearly while leaving more width before truncation and less header height overall.
+  deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", flexShrink: 1 },
+  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minWidth: 0 },
   deviceNameInput: {
     color: theme.textPrimary,
-    fontSize: theme.type.title,
+    fontSize: theme.type.subtitle,
     fontWeight: "700",
     borderBottomWidth: 1,
     borderBottomColor: theme.accentEnd,
@@ -983,7 +1031,16 @@ const styles = StyleSheet.create({
   // spacing.sm (8): 4×64 + 3×8 = 280px, comfortably under budget. Samsung's 6-item case (already
   // over budget even at 52px alone) still wraps by design — that's expected, not a bug; only the
   // unintended LG-sized wrap is what this fixes.
-  utilityRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, alignItems: "flex-start", justifyContent: "center" },
+  // Real-device regression (2026-09-12), reported a third time despite the two comments above:
+  // `gap` sets both axes to the same value, but only the utility circles themselves grow with
+  // `scale` (useResponsiveScale, tuned for larger phones like iPhone 17 Pro) — the row's own
+  // vertical gap between a wrapped first/second line stays the fixed, unscaled spacing.sm. On a
+  // large-screen device the icons grow toward that fixed gap from both sides, closing distance
+  // that was only ever budgeted for the smaller reference width these comments' arithmetic used.
+  // rowGap independent of columnGap keeps the already-verified horizontal fit (spacing.sm, "4×64 +
+  // 3×8 = 280px") exactly as tuned, while giving Samsung's wrapped second row (settings/sleepTimer)
+  // real clearance from the first row regardless of scale.
+  utilityRow: { flexDirection: "row", flexWrap: "wrap", columnGap: theme.spacing.sm, rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
   // Real-device finding (2026-09-10): "the settings label/button is still overlapping" — an
   // unconstrained-width column meant a longer caption ("Settings") could wrap to a second line
   // while its siblings ("Mute", "Home") stayed single-line, giving that one item a different

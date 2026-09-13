@@ -4,12 +4,12 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, Te
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
-import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
+import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-interface AddLgDeviceScreenProps {
+interface AddYamahaDeviceScreenProps {
   driverRegistry: DriverRegistry;
   onCancel: () => void;
   onAdded: (device: Device) => void;
@@ -18,34 +18,32 @@ interface AddLgDeviceScreenProps {
 }
 
 /**
- * Pairs a real LG webOS TV over its encrypted SSAP WebSocket (port 3001, via Family Command
- * Center's relay — see ADR-HEARTH-014). The TV will show an on-screen Allow/Deny prompt during
- * connect; this screen waits for that instead of assuming success. Requires Family Command
- * Center to be paired first (Settings → the home-screen link icon) — the direct connection
- * attempt always fails by design (React Native can't trust the TV's certificate), and without a
- * relay configured there's nothing to fall back to.
+ * Pairs a real Yamaha MusicCast AV receiver/soundbar by manually-entered IP only — Yamaha's
+ * Extended Control API (ADR-HEARTH-054) has no authentication scheme at all (LAN-trust model, same
+ * as Roku ECP), so unlike Sony there's no PSK/key field. Attempts a real connection before
+ * accepting the device; never adds a device it hasn't actually reached.
  */
-export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddLgDeviceScreenProps) {
+export function AddYamahaDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddYamahaDeviceScreenProps) {
   const insets = useSafeAreaInsets();
-  const [name, setName] = useState("LG TV");
+  const [name, setName] = useState("Yamaha Receiver");
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
   async function handleConnect() {
-    const driver = driverRegistry.get(LG_WEBOS_DRIVER_ID);
+    const driver = driverRegistry.get(YAMAHA_MUSICCAST_DRIVER_ID);
     if (!driver) {
       setStatus("error");
-      setErrorMessage("LG driver is not registered in this build.");
+      setErrorMessage("Yamaha driver is not registered in this build.");
       return;
     }
 
     const device: Device = {
-      id: `lg-${Date.now()}`,
-      name: name.trim() || "LG TV",
+      id: `yamaha-${Date.now()}`,
+      name: name.trim() || "Yamaha Receiver",
       category: "tv",
-      manufacturer: "LG",
-      driverId: LG_WEBOS_DRIVER_ID,
+      manufacturer: "Yamaha",
+      driverId: YAMAHA_MUSICCAST_DRIVER_ID,
       capabilities: driver.getCapabilities(),
       config: { ipAddress: ipAddress.trim() },
     };
@@ -58,14 +56,10 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIp
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : String(err));
-      // Real-hardware finding (2026-09-12, live emulator test against the actual Downstairs Living
-      // Room LG TV): connect() schedules its own indefinite background reconnect loop on failure
-      // (LgWebOsDriver.ts ~line 184), keyed to this screen's throwaway `lg-${Date.now()}` device id.
-      // Since a failed attempt here is never added/saved, nothing else ever owns or stops that loop
-      // — retrying (new Date.now() id) or cancelling both orphan it permanently. Two such orphaned
-      // loops plus one real successful connect against the same physical TV IP is what tripped LG's
-      // own "403 too many pairing requests" mid-session. Disconnect immediately to cancel the loop
-      // for this specific rejected attempt.
+      // See ADR-HEARTH-052 / AddLgDeviceScreen.tsx: a failed connect() schedules its own indefinite
+      // background reconnect loop keyed to this screen's throwaway device id. Since a failed
+      // attempt here is never added/saved, nothing else ever owns or stops that loop — disconnect
+      // immediately to cancel it.
       driver.disconnect(device).catch(() => {});
     }
   }
@@ -77,26 +71,26 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIp
     <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <View style={styles.iconBadge}>
-          <Ionicons name="tv-outline" size={20} color={theme.accentEnd} />
+          <Ionicons name="musical-notes-outline" size={20} color={theme.accentEnd} />
         </View>
-        <Text style={styles.title}>Add LG TV</Text>
+        <Text style={styles.title}>Add Yamaha Receiver</Text>
       </View>
       <View style={styles.hintCard}>
         <Text style={styles.hint}>
-          Watch the TV screen after tapping Connect — it will show an Allow/Deny prompt you need to accept within 30
-          seconds. Requires Family Command Center to already be paired (Settings → the link icon on the home screen).
+          Works with any MusicCast-enabled Yamaha AV receiver or soundbar on your network — no pairing or password
+          needed, just its IP address.
         </Text>
       </View>
 
       <Text style={styles.label}>Name</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Bedroom TV" placeholderTextColor={theme.textTertiary} />
+      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Living Room Receiver" placeholderTextColor={theme.textTertiary} />
 
       <Text style={styles.label}>IP address</Text>
       <TextInput
         style={styles.input}
         value={ipAddress}
         onChangeText={setIpAddress}
-        placeholder="192.168.1.70"
+        placeholder="192.168.1.60"
         placeholderTextColor={theme.textTertiary}
         autoCapitalize="none"
         keyboardType="numbers-and-punctuation"
@@ -111,11 +105,8 @@ export function AddLgDeviceScreen({ driverRegistry, onCancel, onAdded, initialIp
 
       <View style={styles.row}>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "connecting"} />
-        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
-            visible label — this button rendered as a bare link glyph with no visible "Connect" /
-            "Waiting for TV..." text at all. No icon here now. */}
         <CapabilityButton
-          label={status === "connecting" ? "Waiting for TV..." : "Connect"}
+          label={status === "connecting" ? "Connecting..." : "Connect"}
           variant="accent"
           onPress={handleConnect}
           disabled={!canSubmit}

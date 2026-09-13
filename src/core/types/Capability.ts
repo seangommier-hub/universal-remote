@@ -45,7 +45,36 @@ export type CapabilityId =
   // scales — each driver converts to its own protocol's units, the same way setVolume/setChannel
   // take plain numbers rather than a protocol-specific encoding.
   | "setBrightness"
-  | "setColor";
+  | "setColor"
+  // Real-hardware research (2026-09-12, ADR-HEARTH-051): live media-playback state (playing vs.
+  // paused) and a play/pause toggle command, verified per-brand rather than assumed for all four
+  // driver categories:
+  //  - Roku: real and declared. Official ECP docs (developer.roku.com) document GET
+  //    /query/media-player returning <player state="play|pause|...">, and the "Play" remote key
+  //    is documented to toggle play<->pause on its own hardware remote — no separate Pause key
+  //    exists because none is needed. RokuEcpDriver.ts.
+  //  - LG webOS: real and declared. hobbyquaker/lgtv2 (this driver's existing primary reference)
+  //    documents both `ssap://media.controls/play`/`pause` and a subscribable
+  //    `ssap://com.webos.media/getForegroundAppInfo` returning a `playState` field
+  //    ("playing"/"paused"/...) pushed live over the same SSAP socket this driver already keeps
+  //    open — same "best-effort, degrade to undefined rather than crash" treatment as this
+  //    driver's other inferred fields, since that source itself notes the endpoint 404s on some
+  //    older webOS firmware. LgWebOsDriver.ts.
+  //  - Samsung Tizen: NOT declared. Verified real gap, not an oversight — the unencrypted
+  //    remote-control WebSocket this driver is restricted to (ADR-HEARTH-005) is pure key-press
+  //    emulation with no query/subscribe mechanism of any kind for anything, playback state
+  //    included (confirmed against SamsungTizenDriver.ts's own existing capability comment and
+  //    corroborated externally — no community client reads playback state over this same
+  //    channel). A real playback-state API only exists via Samsung's separate SmartThings/cloud
+  //    stack, out of scope here (ADR-HEARTH-042, and explicitly excluded from this change).
+  //  - Sony BRAVIA: NOT declared. `getPlayingContentInfo` (this driver's existing REST surface)
+  //    is documented and community-corroborated to return only content metadata (title, source,
+  //    uri, duration) — the widely-used `antonioparraga/braviarc` reference client (parity with
+  //    this driver's own sourcing standard) never reads a playback-state field from it. A
+  //    `stateInfo.state` field has been observed for the special `cast:audio` source only, not
+  //    as a general documented mechanism — not a real basis for a universal capability. Sony's
+  //    separate IRCC-IP protocol is unimplemented here (see SonyBraviaDriver.ts) and out of scope.
+  | "playPause";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

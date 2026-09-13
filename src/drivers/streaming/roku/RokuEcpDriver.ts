@@ -2,7 +2,7 @@ import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceD
 import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
-import { DeviceState } from "../../../core/types/DeviceState";
+import { DeviceState, PlaybackState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { RokuEcpClient, RokuEcpConfig } from "./RokuEcpClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
@@ -34,7 +34,20 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   "inputSelection",
   "setChannel",
   "launchApp",
+  // Real-hardware research (2026-09-12, ADR-HEARTH-051): GET /query/media-player and the "Play"
+  // remote key are both documented directly by Roku itself — see Capability.ts's playPause entry
+  // for the full citation. Real, not assumed.
+  "playPause",
 ];
+
+// See Capability.ts's playPause entry for the citation. Anything other than the two states Roku's
+// own docs/community clients actually recognize collapses to "stopped" — deliberately coarse
+// rather than guessing at undocumented values like "close"/"buffer"/"startup".
+function normalizePlaybackState(rawState: string | undefined): PlaybackState {
+  if (rawState === "play") return "playing";
+  if (rawState === "pause") return "paused";
+  return "stopped";
+}
 
 const DIRECTION_KEYS: Record<NavigationDirection, string> = {
   up: "Up",
@@ -126,6 +139,10 @@ export class RokuEcpDriver implements DeviceDriver {
         values: { power: info.powerMode === "PowerOn" ? "on" : "off", model: info.modelName },
         lastUpdated: Date.now(),
       });
+      // Real playback state as of right now, the moment the remote screen connects — not a
+      // guess based on whether a streaming app was launched. See refreshPlaybackState's own
+      // comment for why this isn't kept continuously live via polling.
+      await this.refreshPlaybackState(device, client);
     } catch (err) {
       if (generation !== (this.generations.get(device.id) ?? 0)) throw err;
       const current = this.states.get(device.id);
@@ -268,6 +285,12 @@ export class RokuEcpDriver implements DeviceDriver {
         this.patchValues(device.id, { lastAction: `launch:${service}` });
         return;
       }
+      case "playPause":
+        // Roku's own "Play" key IS the toggle (see Capability.ts's citation) — there is no
+        // separate Pause key to choose between, unlike LG.
+        await client.keypress("Play");
+        await this.refreshPlaybackState(device, client);
+        return;
       default:
         throw new Error(`RokuEcpDriver does not implement capability: ${command.capability}`);
     }
@@ -281,6 +304,22 @@ export class RokuEcpDriver implements DeviceDriver {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(LOG_SCOPE, `Could not read back power state for ${device.name} after command; assuming ${fallback}`, { message });
       this.patchValues(device.id, { power: fallback });
+    }
+  }
+
+  /** Re-reads real playback state after a playPause press. Best-effort: a failed read-back just
+   * leaves the last-known value in place rather than failing the whole command — same treatment
+   * refreshPowerState already gives power state after powerOff. No periodic/background polling
+   * exists for this (or any other) field on this driver — playbackState is refreshed only at
+   * connect() and after a playPause press, deliberately matching every other Roku field's
+   * existing update cadence rather than introducing a new polling mechanism (see ADR-HEARTH-051). */
+  private async refreshPlaybackState(device: Device, client: RokuEcpClient): Promise<void> {
+    try {
+      const info = await client.getMediaPlayerState();
+      this.patchValues(device.id, { playbackState: normalizePlaybackState(info.state) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not read back playback state for ${device.name}`, { message });
     }
   }
 

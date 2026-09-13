@@ -4,6 +4,7 @@ import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
+import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -39,6 +40,7 @@ const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceC
   { pattern: /samsung/i, manufacturer: "Samsung", category: "tv", driverId: SAMSUNG_TIZEN_DRIVER_ID },
   { pattern: /\blg\b|webos/i, manufacturer: "LG", category: "tv", driverId: LG_WEBOS_DRIVER_ID },
   { pattern: /roku/i, manufacturer: "Roku", category: "streaming", driverId: ROKU_ECP_DRIVER_ID },
+  { pattern: /yamaha/i, manufacturer: "Yamaha", category: "tv", driverId: YAMAHA_MUSICCAST_DRIVER_ID },
 ];
 
 function classify(device: LanDevice): { manufacturer: string; category: DeviceCategory; driverId: string } {

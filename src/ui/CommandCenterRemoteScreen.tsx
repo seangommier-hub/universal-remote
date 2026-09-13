@@ -154,8 +154,12 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
         </Pressable>
         <Text style={styles.headerDivider}>|</Text>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Command Center</Text>
-          <Text style={styles.subtitle}>{status === "connected" && serverInfo ? serverInfo.name : "Trackpad & keyboard"}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            Command Center
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {status === "connected" && serverInfo ? serverInfo.name : "Trackpad & keyboard"}
+          </Text>
         </View>
         <CapabilityButton
           shape="circle"
@@ -275,9 +279,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background, padding: theme.spacing.lg, gap: theme.spacing.md },
   headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
   headerDivider: { color: theme.textTertiary, fontSize: theme.type.subtitle },
-  headerText: { flex: 1 },
+  // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — same fix as
+  // DeviceListScreen's and UniversalTvRemote's own headers (ADR-HEARTH-046): this screen has the
+  // identical shape (back chevron, divider, flex:1 title/subtitle, a fixed circle button) and was
+  // missed by that pass — a real dynamic VNC server name (serverInfo.name) can be long/unbreakable
+  // the same way a renamed TV can be, overlapping the Keyboard toggle button without this.
+  headerText: { flex: 1, minWidth: 0 },
   title: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700" },
-  subtitle: { color: theme.textTertiary, fontSize: theme.type.caption, marginTop: 2 },
+  subtitle: { color: theme.textTertiary, fontSize: theme.type.caption, marginTop: theme.spacing.xs },
   centerFill: { flex: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md },
   statusText: { color: theme.textSecondary, fontSize: theme.type.body },
   errorText: { color: theme.statusError, fontSize: theme.type.label, textAlign: "center", paddingHorizontal: theme.spacing.xl },

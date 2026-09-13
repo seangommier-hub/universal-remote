@@ -8,6 +8,16 @@ import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCent
 // reach, when direct connection fails.
 
 const DIRECT_TIMEOUT_MS = 4000;
+// Real-hardware-pattern finding (2026-09-12): every other network call in this codebase times
+// out and surfaces a retry-able error instead of hanging (FamilyCommandCenterDiscoveryProvider's
+// SCAN_TIMEOUT_MS, wsRelayFallback's RELAY_CONNECT_TIMEOUT_MS) -- this relay leg was the one
+// exception. callRelay() called fetch() directly with no timeout at all, so a slow/hung Family
+// Command Center (or a device on the other end of its relay hanging) left Sony/Roku/Hue's
+// connect-or-command calls stuck forever with no error, indistinguishable from the app being
+// broken -- exactly the same failure mode ADR-HEARTH-010's discovery-scan fix already addressed,
+// just missed here since this relay leg predates that fix. Matches wsRelayFallback's own relay
+// timeout value for consistency between the HTTP and WebSocket relay paths.
+const RELAY_TIMEOUT_MS = 8000;
 const RELAY_PATH = "/api/integrations/hearth/relay/http";
 
 export interface RelayableRequest {
@@ -50,18 +60,30 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
     );
   }
 
-  const response = await fetch(`${config.baseUrl}${RELAY_PATH}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
-    body: JSON.stringify({
-      targetIp: request.ip,
-      targetPort: request.port,
-      path: request.path,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${config.baseUrl}${RELAY_PATH}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
+        body: JSON.stringify({
+          targetIp: request.ip,
+          targetPort: request.port,
+          path: request.path,
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+        }),
+      },
+      RELAY_TIMEOUT_MS
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port}`);
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Family Command Center rejected the relay request: HTTP ${response.status}`);

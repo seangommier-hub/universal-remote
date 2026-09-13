@@ -11,7 +11,9 @@
 // CAN be configured to trust that certificate server-side. See ADR-HEARTH-014.
 
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
+import { logger } from "../../../core/logging/logger";
 
+const LOG_SCOPE = "LgWebOsClient";
 const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
 const PORT = 3001;
 const SCHEME = "wss";
@@ -121,6 +123,14 @@ const PAIRING_MANIFEST = {
 
 interface PendingEntry {
   isRegister?: boolean;
+  // Real-hardware research (2026-09-12, ADR-HEARTH-051): a subscription entry, unlike a normal
+  // one-shot request, must keep receiving pushes for the lifetime of the subscription rather than
+  // resolving once and being deleted — see handleMessage's isSubscription branch and subscribe()
+  // below. Sourced from hobbyquaker/lgtv2 (this client's existing primary reference)'s own
+  // subscribe/callbacks handling: a subscribe response's id is never removed from its callback
+  // table the way a plain request's is.
+  isSubscription?: boolean;
+  onUpdate?: (payload: Record<string, unknown>) => void;
   resolve: (payload: Record<string, unknown>) => void;
   reject: (err: Error) => void;
 }
@@ -257,6 +267,54 @@ export class LgWebOsClient {
     socket.send(`type:button\nname:${name}\n\n`);
   }
 
+  /**
+   * Opens a live SSAP subscription (`type: "subscribe"`, per hobbyquaker/lgtv2 — see this class's
+   * file header for why that's this driver's trusted reference) — `onUpdate` fires once for each
+   * pushed update over the *same already-open* SSAP socket, not just once like `call()`. Used for
+   * `ssap://com.webos.media/getForegroundAppInfo` (real playback state, ADR-HEARTH-051), but not
+   * tied to that URI specifically.
+   *
+   * Returns an unsubscribe function. Safe to call even after the socket has since closed (a no-op
+   * "unsubscribe" send on a dead socket would be pointless and the server-side subscription is
+   * already gone with the connection) — mirrors `close()`'s own tolerance of an already-gone
+   * socket.
+   */
+  subscribe(
+    uri: string,
+    onUpdate: (payload: Record<string, unknown>) => void,
+    onError?: (err: Error) => void,
+  ): () => void {
+    if (!this.socket || this.socket.readyState !== this.socket.OPEN) {
+      throw new Error("LG webOS socket is not connected — call connect() first");
+    }
+    const id = String(this.nextId++);
+    this.pending.set(id, {
+      isSubscription: true,
+      onUpdate,
+      resolve: () => {}, // never used — a subscription has no single resolution, only repeated onUpdate pushes
+      reject: (err) => {
+        // A subscribe request can still come back as an outright error (e.g. this webOS
+        // firmware 404s the URI entirely — a real, documented gap for getForegroundAppInfo on
+        // some older webOS versions, not a bug). Nothing is awaiting this the way call()'s
+        // promise would be, so there's nothing to reject into — log it, same "degrade rather
+        // than crash" treatment this driver already gives every other best-effort LG field (see
+        // refreshVolumeState/refreshInputList). `onError`, when given, lets the caller notice the
+        // failure and fall back to something else (LgWebOsDriver's poll-based playback-state
+        // fallback, confirmed live 2026-09-12 against Sean's real TV — see ADR-HEARTH-051's
+        // update).
+        logger.warn(LOG_SCOPE, `LG webOS subscription to ${uri} failed`, { message: err.message });
+        onError?.(err);
+      },
+    });
+    this.socket.send(JSON.stringify({ type: "subscribe", id, uri, payload: {} }));
+    return () => {
+      this.pending.delete(id);
+      if (this.socket && this.socket.readyState === this.socket.OPEN) {
+        this.socket.send(JSON.stringify({ id, type: "unsubscribe" }));
+      }
+    };
+  }
+
   close(): void {
     this.closingDeliberately = true;
     this.pointerSocket?.close();
@@ -314,6 +372,23 @@ export class LgWebOsClient {
         entry.resolve(message.payload ?? {});
       }
       // Otherwise this is the intermediate "prompt is showing" response — keep waiting.
+      return;
+    }
+
+    if (entry.isSubscription) {
+      // Deliberately NOT deleted from `pending` — a subscription keeps receiving pushes on this
+      // same id for as long as it's active (hobbyquaker/lgtv2's own callbacks[cid] table works
+      // the same way: only unsubscribe()/socket-close ever removes it). Each push still ends up
+      // in payload.returnValue === false shape on a real error from the TV — treat that as a
+      // dropped update, not a fatal error, since there's no promise here to reject either way.
+      const payload = message.payload ?? {};
+      if (payload.returnValue === false) {
+        logger.warn(LOG_SCOPE, "LG webOS subscription push reported an error", {
+          message: String(payload.errorText ?? payload.errorCode ?? "unknown"),
+        });
+        return;
+      }
+      entry.onUpdate?.(payload);
       return;
     }
 

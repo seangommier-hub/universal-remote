@@ -2,7 +2,7 @@ import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceD
 import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
-import { DeviceState } from "../../../core/types/DeviceState";
+import { DeviceState, PlaybackState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
@@ -39,7 +39,24 @@ const LG_CAPABILITIES: CapabilityId[] = [
   "setChannel",
   "launchApp",
   "inputSelection",
+  // Real-hardware research (2026-09-12, ADR-HEARTH-051): ssap://media.controls/play and
+  // .../pause, plus a subscribable ssap://com.webos.media/getForegroundAppInfo (live playState
+  // pushes) — both documented directly in hobbyquaker/lgtv2, this driver's existing primary
+  // reference for every other ssap:// URI it uses. See Capability.ts's playPause entry for the
+  // full citation, including the known firmware caveat (some older webOS versions 404 this
+  // subscription) — handled the same best-effort way as this driver's other inferred fields.
+  "playPause",
 ];
+
+// See Capability.ts's playPause entry. "playing"/"paused" map directly off the TV's own
+// `playState` field; anything else (starting, loaded, no foreground media, or a firmware that
+// doesn't support the subscription at all) collapses to "stopped" — same deliberately-coarse
+// treatment as RokuEcpDriver's own normalizer.
+function normalizePlaybackState(rawState: string | undefined): PlaybackState {
+  if (rawState === "playing") return "playing";
+  if (rawState === "paused") return "paused";
+  return "stopped";
+}
 
 const DIRECTION_BUTTONS: Record<NavigationDirection, string> = {
   up: "UP",
@@ -91,6 +108,18 @@ function requireConfig(device: Device): LgWebOsConfig {
 const RECONNECT_BASE_DELAY_MS = 2000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 
+// Real-hardware finding (2026-09-12, live against Sean's actual TV — a 2020 LG 75UN7370PUE,
+// webOS ~5.0): ssap://com.webos.media/getForegroundAppInfo (the live subscription above) 404s on
+// this firmware — confirmed directly, not inferred. The older ssap://com.webos.applicationManager
+// /getForegroundAppInfo does work on it (also confirmed live) but only reports which app is in the
+// foreground, not a true playState — no way to tell "paused" from "playing" through it. Polling it
+// every 8s as a fallback, only once the live subscription has demonstrably failed (see
+// subscribeToPlaybackState's onError below), is coarse but real: a known streaming app in the
+// foreground now flips the d-pad center button from checkmark to play/pause, which is what was
+// actually asked for, even though this path can't distinguish an actively-playing video from one
+// sitting paused on the same app's screen.
+const PLAYBACK_POLL_INTERVAL_MS = 8000;
+
 export class LgWebOsDriver implements DeviceDriver {
   id = LG_WEBOS_DRIVER_ID;
   displayName = "LG webOS TV (WebSocket, encrypted via relay)";
@@ -130,6 +159,14 @@ export class LgWebOsDriver implements DeviceDriver {
   // failure and every subsequent automatic retry share one persistent backoff count, instead of
   // every retry restarting at attempt 1.
   private reconnectAttempts = new Map<string, number>();
+  // Real-hardware research (2026-09-12, ADR-HEARTH-051): one live playback-state subscription per
+  // device, opened on the current client right after connect(). Tracked so a reconnect/disconnect
+  // can tear down the old one before it's replaced — mirrors how `clients` itself is swapped out,
+  // just for a subscription instead of the whole socket.
+  private playbackUnsubscribes = new Map<string, () => void>();
+  // Fallback poll timer for firmware where the live subscription above 404s (2026-09-12 finding,
+  // see PLAYBACK_POLL_INTERVAL_MS) — same per-device tracking/teardown shape as the map above.
+  private playbackPollTimers = new Map<string, ReturnType<typeof setInterval>>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -254,22 +291,32 @@ export class LgWebOsDriver implements DeviceDriver {
     client.onDisconnect = () => {
       if (this.clients.get(device.id) !== client) return;
       this.clients.delete(device.id);
+      this.playbackUnsubscribes.get(device.id)?.();
+      this.playbackUnsubscribes.delete(device.id);
+      this.clearPlaybackPoll(device.id);
       const current = this.states.get(device.id);
       this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
       this.scheduleReconnect(device);
     };
     const previous = this.clients.get(device.id);
     if (previous && previous !== client) previous.close();
+    this.playbackUnsubscribes.get(device.id)?.(); // any subscription on a superseded client — its own socket close already stops the pushes, this just drops the stale closure
+    this.playbackUnsubscribes.delete(device.id);
+    this.clearPlaybackPoll(device.id);
     this.clients.set(device.id, client);
     // Successfully pairing over this socket means the TV is on right now.
     this.setState(device.id, { connection: "connected", values: { power: "on" }, lastUpdated: Date.now() });
     await this.refreshVolumeState(device, client);
     await this.refreshInputList(device, client);
+    this.subscribeToPlaybackState(device, client);
   }
 
   async disconnect(device: Device): Promise<void> {
     this.bumpGeneration(device.id); // invalidates any connect() still in flight for this device
     this.clearReconnectTimer(device.id);
+    this.playbackUnsubscribes.get(device.id)?.();
+    this.playbackUnsubscribes.delete(device.id);
+    this.clearPlaybackPoll(device.id);
     this.clients.get(device.id)?.close();
     this.clients.delete(device.id);
     const current = this.states.get(device.id);
@@ -428,8 +475,84 @@ export class LgWebOsDriver implements DeviceDriver {
         this.patchValues(device.id, { input });
         return;
       }
+      case "playPause": {
+        // Unlike Roku's single toggle key, LG's media.controls exposes separate play/pause
+        // endpoints (hobbyquaker/lgtv2, same reference as every other ssap:// URI here) — choose
+        // based on the last-known real state so the button does the opposite of what's playing
+        // now. Defaults to "play" when state isn't known yet (unsubscribed firmware, or nothing
+        // pushed yet) — the safer default when genuinely unsure.
+        const currentState = this.states.get(device.id)?.values.playbackState;
+        const uri = currentState === "playing" ? "ssap://media.controls/pause" : "ssap://media.controls/play";
+        await client.call(uri);
+        // Optimistic flip for instant UI feedback — the live subscription (where this TV's
+        // firmware supports it) corrects this with the TV's own real value moments later
+        // regardless, the same "don't block the UI on a read-back" reasoning already used
+        // elsewhere (e.g. Samsung's optimisticValuesAfter).
+        this.patchValues(device.id, { playbackState: currentState === "playing" ? "paused" : "playing" });
+        return;
+      }
       default:
         throw new Error(`LgWebOsDriver does not implement capability: ${command.capability}`);
+    }
+  }
+
+  /**
+   * Opens the live playback-state subscription (ADR-HEARTH-051) right after connect, over the
+   * same SSAP socket already used for everything else. Best-effort exactly like
+   * refreshVolumeState/refreshInputList below: some older webOS firmware 404s this specific
+   * subscription (see LG_CAPABILITIES' playPause comment) — a failure here leaves playbackState
+   * unset (the UI falls back to the plain Select/checkmark button) rather than failing connect().
+   */
+  private subscribeToPlaybackState(device: Device, client: LgWebOsClient): void {
+    try {
+      const unsubscribe = client.subscribe(
+        "ssap://com.webos.media/getForegroundAppInfo",
+        (payload) => {
+          const apps = Array.isArray(payload.foregroundAppInfo) ? payload.foregroundAppInfo : [];
+          const first = apps[0] as Record<string, unknown> | undefined;
+          const rawState = first && typeof first.playState === "string" ? first.playState : undefined;
+          this.patchValues(device.id, { playbackState: normalizePlaybackState(rawState) });
+        },
+        () => this.startPlaybackPolling(device, client),
+      );
+      this.playbackUnsubscribes.set(device.id, unsubscribe);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not subscribe to live playback state for ${device.name}`, { message });
+      this.startPlaybackPolling(device, client);
+    }
+  }
+
+  /**
+   * Fallback for firmware where the live subscription 404s (PLAYBACK_POLL_INTERVAL_MS above) —
+   * polls which app is in the foreground via the older, more widely-supported
+   * applicationManager endpoint and treats a known streaming app being foregrounded as "playing".
+   * Cannot detect an actual pause (this endpoint has no playState field at all), so a video left
+   * paused on a streaming app's screen still reads as "playing" here — accepted tradeoff, see the
+   * constant's own comment. Only ever started from subscribeToPlaybackState's onError, so it never
+   * runs alongside a subscription that's actually delivering real data.
+   */
+  private startPlaybackPolling(device: Device, client: LgWebOsClient): void {
+    if (this.playbackPollTimers.has(device.id)) return;
+    const knownAppIds = new Set(Object.values(LG_APP_IDS));
+    const timer = setInterval(async () => {
+      try {
+        const payload = await client.call("ssap://com.webos.applicationManager/getForegroundAppInfo");
+        const appId = typeof payload.appId === "string" ? payload.appId : undefined;
+        this.patchValues(device.id, { playbackState: appId && knownAppIds.has(appId) ? "playing" : "stopped" });
+      } catch {
+        // Transient call failure (e.g. a reconnect in progress) — next tick tries again; nothing
+        // to do here, same "don't fail the poll loop over one bad tick" treatment as elsewhere.
+      }
+    }, PLAYBACK_POLL_INTERVAL_MS);
+    this.playbackPollTimers.set(device.id, timer);
+  }
+
+  private clearPlaybackPoll(deviceId: string): void {
+    const timer = this.playbackPollTimers.get(deviceId);
+    if (timer) {
+      clearInterval(timer);
+      this.playbackPollTimers.delete(deviceId);
     }
   }
 
@@ -468,7 +591,15 @@ export class LgWebOsDriver implements DeviceDriver {
           const label = typeof record.label === "string" ? record.label : id;
           return { id, label };
         })
-        .filter((entry): entry is { id: string; label: string } => entry !== null);
+        .filter((entry): entry is { id: string; label: string } => entry !== null)
+        // Sean, directly and repeatedly (2026-09-10, again 2026-09-12): his TV reports "Sling TV" as
+        // one of its real inputs but he doesn't use it and wants it gone. Originally filtered only
+        // inside UniversalTvRemote.tsx's own render — a real gap found live tonight once a second
+        // consumer (CreateSceneScreen, reading state.values.inputs directly for scene-building) hit
+        // the same raw, unfiltered list and showed Sling TV again. Filtering here, at the one place
+        // this list is actually produced, means every current and future consumer of
+        // state.values.inputs agrees, instead of each screen needing its own copy of this filter.
+        .filter((entry) => entry.label.trim().toLowerCase() !== "sling tv");
       if (inputs.length > 0) {
         this.patchValues(device.id, { inputs });
       } else {

@@ -178,6 +178,72 @@ describe("LgWebOsClient", () => {
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
+  describe("subscribe() (ADR-HEARTH-051, real-hardware research)", () => {
+    test("sends a 'subscribe' envelope (not 'request') and fires onUpdate for each pushed message on that id", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+      const socket = MockWebSocket.latest();
+
+      const updates: Record<string, unknown>[] = [];
+      client.subscribe("ssap://com.webos.media/getForegroundAppInfo", (payload) => updates.push(payload));
+
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(sent.type).toBe("subscribe");
+      expect(sent.uri).toBe("ssap://com.webos.media/getForegroundAppInfo");
+
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "playing" }] } });
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "paused" }] } });
+
+      expect(updates).toHaveLength(2); // both pushes delivered on the same id — not a one-shot resolve
+      expect(updates[0]).toMatchObject({ foregroundAppInfo: [{ playState: "playing" }] });
+      expect(updates[1]).toMatchObject({ foregroundAppInfo: [{ playState: "paused" }] });
+    });
+
+    test("unsubscribe() stops further pushes and sends the documented unsubscribe envelope", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+      const socket = MockWebSocket.latest();
+
+      const updates: unknown[] = [];
+      const unsubscribe = client.subscribe("ssap://com.webos.media/getForegroundAppInfo", (payload) => updates.push(payload));
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      unsubscribe();
+      const unsubscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(unsubscribeSent).toEqual({ id: sent.id, type: "unsubscribe" });
+
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "playing" }] } });
+      expect(updates).toHaveLength(0); // dropped — this id is no longer in the pending table
+    });
+
+    test("unsubscribe() after the socket has already closed doesn't throw (no send attempted on a dead socket)", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+      const unsubscribe = client.subscribe("ssap://com.webos.media/getForegroundAppInfo", () => {});
+
+      client.close();
+      expect(() => unsubscribe()).not.toThrow();
+    });
+
+    test("an error response on the subscription id is dropped (logged, not thrown) — nothing awaits a subscription the way call() does", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+      const socket = MockWebSocket.latest();
+
+      const updates: unknown[] = [];
+      client.subscribe("ssap://com.webos.media/getForegroundAppInfo", (payload) => updates.push(payload));
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      expect(() => socket.simulateMessage({ type: "error", id: sent.id, error: "404 not found" })).not.toThrow();
+      expect(updates).toHaveLength(0);
+    });
+
+    test("throws synchronously if called before the socket is connected", () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      expect(() => client.subscribe("ssap://com.webos.media/getForegroundAppInfo", () => {})).toThrow(/not connected/);
+    });
+  });
+
   describe("connect() timeout messages (real-hardware finding, 2026-09-10)", () => {
     beforeEach(() => {
       jest.useFakeTimers();

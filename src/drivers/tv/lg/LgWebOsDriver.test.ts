@@ -70,6 +70,41 @@ describe("LgWebOsDriver", () => {
     ]);
   });
 
+  test("filters 'Sling TV' out of the real input list at the source (ADR-HEARTH-060 — a second consumer of state.values.inputs, CreateSceneScreen, was showing it again because the old filter only lived inside UniversalTvRemote.tsx's own render)", async () => {
+    const connectPromise = driver.connect(device);
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    const registerSent = JSON.parse(socket.sentMessages[0]);
+    socket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key" } });
+
+    await flushMicrotasks();
+    const volumeRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 15, mute: false } });
+
+    await flushMicrotasks();
+    const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({
+      type: "response",
+      id: inputListRequest.id,
+      payload: {
+        returnValue: true,
+        devices: [
+          { id: "HDMI_1", label: "HDMI 1" },
+          { id: "SLING", label: "Sling TV" },
+          { id: "HDMI_2", label: "HDMI 2" },
+        ],
+      },
+    });
+
+    await connectPromise;
+    const state = await driver.getState(device);
+    expect(state.values.inputs).toEqual([
+      { id: "HDMI_1", label: "HDMI 1" },
+      { id: "HDMI_2", label: "HDMI 2" },
+    ]);
+  });
+
   test("inputSelection calls ssap://tv/switchInput with the chosen input's real id", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();
@@ -208,6 +243,101 @@ describe("LgWebOsDriver", () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "12" } })).rejects.toThrow(
       /numeric 'channel'/
     );
+  });
+
+  describe("playback state (ADR-HEARTH-051, real-hardware research)", () => {
+    test("declares playPause and opens a live playback-state subscription right after connect", async () => {
+      expect(driver.getCapabilities()).toContain("playPause");
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(sent.type).toBe("subscribe");
+      expect(sent.uri).toBe("ssap://com.webos.media/getForegroundAppInfo");
+    });
+
+    test("a pushed playState update populates live playbackState", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      socket.simulateMessage({
+        type: "response",
+        id: subscribeSent.id,
+        payload: { returnValue: true, foregroundAppInfo: [{ appId: "netflix", playState: "playing" }] },
+      });
+      await flushMicrotasks();
+
+      expect((await driver.getState(device)).values.playbackState).toBe("playing");
+    });
+
+    test("the same subscription id keeps delivering further pushes — a real live subscription, not a one-shot request", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "playing" }] } });
+      await flushMicrotasks();
+      expect((await driver.getState(device)).values.playbackState).toBe("playing");
+
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "paused" }] } });
+      await flushMicrotasks();
+      expect((await driver.getState(device)).values.playbackState).toBe("paused");
+    });
+
+    test("an unrecognized/transitional playState (e.g. 'starting') and no foreground media both collapse to 'stopped'", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "starting" }] } });
+      await flushMicrotasks();
+      expect((await driver.getState(device)).values.playbackState).toBe("stopped");
+
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [] } });
+      await flushMicrotasks();
+      expect((await driver.getState(device)).values.playbackState).toBe("stopped");
+    });
+
+    test("connect() still succeeds even when this firmware rejects the subscription outright (real, documented gap on some older webOS versions)", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+
+      socket.simulateMessage({ type: "error", id: subscribeSent.id, error: "404 not found" });
+
+      const state = await driver.getState(device);
+      expect(state.connection).toBe("connected"); // the subscription failing is contained, not fatal
+      expect(state.values.playbackState).toBeUndefined();
+    });
+
+    test("playPause sends media.controls/play when no real state is known yet, then reflects the optimistic flip immediately", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+
+      const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(sent.uri).toBe("ssap://media.controls/play");
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+      const result = await resultPromise;
+      expect(result.state?.playbackState).toBe("playing");
+    });
+
+    test("playPause sends media.controls/pause once real state is known to be playing (opposite of Roku's single toggle key)", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "playing" }] } });
+      await flushMicrotasks();
+
+      const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(sent.uri).toBe("ssap://media.controls/pause");
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+      const result = await resultPromise;
+      expect(result.state?.playbackState).toBe("paused");
+    });
   });
 
   test("auto-reconnects after an unexpected disconnect, without any caller action (Sean's 'should never lose connection' ask, 2026-09-09)", async () => {

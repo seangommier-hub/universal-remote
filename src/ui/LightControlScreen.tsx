@@ -9,6 +9,7 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
+import { useSwipeBackGesture } from "./useSwipeBackGesture";
 
 interface LightControlScreenProps {
   device: Device;
@@ -109,8 +110,11 @@ export function LightControlScreen({ device, commandEngine, stateStore, onReconn
     send("setBrightness", { brightness: next });
   }
 
+  const swipeBackHandlers = useSwipeBackGesture(onBack);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
+    <View style={styles.container} {...swipeBackHandlers}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={8}>
           <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
@@ -131,11 +135,15 @@ export function LightControlScreen({ device, commandEngine, stateStore, onReconn
             />
           ) : (
             <Pressable style={styles.deviceNameRow} onPress={() => setEditingName(true)} accessibilityRole="button" accessibilityLabel={`Rename ${device.name}`}>
-              <Text style={styles.deviceName}>{device.name}</Text>
+              <Text style={styles.deviceName} numberOfLines={1}>
+                {device.name}
+              </Text>
               <Ionicons name="pencil-outline" size={14} color={theme.textTertiary} />
             </Pressable>
           )}
-          <Text style={styles.deviceMeta}>{device.manufacturer}</Text>
+          <Text style={styles.deviceMeta} numberOfLines={1}>
+            {device.manufacturer}
+          </Text>
         </View>
         {has(device, "power") && (
           <CapabilityButton
@@ -199,6 +207,7 @@ export function LightControlScreen({ device, commandEngine, stateStore, onReconn
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 
@@ -207,11 +216,27 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   headerDivider: { color: theme.textTertiary, fontSize: theme.type.subtitle },
-  headerText: { flex: 1 },
-  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs },
-  deviceName: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700" },
-  deviceNameInput: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700", padding: 0 },
-  deviceMeta: { color: theme.textTertiary, fontSize: theme.type.caption, marginTop: 2 },
+  // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — same fix as
+  // DeviceListScreen's and UniversalTvRemote's own headers (ADR-HEARTH-046): this screen has the
+  // identical shape (back chevron, divider, flex:1 name/manufacturer, a fixed Power circle button)
+  // and was missed by that pass — a renamed light (up to 40 characters) can overlap the Power
+  // button without this, the same way a renamed TV could on the two screens that were fixed.
+  headerText: { flex: 1, minWidth: 0 },
+  // Real bug found by code review (2026-09-12), same mechanism as ADR-HEARTH-053 on the TV remote
+  // screen: this row has no alignSelf:flex-start, so it does correctly stretch to headerText's
+  // bounded width — but deviceName's Text still defaulted to flexShrink:0, a row child's normal
+  // default, which lets it render at its full natural width regardless of the row's own bound and
+  // overflow past it (a View doesn't clip overflow by default), pushing the pencil icon into the
+  // power button on a long device name exactly like the TV remote screen did before that fix.
+  // minWidth: 0 on the row itself is the same New-Architecture Yoga min-content-floor fix used
+  // everywhere else in this codebase.
+  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minWidth: 0 },
+  // Sean, directly (2026-09-12, applied to the TV remote screen — matched here for consistency):
+  // "make the header font smaller" — subtitle (17) instead of title (24) for a per-visit device
+  // name, same reasoning as UniversalTvRemote.tsx's identical change.
+  deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", flexShrink: 1 },
+  deviceNameInput: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", padding: 0 },
+  deviceMeta: { color: theme.textTertiary, fontSize: theme.type.caption, marginTop: theme.spacing.xs },
   statusRow: { flexDirection: "row", gap: theme.spacing.sm, flexWrap: "wrap" },
   statusPill: {
     flexDirection: "row",

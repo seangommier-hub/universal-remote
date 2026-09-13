@@ -13,13 +13,15 @@ interface AddRokuDeviceScreenProps {
   driverRegistry: DriverRegistry;
   onCancel: () => void;
   onAdded: (device: Device) => void;
+  /** Pre-fills the IP field — used when this screen is reached from Discover Devices for a device whose brand wasn't auto-recognized (ADR-HEARTH-062), so the user doesn't have to re-type an IP already shown on screen. */
+  initialIpAddress?: string;
 }
 
 /** Pairs a real Roku device by IP — no PSK, no on-screen approval, no pairing wait (ECP has no auth). */
-export function AddRokuDeviceScreen({ driverRegistry, onCancel, onAdded }: AddRokuDeviceScreenProps) {
+export function AddRokuDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddRokuDeviceScreenProps) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("Roku");
-  const [ipAddress, setIpAddress] = useState("");
+  const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -49,6 +51,11 @@ export function AddRokuDeviceScreen({ driverRegistry, onCancel, onAdded }: AddRo
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : String(err));
+      // See ADR-HEARTH-052 / AddLgDeviceScreen.tsx: RokuEcpDriver.connect() schedules its own
+      // indefinite background reconnect loop on any failure, keyed to this screen's throwaway
+      // `roku-${Date.now()}` device id. Since a failed attempt here is never added/saved, nothing
+      // else ever owns or stops that loop — disconnect immediately to cancel it.
+      driver.disconnect(device).catch(() => {});
     }
   }
 

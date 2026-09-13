@@ -9,6 +9,13 @@ import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandC
 // there's no separate SmartThings credential to store or refresh here at all.
 
 const OUTLETS_PATH = "/api/integrations/hearth/smartthings/outlets";
+// Real-hardware-pattern finding (2026-09-12): this fetch had no timeout, the same gap found and
+// fixed in httpRelayFallback.ts's relay leg and originally in FamilyCommandCenterDiscoveryProvider's
+// scan() (ADR-HEARTH-010) -- a slow/hung Family Command Center or SmartThings API left
+// AddSmartThingsOutletsScreen stuck on "Loading outlets from SmartThings..." forever, with no
+// error and no way to recover short of leaving the screen. Same 8-second value as those other
+// FCC-bound calls for consistency.
+const FCC_REQUEST_TIMEOUT_MS = 8000;
 
 export type SwitchState = "on" | "off" | "unknown";
 
@@ -37,10 +44,23 @@ async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then SmartThings outlets can sync.");
   }
 
-  const response = await fetch(`${config.baseUrl}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", ...init?.headers },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FCC_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${config.baseUrl}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", ...init?.headers },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new SmartThingsApiError(`Family Command Center didn't respond within ${FCC_REQUEST_TIMEOUT_MS / 1000} seconds`, 0);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new SmartThingsApiError(`Family Command Center returned ${response.status}`, response.status);
   }

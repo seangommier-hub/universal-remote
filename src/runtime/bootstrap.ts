@@ -8,6 +8,7 @@ import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
 import { RokuEcpDriver } from "../drivers/streaming/roku/RokuEcpDriver";
 import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
 import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
+import { YamahaMusicCastDriver } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -33,6 +34,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new RokuEcpDriver());
   driverRegistry.register(new HueLightDriver());
   driverRegistry.register(new SmartThingsOutletDriver());
+  driverRegistry.register(new YamahaMusicCastDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

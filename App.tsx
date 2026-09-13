@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, AppStateStatus, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
+import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
+import { runScene } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
 import { Device } from "./src/core/types/Device";
+import { Scene } from "./src/core/types/Scene";
 import { logger } from "./src/core/logging/logger";
 import { DeviceListScreen, AddableBrand } from "./src/ui/DeviceListScreen";
 import { UniversalTvRemote } from "./src/ui/UniversalTvRemote";
@@ -14,6 +17,7 @@ import { AddSonyDeviceScreen } from "./src/ui/AddSonyDeviceScreen";
 import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
+import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
@@ -21,17 +25,19 @@ import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterS
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
 import { CommandCenterRemoteScreen } from "./src/ui/CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./src/ui/EditDeviceAddressScreen";
+import { CreateSceneScreen } from "./src/ui/CreateSceneScreen";
 import { theme } from "./src/ui/theme";
 
 type Screen =
   | { name: "list" }
   | { name: "remote"; device: Device }
-  | { name: "add"; brand: AddableBrand }
+  | { name: "add"; brand: AddableBrand; initialIpAddress?: string }
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
   | { name: "fcc-remote" }
-  | { name: "edit-address"; device: Device };
+  | { name: "edit-address"; device: Device }
+  | { name: "create-scene"; editingScene?: Scene };
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
 async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
@@ -65,6 +71,7 @@ export default function App() {
   const runtime = useMemo(() => createHearthRuntime(), []);
   const [ready, setReady] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [scenes, setScenes] = useState<Scene[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "list" });
   const appState = useRef(AppState.currentState);
   // Real-hardware finding (2026-09-10): a device's driver was never wired to the shared
@@ -151,6 +158,12 @@ export default function App() {
         const message = err instanceof Error ? err.message : String(err);
         logger.error("App", "Startup failed to load persisted devices — continuing with an empty list", { message });
       }
+      try {
+        setScenes(await loadScenes());
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn("App", "Could not load persisted scenes — continuing with an empty list", { message });
+      }
       if (cancelled) return;
       setDevices(runtime.deviceRegistry.list());
       setReady(true);
@@ -232,6 +245,37 @@ export default function App() {
     });
   }
 
+  // ADR-HEARTH-056/058. Same in-memory-first, persist-in-background pattern as handleDeviceAdded.
+  // Upserts by id — covers both a brand-new scene and CreateSceneScreen's edit mode saving back
+  // over an existing one, the same "add or overwrite" shape scenePersistence.saveScene already uses.
+  function handleSceneSaved(scene: Scene) {
+    setScenes((current) => [...current.filter((s) => s.id !== scene.id), scene]);
+    setScreen({ name: "list" });
+    saveScene(scene).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn("App", `Could not persist scene ${scene.name}`, { message });
+    });
+  }
+
+  function handleRemoveScene(scene: Scene) {
+    setScenes((current) => current.filter((s) => s.id !== scene.id));
+    removeScene(scene.id).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn("App", `Could not remove persisted scene ${scene.name}`, { message });
+    });
+  }
+
+  // Runs every action in the scene, then surfaces a plain pass/fail summary — a Scene has no
+  // dedicated screen of its own to show progress in, and it's triggered straight from the home
+  // screen's chip, so an Alert is the simplest honest feedback for "did this actually work"
+  // without building a whole results UI for what's still a v1 feature (ADR-HEARTH-056).
+  async function handleRunScene(scene: Scene): Promise<void> {
+    const result = await runScene(scene, runtime.commandEngine);
+    if (result.failed.length === 0) return;
+    const failureLines = result.failed.map((f) => `${f.deviceId}: ${f.message}`).join("\n");
+    Alert.alert(`${scene.name}: ${result.succeeded} of ${scene.actions.length} actions ran`, failureLines);
+  }
+
   if (!ready) {
     return (
       <SafeAreaProvider>
@@ -272,10 +316,19 @@ export default function App() {
           onBack={() => setScreen({ name: "list" })}
         />
       )}
-      {screen.name === "add" && screen.brand === "sony" && <AddSonyDeviceScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "samsung" && <AddSamsungDeviceScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "roku" && <AddRokuDeviceScreen {...addScreenProps} />}
+      {screen.name === "add" && screen.brand === "sony" && (
+        <AddSonyDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "samsung" && (
+        <AddSamsungDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />}
+      {screen.name === "add" && screen.brand === "roku" && (
+        <AddRokuDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "yamaha" && (
+        <AddYamahaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
       {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
       {screen.name === "discover" && (
@@ -284,6 +337,7 @@ export default function App() {
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleDeviceAdded}
           onOpenSettings={() => setScreen({ name: "fcc-scan" })}
+          onAddManually={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
         />
       )}
       {screen.name === "fcc-scan" && (
@@ -297,6 +351,15 @@ export default function App() {
         <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "discover" })} />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
+      {screen.name === "create-scene" && (
+        <CreateSceneScreen
+          devices={devices}
+          stateStore={runtime.stateStore}
+          editingScene={screen.editingScene}
+          onCancel={() => setScreen({ name: "list" })}
+          onSaved={handleSceneSaved}
+        />
+      )}
       {screen.name === "edit-address" && (
         <EditDeviceAddressScreen
           device={screen.device}
@@ -316,6 +379,11 @@ export default function App() {
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onRemove={handleRemoveDevice}
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
+          scenes={scenes}
+          onRunScene={handleRunScene}
+          onCreateScene={() => setScreen({ name: "create-scene" })}
+          onEditScene={(scene) => setScreen({ name: "create-scene", editingScene: scene })}
+          onRemoveScene={handleRemoveScene}
         />
       )}
       <StatusBar style="light" />

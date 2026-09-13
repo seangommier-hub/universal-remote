@@ -14,6 +14,8 @@ interface AddSonyDeviceScreenProps {
   driverRegistry: DriverRegistry;
   onCancel: () => void;
   onAdded: (device: Device) => void;
+  /** Pre-fills the IP field — used when this screen is reached from Discover Devices for a device whose brand wasn't auto-recognized (ADR-HEARTH-062), so the user doesn't have to re-type an IP already shown on screen. */
+  initialIpAddress?: string;
 }
 
 /**
@@ -21,10 +23,10 @@ interface AddSonyDeviceScreenProps {
  * this works in Expo Go — no discovery/native module needed for this path). Attempts a real
  * connection before accepting the device; never adds a device it hasn't actually reached.
  */
-export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSonyDeviceScreenProps) {
+export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddSonyDeviceScreenProps) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("Sony TV");
-  const [ipAddress, setIpAddress] = useState("");
+  const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
   const [psk, setPsk] = useState("");
   // Real-hardware ask (2026-09-10): a themed on-screen keyboard for password-style fields, since
   // the system keyboard's white background clashes with this screen's dark theme. Only this field
@@ -59,6 +61,12 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded }: AddSo
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : String(err));
+      // See ADR-HEARTH-052 / AddLgDeviceScreen.tsx: SonyBraviaDriver.connect() (via refreshState's
+      // own catch) schedules its own indefinite background reconnect loop on any failure, keyed to
+      // this screen's throwaway `sony-${Date.now()}` device id. Since a failed attempt here is
+      // never added/saved, nothing else ever owns or stops that loop — disconnect immediately to
+      // cancel it.
+      driver.disconnect(device).catch(() => {});
     }
   }
 

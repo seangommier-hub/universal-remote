@@ -12,7 +12,7 @@ export const addDeviceFormStyles = StyleSheet.create({
   // Top safe-area clearance is applied dynamically per-screen (useSafeAreaInsets), not baked in
   // here — a fixed guess never accounted for Android's own, differently-sized status bar.
   content: { padding: theme.spacing.xl, gap: theme.spacing.sm },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: 4 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: theme.spacing.xs },
   iconBadge: {
     width: 40,
     height: 40,

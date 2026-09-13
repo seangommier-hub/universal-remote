@@ -41,6 +41,29 @@ describe("listOutlets", () => {
 
     await expect(listOutlets()).rejects.toMatchObject({ status: 502 });
   });
+
+  test(
+    "times out and surfaces a clear, retry-able error instead of hanging forever (real-hardware-pattern finding, 2026-09-12)",
+    async () => {
+      // Real timers deliberately, not fake ones -- same tradeoff as
+      // FamilyCommandCenterDiscoveryProvider's own timeout test (AbortController's event dispatch
+      // interacting with fake-timer microtask ordering has proven flaky here before).
+      mockLoadConfig.mockResolvedValue(FCC_CONFIG);
+      (global.fetch as jest.Mock).mockImplementation(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener("abort", () => {
+              const err = new Error("The operation was aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          })
+      );
+
+      await expect(listOutlets()).rejects.toThrow(/didn't respond within/);
+    },
+    12000
+  );
 });
 
 describe("setOutletState", () => {

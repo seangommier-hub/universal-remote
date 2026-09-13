@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
+import { Scene } from "../core/types/Scene";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -16,6 +17,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "samsung", label: "Samsung TV", icon: "tv-outline" },
   { brand: "lg", label: "LG TV", icon: "tv-outline" },
   { brand: "roku", label: "Roku", icon: "play-circle-outline" },
+  { brand: "yamaha", label: "Yamaha Receiver", icon: "musical-notes-outline" },
   { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
   { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
 ];
@@ -41,6 +43,15 @@ interface DeviceListScreenProps {
   onRemove: (device: Device) => void;
   /** Opens a small form to correct a device's saved IP address without a full remove-and-re-add — real-hardware need (2026-09-10): a device's IP can go stale (moved to a different WiFi network) and the fastest fix shouldn't be "unpair everything and start over." Offered from the same long-press menu as Remove. */
   onEditAddress: (device: Device) => void;
+  /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056) — a horizontal row of chips
+   * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
+   * for vertical space on the home screen, the same "one screen" pressure every other layout
+   * decision here has had to account for. */
+  scenes: Scene[];
+  onRunScene: (scene: Scene) => void;
+  onCreateScene: () => void;
+  onEditScene: (scene: Scene) => void;
+  onRemoveScene: (scene: Scene) => void;
 }
 
 /** A small live indicator so a device's connection state is visible at a glance from the list, without tapping in and waiting out the full reconnect timeout to find out. Subscribes independently per row so one device's state change doesn't re-render the whole list. */
@@ -74,10 +85,23 @@ export function DeviceListScreen({
   onOpenCommandCenterRemote,
   onRemove,
   onEditAddress,
+  scenes,
+  onRunScene,
+  onCreateScene,
+  onEditScene,
+  onRemoveScene,
 }: DeviceListScreenProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
+
+  function showSceneActions(scene: Scene) {
+    Alert.alert(scene.name, undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Edit", onPress: () => onEditScene(scene) },
+      { text: "Delete", style: "destructive", onPress: () => onRemoveScene(scene) },
+    ]);
+  }
 
   function showDeviceActions(device: Device) {
     const hasAddress = typeof device.config?.ipAddress === "string";
@@ -102,8 +126,12 @@ export function DeviceListScreen({
           <View style={styles.emberDot} />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Hearth</Text>
-          <Text style={styles.subtitle}>One home. One remote.</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            Hearth
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            One home. One remote.
+          </Text>
         </View>
         <Pressable
           style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
@@ -122,6 +150,42 @@ export function DeviceListScreen({
           <Ionicons name="link-outline" size={20} color={theme.accentEnd} />
         </Pressable>
       </View>
+
+      {/* Real bug found live (2026-09-12): a horizontal FlatList's data-item cells rendered at a
+          wildly oversized, distorted height (a ~300px-tall oval instead of a compact chip) while
+          its ListHeaderComponent rendered correctly at the same declared style — a New-Architecture
+          Fabric cell-wrapping quirk for horizontal lists, not anything wrong with sceneChip's own
+          style. Scenes will only ever number in the single digits to dozens, so FlatList's
+          virtualization was unneeded complexity anyway — replaced with a plain horizontal
+          ScrollView + .map(), the same pattern this screen's own "add device" grid already uses,
+          which sidesteps the bug entirely and renders every chip identically. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sceneRow}>
+        <Pressable
+          style={({ pressed }) => [styles.sceneChip, styles.newSceneChip, pressed && styles.cardPressed]}
+          onPress={onCreateScene}
+          accessibilityRole="button"
+          accessibilityLabel="New scene"
+        >
+          <Ionicons name="add" size={16} color={theme.accentEnd} />
+          <Text style={styles.newSceneLabel}>New Scene</Text>
+        </Pressable>
+        {scenes.map((scene) => (
+          <Pressable
+            key={scene.id}
+            style={({ pressed }) => [styles.sceneChip, pressed && styles.cardPressed]}
+            onPress={() => onRunScene(scene)}
+            onLongPress={() => showSceneActions(scene)}
+            accessibilityRole="button"
+            accessibilityLabel={`Run ${scene.name}`}
+            accessibilityHint="Double tap to run. Long press for more options."
+          >
+            <Ionicons name="flash" size={14} color={theme.accentEnd} />
+            <Text style={styles.sceneLabel} numberOfLines={1}>
+              {scene.name}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
       {devices.length === 0 ? (
         <View style={styles.emptyState}>
@@ -147,8 +211,10 @@ export function DeviceListScreen({
                 <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />
               </View>
               <View style={styles.cardBody}>
-                <Text style={styles.deviceName}>{item.name}</Text>
-                <Text style={styles.deviceMeta}>
+                <Text style={styles.deviceName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={styles.deviceMeta} numberOfLines={1}>
                   {item.manufacturer} {item.model}
                 </Text>
                 <ConnectionStatus stateStore={stateStore} deviceId={item.id} />
@@ -180,7 +246,9 @@ export function DeviceListScreen({
             accessibilityLabel={`Add ${option.label}`}
           >
             <Ionicons name={option.icon} size={20} color={theme.accentEnd} />
-            <Text style={styles.addTileLabel}>{option.label}</Text>
+            <Text style={styles.addTileLabel} numberOfLines={2}>
+              {option.label}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -191,7 +259,11 @@ export function DeviceListScreen({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background, paddingHorizontal: theme.spacing.xl },
   header: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, marginBottom: theme.spacing.xl },
-  headerText: { flex: 1 },
+  // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — without it, the
+  // title/subtitle's own text width can force this box wider than the space actually left by
+  // brandMark + both fccButtons, pushing/overlapping those icons instead of wrapping (the
+  // "settings gear overlapping other items" report, 2026-09-12).
+  headerText: { flex: 1, minWidth: 0 },
   fccButton: {
     width: 44,
     height: 44,
@@ -257,7 +329,18 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
   },
-  addTileLabel: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600" },
+  // flex: 1 + minWidth: 0 — real overflow found by exact-dimension arithmetic (2026-09-12,
+  // matching this file's own "348px... 53px too wide" convention from UniversalTvRemote.tsx):
+  // at a 375pt baseline, addGrid's two-column tiles are ~159.5px wide (327px container width,
+  // minus one spacing.sm gap, split evenly), leaving ~107.5px for the label after the icon,
+  // its gap, and the tile's own horizontal padding. Without flex, React Native's default
+  // flexShrink: 0 on a plain <Text> row-sibling means it keeps its full single-line
+  // intrinsic width instead of wrapping to fit — "Sync from SmartThings" (21 characters,
+  // ~168px unwrapped) is the one label in ADD_DEVICE_OPTIONS long enough to hit this; every
+  // sibling ("Sony TV" through "Philips Hue") already fit in ~107.5px unwrapped and never
+  // exposed the bug. minWidth: 0 prevents flex: 1 from reintroducing the same min-content
+  // floor ADR-HEARTH-046 already documented for headerText.
+  addTileLabel: { flex: 1, minWidth: 0, color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600" },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -277,7 +360,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  cardBody: { flex: 1 },
+  // Real bug found by code review (2026-09-12), same class as ADR-HEARTH-053/046/049: flex:1 with
+  // no minWidth:0 gets an implicit min-content floor under the New Architecture's Yoga, and
+  // deviceName/deviceMeta had no numberOfLines either — a long device name (or manufacturer+model
+  // string) could force this box wider than the space left by cardIcon + the chevron, overlapping
+  // the chevron instead of truncating, the same symptom already fixed on every other header in
+  // this app.
+  cardBody: { flex: 1, minWidth: 0 },
   deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
   deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
   connectionRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, marginTop: theme.spacing.xs },
@@ -300,4 +389,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: theme.spacing.xl,
   },
+  sceneRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, paddingBottom: theme.spacing.lg },
+  sceneChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    backgroundColor: theme.surface,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.border,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    maxWidth: 160,
+  },
+  sceneLabel: { color: theme.textPrimary, fontSize: theme.type.label, fontWeight: "600" },
+  newSceneChip: { borderColor: theme.accentEnd, borderStyle: "dashed" },
+  newSceneLabel: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "600" },
 });
