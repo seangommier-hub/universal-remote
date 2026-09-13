@@ -163,3 +163,40 @@ empty); adding a UI testing pattern speculatively for one button is out of scope
   documented, deliberate limitation, not an oversight. If real-hardware use shows this feels
   stale, adding actual interval polling for Roku would be a follow-up ADR (this one deliberately
   didn't invent that new mechanism).
+
+## Update 2026-09-12 (later, live hardware testing): LG's real firmware 404s the subscription — a polling fallback was tried, then reverted the same night
+
+Live-tested against Sean's actual TV (a 2020 LG 75UN7370PUE, webOS ~5.0) via a newly-built Android
+emulator — the caveat this ADR's "Consequences" section already flagged as unconfirmed turned out
+to be real: `ssap://com.webos.media/getForegroundAppInfo` 404s on this exact firmware, confirmed
+live, not inferred.
+
+Rather than stop there, tried a fallback: polling the older
+`ssap://com.webos.applicationManager/getForegroundAppInfo` (confirmed live to work on this
+firmware) every 8s, treating a known streaming app being foregrounded as `"playing"`. Implemented,
+shipped, and live-verified to correctly show a pause icon when YouTube was foregrounded.
+
+**Reverted the same night, per Sean directly**: "the play pause center button should only be during
+the time content is playing but should be a selection button otherwise. in the current state
+nothing can be selected." Real bug: this endpoint only reports which app is in the foreground, with
+no actual playback-state field — treating "app is open" as "playing" is wrong for the entire time a
+user is just browsing that app's own menus, not watching anything, which on a real TV is most of the
+time a streaming app is open. That wrongness hid the Select button — the far more frequently needed
+of the two functions — almost permanently, a strictly worse outcome than the honest gap this ADR's
+own "Consequences" section had already accepted for firmware without the real subscription.
+
+No reliable middle ground exists with only an app-id signal available (no timing heuristic, no
+secondary signal, changes this) — removed the polling fallback entirely
+(`PLAYBACK_POLL_INTERVAL_MS`, `startPlaybackPolling`, `playbackPollTimers`, and the `onError` wiring
+into `client.subscribe()`) rather than trying to tune it. `playbackState` is unset when the real
+subscription fails, restoring this ADR's original, correct default: Select always shown. Play/pause
+genuinely isn't available on this firmware — the original finding stands, uncorrected by a
+well-intentioned but wrong workaround.
+
+`client.subscribe()`'s optional `onError` third parameter (added for this fallback) was left in
+place — a generically useful capability for a future caller, not dead code specific to the reverted
+feature, since nothing about it assumes what the caller does on failure.
+
+All 259 tests pass after the revert (`LgWebOsDriver.test.ts`'s existing subscription-failure test
+already only asserted `connect()` succeeds regardless, not polling behavior — nothing needed
+updating).
