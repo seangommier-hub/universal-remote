@@ -91,3 +91,25 @@ real Live ID (Settings → System → Console info), which this session has no w
   complexity (PS5's per-console Remote Play pairing; full SmartGlass's OAuth + ECDH handshake).
   Either would warrant its own ADR before implementation, consistent with this project's practice
   of scoping and documenting before building rather than expanding scope silently mid-session.
+  PS5 specifically hits a hard wall beyond complexity: registration requires a real PSN account
+  OAuth login, something this session cannot perform on Sean's behalf under any circumstance.
+
+## Update 2026-09-14: found and fixed a real dishonesty bug in the status pill, caused by this driver
+
+Live-verifying this driver on the emulator surfaced a real bug in `UniversalTvRemote.tsx`, not in
+`XboxDriver.ts` itself: the device-detail screen's power status pill (`isOn = state.values.power
+=== "on"`) rendered unconditionally for every device, defaulting to a hardcoded "Off" whenever
+`values.power` was simply absent — which is XboxDriver's permanent state, by design (it has no way
+to query power state at all, see the class's own doc comment). The Xbox screen was quietly telling
+Sean his console was off, a fact this app has no way to actually know, every time he opened it.
+
+Fixed by distinguishing "known off" from "never known" — `knownPower` is `undefined` unless
+`values.power` is literally `"on"` or `"off"`, and the pill now hides itself entirely rather than
+render a guess. Roku's status pill (which reads a real `powerMode` off the device despite declaring
+only `powerOff`, not `power`) was checked and confirmed unaffected — this fix is keyed to whether
+real data exists, not which capability is declared, so it doesn't regress the one other driver with
+this same "power-off-only, but still reads real state" shape.
+
+Live-verified on the emulator: the Xbox device now shows only "Connected," no power pill at all;
+the LG device (real readback) still correctly shows "On." Full suite (272 tests) and `npx tsc
+--noEmit` both clean after the change.

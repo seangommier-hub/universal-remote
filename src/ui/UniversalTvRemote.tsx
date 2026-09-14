@@ -296,7 +296,15 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setChannelInput("");
   }
 
-  const isOn = state.values.power === "on";
+  // Real-hardware finding (2026-09-14, spotted while building XboxDriver.ts): this used to default
+  // to "off" whenever state.values.power was simply undefined — honest for a device this screen
+  // has real readback for (every driver that declares "power", plus Roku's read-only power state),
+  // but XboxDriver never sets values.power at all (its own doc comment: no way to query power
+  // state without a full authenticated session it doesn't implement) — the pill was quietly
+  // claiming "Off" for a device that is, as far as this app can ever know, neither on nor off.
+  // undefined here means exactly that: unknown, not "assume off" — the pill below now hides itself
+  // rather than state a fact this app doesn't have.
+  const knownPower = state.values.power === "on" || state.values.power === "off" ? state.values.power : undefined;
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
   const muted = state.values.muted === true;
@@ -419,10 +427,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           <View style={[styles.statusDot, { backgroundColor: isConnected ? theme.statusOn : theme.statusOff }]} />
           <Text style={styles.statusPillText}>{isConnected ? "Connected" : state.connection}</Text>
         </View>
-        <View style={styles.statusPill}>
-          <Ionicons name={isOn ? "power" : "power-outline"} size={14} color={theme.textSecondary} />
-          <Text style={styles.statusPillText}>{isOn ? "On" : "Off"}</Text>
-        </View>
+        {knownPower !== undefined && (
+          <View style={styles.statusPill}>
+            <Ionicons name={knownPower === "on" ? "power" : "power-outline"} size={14} color={theme.textSecondary} />
+            <Text style={styles.statusPillText}>{knownPower === "on" ? "On" : "Off"}</Text>
+          </View>
+        )}
         {volume !== undefined && (
           <View style={styles.statusPill}>
             <Ionicons name={muted ? "volume-mute-outline" : "volume-medium-outline"} size={14} color={theme.textSecondary} />
