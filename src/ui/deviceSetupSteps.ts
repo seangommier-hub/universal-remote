@@ -6,10 +6,10 @@
  * included." Kept as data, separate from DeviceSetupGuideScreen.tsx's rendering, so each
  * Add*DeviceScreen just supplies its own list rather than duplicating the guide UI.
  *
- * Roku and Yamaha deliberately have no entry here — both drivers' own docstrings already state
- * there's no pairing prompt and no PSK/password (ADR-HEARTH-007/054), so there is no real "extra
- * step" to guide anyone through; a "Setup This Device" link with nothing genuine behind it would
- * be worse than no link at all.
+ * Yamaha deliberately has no entry here — its driver's own docstring states there's no pairing
+ * prompt and no PSK/password at all (ADR-HEARTH-054), so there is no real "extra step" to guide
+ * anyone through; a "Setup This Device" link with nothing genuine behind it would be worse than no
+ * link at all. Roku DOES get one (2026-09-14 correction) — see ROKU_SETUP_GUIDE below.
  */
 export interface DeviceSetupGuide {
   title: string;
@@ -52,6 +52,23 @@ export const LG_SETUP_GUIDE: DeviceSetupGuide = {
 // Real-hardware research (2026-09-13): Xbox's power-on protocol has no pairing step at all — it's
 // a one-way, unauthenticated broadcast (see XboxDriver.ts) — so the only real "setup" is finding
 // the console's own Live ID, which isn't visible anywhere except the console's own settings menu.
+// Real-hardware correction (2026-09-14): ADR-HEARTH-063 originally excluded Roku from this
+// pattern, reasoning it has "no real extra step" — but AddRokuDeviceScreen.tsx's own existing hint
+// text already contradicted that: "Control by mobile apps" is a real toggle (Settings → System →
+// Advanced system settings) that must be on for ECP to work at all, usually on by default but not
+// guaranteed. Real prerequisite, just a less commonly-tripped one than Sony's PSK — still deserves
+// the same guided treatment for consistency.
+export const ROKU_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Roku",
+  steps: [
+    "On the Roku, press Home, then go to Settings.",
+    "Go to System → Advanced system settings.",
+    "Open Control by mobile apps.",
+    "Make sure Network access is set to \"Default\" or \"Permissive\" (not \"Blocked\").",
+    "Enter the Roku's IP address below — no password needed.",
+  ],
+};
+
 export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
   title: "Set up your Xbox",
   steps: [

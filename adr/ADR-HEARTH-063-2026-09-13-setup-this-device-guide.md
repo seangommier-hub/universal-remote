@@ -58,6 +58,18 @@ screen shows "Setup This Device" directly under the hint card, and tapping it op
 numbered guide, which was screenshotted and read back to confirm the six real steps render
 correctly.
 
+## Update 2026-09-14: Roku added — the original exclusion was wrong
+
+Re-reading `AddRokuDeviceScreen.tsx`'s own existing hint text while doing an unrelated pass
+surfaced a self-contradiction in this ADR's original reasoning: Roku was excluded on the grounds
+of having "no real extra step," but the hint text already on that screen says otherwise — "make
+sure 'Control by mobile apps' is enabled (Settings → System → Advanced system settings) if the
+connection fails." That's a real, if usually-already-on, prerequisite toggle, not nothing. Added
+`ROKU_SETUP_GUIDE` to `deviceSetupSteps.ts` and wired it into `AddRokuDeviceScreen.tsx` identically
+to Sony/Samsung/LG. Yamaha remains excluded — its driver has no equivalent settings-screen
+prerequisite of any kind to point to. Live-verified on the emulator: the guide renders correctly
+with the real menu path. Full suite (272 tests) and `npx tsc --noEmit` clean.
+
 ## Consequences
 
 - Genuinely no user-facing change for Roku/Yamaha adds — correct, since neither has real setup
