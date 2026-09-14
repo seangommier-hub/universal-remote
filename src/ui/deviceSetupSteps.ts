@@ -69,6 +69,25 @@ export const ROKU_SETUP_GUIDE: DeviceSetupGuide = {
   ],
 };
 
+// Real-hardware correction (2026-09-14), same audit that added ROKU_SETUP_GUIDE: SmartThings'
+// real prerequisite (ADR-HEARTH-042's own confirmed, live-verified facts — "Hearth" is an
+// unpublished WEBHOOK_SMART_APP with no in-app OAuth screen, installed entirely through the
+// SmartThings mobile app itself) was even harder to find than Roku's — it only ever appeared as a
+// one-line empty-state message AFTER the outlet list came back empty, not before. Steps below are
+// kept to what ADR-HEARTH-042 actually confirmed live; deliberately not inventing an exact
+// Developer-Mode tap path within the SmartThings app that hasn't been verified against its real
+// UI, unlike every other guide here.
+export const SMARTTHINGS_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up SmartThings outlets",
+  steps: [
+    "Open the SmartThings app and sign in with your Samsung account.",
+    "Turn on Developer Mode in the app (search \"SmartThings Developer Mode\" if you don't see the option — this unlocks installing apps that aren't in the public marketplace).",
+    "Search for and install \"Hearth\" from Developer Mode.",
+    "On its setup page inside SmartThings, select which outlets to share.",
+    "Come back here and tap \"Sync from SmartThings\" — your outlets will appear below.",
+  ],
+};
+
 export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
   title: "Set up your Xbox",
   steps: [

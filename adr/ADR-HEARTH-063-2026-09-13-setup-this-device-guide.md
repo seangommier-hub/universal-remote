@@ -70,6 +70,26 @@ to Sony/Samsung/LG. Yamaha remains excluded — its driver has no equivalent set
 prerequisite of any kind to point to. Live-verified on the emulator: the guide renders correctly
 with the real menu path. Full suite (272 tests) and `npx tsc --noEmit` clean.
 
+## Update 2026-09-14 (later): SmartThings added too — and a real bug caught live
+
+Same audit pass: `AddSmartThingsOutletsScreen.tsx`'s real prerequisite (ADR-HEARTH-042's own
+confirmed facts — "Hearth" is an unpublished WEBHOOK_SMART_APP installed entirely through the
+SmartThings mobile app, Developer Mode required) was even harder to find than Roku's — it only ever
+surfaced as a one-line empty-state message *after* the outlet list came back empty, never shown
+upfront. Added `SMARTTHINGS_SETUP_GUIDE`, deliberately not inventing an exact in-app Developer-Mode
+tap path that hasn't been verified against SmartThings' real UI (unlike every other guide here,
+which cites a primary source).
+
+**Real bug caught live, not by inspection**: wiring in the same `if (showSetupGuide) return` pattern
+used for the other four screens crashed this one with "Rendered fewer hooks than expected" the
+moment "Setup This Device" was tapped on the emulator. Root cause: this screen, unlike the other
+four, also calls `useEffect` — placing the early return before it meant the component rendered a
+different hook count depending on `showSetupGuide`, a real Rules-of-Hooks violation. Fixed by moving
+the early return after the `useEffect`. Checked all four other Setup-guide screens directly (none
+have a `useEffect` at all) to confirm this bug class doesn't exist elsewhere. Live-verified after
+the fix: the guide now opens and renders correctly. Full suite (272 tests) and `npx tsc --noEmit`
+clean.
+
 ## Consequences
 
 - Genuinely no user-facing change for Roku/Yamaha adds — correct, since neither has real setup

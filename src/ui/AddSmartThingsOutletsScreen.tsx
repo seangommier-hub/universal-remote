@@ -8,6 +8,8 @@ import { SmartThingsOutlet, listOutlets } from "../drivers/outlet/smartthings/Sm
 import { SMARTTHINGS_OUTLET_DRIVER_ID } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
+import { SMARTTHINGS_SETUP_GUIDE } from "./deviceSetupSteps";
 import { theme } from "./theme";
 
 interface AddSmartThingsOutletsScreenProps {
@@ -36,7 +38,14 @@ type Phase =
 export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded }: AddSmartThingsOutletsScreenProps) {
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>({ name: "loading" });
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
+  // Real-hardware finding (2026-09-14): the early return for showSetupGuide MUST come after every
+  // hook in this component, not just after the useState calls — unlike the simpler Add*Screens
+  // this pattern was copied from (Sony/Samsung/LG/Roku), this one also calls useEffect below.
+  // Returning before it meant this component rendered a different hook count on the render where
+  // showSetupGuide flips to true than on every other render -- a real Rules-of-Hooks violation
+  // ("Rendered fewer hooks than expected"), caught live on the emulator, not by inspection.
   useEffect(() => {
     let cancelled = false;
     listOutlets()
@@ -50,6 +59,10 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
       cancelled = true;
     };
   }, []);
+
+  if (showSetupGuide) {
+    return <DeviceSetupGuideScreen guide={SMARTTHINGS_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
+  }
 
   async function handleSelectOutlet(outlet: SmartThingsOutlet) {
     const driver = driverRegistry.get(SMARTTHINGS_OUTLET_DRIVER_ID);
@@ -86,6 +99,7 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
           </View>
           <Text style={styles.title}>Sync from SmartThings</Text>
         </View>
+        <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />
 
         {phase.name === "loading" && (
           <View style={styles.hintCard}>
@@ -112,10 +126,7 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
               />
             ))}
             {phase.outlets.length === 0 && (
-              <Text style={styles.hint}>
-                No outlets found yet. Install "Hearth" in the SmartThings app and pick some devices there, then come back
-                here.
-              </Text>
+              <Text style={styles.hint}>No outlets found yet — tap "Setup This Device" above for the steps.</Text>
             )}
           </View>
         )}
