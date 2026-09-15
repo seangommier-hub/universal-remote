@@ -113,3 +113,22 @@ this same "power-off-only, but still reads real state" shape.
 Live-verified on the emulator: the Xbox device now shows only "Connected," no power pill at all;
 the LG device (real readback) still correctly shows "On." Full suite (272 tests) and `npx tsc
 --noEmit` both clean after the change.
+
+## Update 2026-09-14 (later): the mute icon had the opposite problem — a real value with nowhere to show
+
+Same audit, one more pass: Roku and Samsung both declare `"mute"` and track a real (if
+optimistic-only, since neither protocol has a query mechanism) `muted` value the moment it's
+pressed — but the mute icon only ever rendered bundled inside the volume pill, and neither driver
+ever populates `values.volume` at all (Roku's ECP has no numeric volume query; Samsung's key-press
+channel has no readback of any kind). Not a false claim like the power pill's bug — a real value
+computed correctly and then never shown anywhere. Pressing Mute on either device produced zero
+visible feedback.
+
+Added a second, standalone mute pill (`knownMuted`, same `undefined`-means-unknown shape as
+`knownPower`) that renders whenever `muted` is known and the combined volume+mute pill isn't
+already covering it. `npx tsc --noEmit` and the full suite (272 tests) both clean. **Not
+live-verified against a real Roku or Samsung device** — this household's real Roku
+(`32HisenseRokuTV`, found via tonight's router-merge work) sits on the Guest/IoT segment the
+Android emulator likely can't reach directly, and no Samsung TV is paired in this session at all.
+Logic is a pure, simple presentational conditional, already covered by the full regression suite —
+flagged honestly rather than skipped silently, consistent with this project's own standard.

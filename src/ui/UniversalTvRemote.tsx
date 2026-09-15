@@ -308,6 +308,14 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
   const muted = state.values.muted === true;
+  // Real-hardware finding (2026-09-14), same audit as knownPower above: Roku and Samsung both
+  // declare "mute" and track a real (if optimistic-only) muted value the moment it's pressed —
+  // but neither ever populates values.volume at all (Roku's ECP has no numeric volume query;
+  // Samsung's key-press-only channel has no readback of any kind), and the mute icon was only ever
+  // rendered bundled inside the volume pill below. Pressing Mute on either produced zero visible
+  // feedback — not a wrong claim like knownPower's bug, but a real missing one. knownMuted lets a
+  // standalone pill show once muted is known, independent of whether volume ever will be.
+  const knownMuted = state.values.muted === true || state.values.muted === false ? state.values.muted : undefined;
   const input = typeof state.values.input === "string" ? state.values.input : undefined;
   // Real live media-playback state (ADR-HEARTH-051) — never a guess based on whether a streaming
   // app was launched. Only Roku and LG ever populate this (see Capability.ts's playPause entry
@@ -437,6 +445,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           <View style={styles.statusPill}>
             <Ionicons name={muted ? "volume-mute-outline" : "volume-medium-outline"} size={14} color={theme.textSecondary} />
             <Text style={styles.statusPillText}>{volume}</Text>
+          </View>
+        )}
+        {volume === undefined && knownMuted !== undefined && (
+          <View style={styles.statusPill}>
+            <Ionicons name={knownMuted ? "volume-mute-outline" : "volume-medium-outline"} size={14} color={theme.textSecondary} />
+            <Text style={styles.statusPillText}>{knownMuted ? "Muted" : "Unmuted"}</Text>
           </View>
         )}
         {channel !== undefined && (
