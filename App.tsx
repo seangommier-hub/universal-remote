@@ -21,6 +21,7 @@ import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
 import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
+import { AddKasaDeviceScreen } from "./src/ui/AddKasaDeviceScreen";
 import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
@@ -334,6 +335,9 @@ export default function App() {
       {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "xbox" && (
         <AddXboxDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "kasa" && (
+        <AddKasaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
       )}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen

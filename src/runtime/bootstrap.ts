@@ -10,6 +10,7 @@ import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
 import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
 import { YamahaMusicCastDriver } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { XboxDriver } from "../drivers/gaming/xbox/XboxDriver";
+import { KasaPlugDriver } from "../drivers/outlet/kasa/KasaPlugDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -37,6 +38,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new SmartThingsOutletDriver());
   driverRegistry.register(new YamahaMusicCastDriver());
   driverRegistry.register(new XboxDriver());
+  driverRegistry.register(new KasaPlugDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

@@ -8,7 +8,7 @@ import { Scene } from "../core/types/Scene";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -21,6 +21,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
   { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
   { brand: "xbox", label: "Xbox", icon: "game-controller-outline" },
+  { brand: "kasa", label: "TP-Link Kasa Plug", icon: "flash-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {

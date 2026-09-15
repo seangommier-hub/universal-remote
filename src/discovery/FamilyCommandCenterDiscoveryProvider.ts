@@ -5,6 +5,7 @@ import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDrive
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
+import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -41,6 +42,14 @@ const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceC
   { pattern: /\blg\b|webos/i, manufacturer: "LG", category: "tv", driverId: LG_WEBOS_DRIVER_ID },
   { pattern: /roku/i, manufacturer: "Roku", category: "streaming", driverId: ROKU_ECP_DRIVER_ID },
   { pattern: /yamaha/i, manufacturer: "Yamaha", category: "tv", driverId: YAMAHA_MUSICCAST_DRIVER_ID },
+  // Unlike Xbox/SmartThings above, KasaPlugDriver's connect() needs only config.ipAddress (see
+  // KasaPlugDriver.ts's requireConfig) -- exactly what this screen's "Connect" tile already
+  // builds from discovery data alone, so auto-matching is safe here the same way it is for every
+  // TV brand. "TP-Link"/"TP-LINK TECHNOLOGIES" is that vendor's real, standard MAC OUI string
+  // (unlike the other entries above, this one isn't yet confirmed against a live device on this
+  // specific household's network -- no Kasa plug has shown up in a real scan as of 2026-09-15) --
+  // a mismatch fails safe to "Unknown" with manual add still available, same as any brand here.
+  { pattern: /tp-?link|\bkasa\b/i, manufacturer: "TP-Link", category: "outlet", driverId: KASA_PLUG_DRIVER_ID },
 ];
 
 // Real household data (2026-09-13): this household's own router DHCP hostnames literally contain

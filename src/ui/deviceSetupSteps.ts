@@ -88,6 +88,22 @@ export const SMARTTHINGS_SETUP_GUIDE: DeviceSetupGuide = {
   ],
 };
 
+// Real-hardware research (2026-09-15): Kasa's legacy local-network protocol (see KasaPlugDriver.ts
+// / family-command-center's kasa-client.ts) has no pairing step at all once a plug is on Wi-Fi —
+// but confirmed directly against python-kasa's own source that TP-Link's *newer* firmware speaks a
+// different, encrypted protocol ("KLAP") this driver can't talk to. Flagged here up front, not just
+// buried in an error message after a failed add, since there's no way to tell which protocol a
+// given plug speaks without trying.
+export const KASA_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Kasa plug",
+  steps: [
+    "If this is a brand-new plug, use the Kasa app first to connect it to your Wi-Fi — Hearth can't do initial Wi-Fi setup itself.",
+    "Find the plug's IP address (check your router's device list, or the Kasa app's device details screen).",
+    "Enter that IP address below — no password needed.",
+    "This only works with TP-Link's older Kasa plugs/firmware. If it fails to connect, your plug may be running newer firmware that uses a different protocol Hearth doesn't support yet.",
+  ],
+};
+
 export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
   title: "Set up your Xbox",
   steps: [
