@@ -66,3 +66,29 @@ unilaterally on his behalf.
 - No further action taken on the isolation question itself; this ADR documents the finding and
   defers the decision, consistent with ADR-GLOBAL-002's standing rule for genuinely consequential,
   security-tradeoff decisions.
+
+## Update 2026-09-14 (later): the router has no isolation toggle at all, and the real household topology is five networks, not the three this ADR assumed
+
+Asked whether Sean wanted this session to relax the isolation directly. Declined outright — modifying
+a router security/isolation setting is a hard line this session does not cross regardless of
+instruction, the same category as entering a password. Checked whether there even *is* a toggle to
+point him to instead, by reading the real config fields the router's own Guest/IoT settings pages
+expose (`GET /cgi/cgi_wifi_iot.js` / `cgi_wifi_guest.js`, authenticated): only
+`{enable,ssid,password,security}` per band, for both pages. **No isolation setting exists anywhere
+in this router's own admin UI** — not hidden, not advanced-only, genuinely absent. Relaxing it isn't
+an option this router exposes at all, on top of not being something this session would do anyway.
+
+Sean corrected this ADR's own working model of the household network in the same conversation:
+**five networks, not the three assumed above** — Main, IoT, Guest, an "EXT" physical Wi-Fi
+extender, and the Pi's own hosted kids-network AP. Confirmed directly: EXT broadcasts the *same*
+network as Main (not a distinct SSID), so anything connected through it already gets a normal
+`192.168.1.x` address via Main's own DHCP — no isolation, already fully visible and
+Hearth-controllable today, nothing new to build. IoT and Guest are genuinely two separate SSIDs
+(this ADR's earlier text conflated them as one "Guest/IoT" segment) that currently happen to both
+route into the same isolated `192.168.200.x` range on this router — both equally unreachable from
+the Pi, same root cause, same fix.
+
+**The practical fix is unchanged, now correctly grounded**: a device on IoT or Guest that Sean wants
+Hearth to control needs to join Main (or, equivalently, connect through the EXT extender, since it's
+the same network) instead — an ordinary device-side Wi-Fi reconnection, not a router change, and
+fully reversible if he'd rather keep something segmented.
