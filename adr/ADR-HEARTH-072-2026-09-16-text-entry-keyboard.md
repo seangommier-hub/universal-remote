@@ -70,3 +70,23 @@ confirmed, consistent with this project's standing discipline.
 - Samsung and Sony households don't get this capability; no code path silently pretends otherwise.
 - The "Send" action inserts/types text only — it does not itself submit a form or move focus.
   That's a deliberate scope boundary (see Design decision above), not an oversight.
+
+## Update 2026-09-16 (later): two visual-consistency fixes
+
+Sean: "that works, but make sure the visual is consistent with the rest of the app." Two real gaps
+found on review, not cosmetic nitpicks:
+
+1. **The "Send" button was invisible text, not just visually off** — passed both `icon` and
+   `label` to `CapabilityButton`, which (per this codebase's own established rule, first found and
+   fixed 2026-09-10 on the Reconnect button) never renders both together — icon suppresses the
+   label entirely. The button was silently rendering as a bare arrow glyph with no visible "Send"
+   text at all, the identical bug class already documented and fixed multiple times elsewhere in
+   this app. Fixed by dropping the icon, matching every other named pill action button.
+2. **The hint copy was plain floating text**, not matching this app's established pattern for
+   neutral informational callouts (`addDeviceFormStyles.ts`'s `hintCard`/`hint`, used across every
+   Add*DeviceScreen — a bordered, subtly-backgrounded box, not bare paragraph text). Added a local
+   `keyboardHintCard` style using this file's own existing token choices (the same `surfaceRaised`
+   "raised element against a `surface` card" pattern `CapabilityButton`'s own default button
+   background already establishes) rather than importing the Add-screen-specific style file.
+
+Full suite (31/310) and `tsc --noEmit` still clean after both fixes.
