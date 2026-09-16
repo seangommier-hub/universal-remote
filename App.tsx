@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, AppStateStatus, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import * as Network from "expo-network";
+import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPolicy";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
@@ -76,6 +78,7 @@ export default function App() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "list" });
   const appState = useRef(AppState.currentState);
+  const lastNetworkState = useRef<Network.NetworkState | null>(null);
   // Real-hardware finding (2026-09-10): a device's driver was never wired to the shared
   // stateStore the UI actually reads — see stateStoreBridge.ts. One bridge per device, tracked by
   // id so handleRemoveDevice can unsubscribe it and a device can't accidentally be bridged twice.
@@ -135,6 +138,25 @@ export default function App() {
       if (cameFromBackground) {
         reconnectAllDevices(runtime, runtime.deviceRegistry.list());
       }
+    });
+    return () => subscription.remove();
+  }, [runtime]);
+
+  // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-075): the AppState listener above
+  // only covers a device losing connection while the app is backgrounded — the one gap left is a
+  // real Wi-Fi drop/handoff while the app stays in the foreground the whole time (the user is
+  // actively looking at the screen), which nothing proactively noticed before now. See
+  // networkReconnectPolicy.ts's own doc comment for the full research citation and the honest
+  // limits of what expo-network can actually detect (no SSID/network-identity field in Expo Go,
+  // so a silent same-type roam to a different access point isn't distinguishable from no change
+  // at all — this covers what IS observable: connectivity lost-then-regained, and a connection
+  // type change).
+  useEffect(() => {
+    const subscription = Network.addNetworkStateListener((state) => {
+      if (shouldReconnectOnNetworkChange(lastNetworkState.current, state)) {
+        reconnectAllDevices(runtime, runtime.deviceRegistry.list());
+      }
+      lastNetworkState.current = state;
     });
     return () => subscription.remove();
   }, [runtime]);
