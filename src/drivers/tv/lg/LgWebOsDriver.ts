@@ -46,6 +46,12 @@ const LG_CAPABILITIES: CapabilityId[] = [
   // full citation, including the known firmware caveat (some older webOS versions 404 this
   // subscription) — handled the same best-effort way as this driver's other inferred fields.
   "playPause",
+  // Real-hardware research (2026-09-16, ADR-HEARTH-072): `ssap://com.webos.service.ime/insertText`
+  // is documented directly in LG's own official "Connect SDK" (2014, LG Electronics), adopted
+  // verbatim by the openHAB LG webOS binding's LGWebOSTVKeyboardInput.java — see Capability.ts's
+  // textEntry entry for the full citation. Notably, PAIRING_MANIFEST (LgWebOsClient.ts) already
+  // requests the "CONTROL_INPUT_TEXT" permission and always has, unused until now.
+  "textEntry",
 ];
 
 // See Capability.ts's playPause entry. "playing"/"paused" map directly off the TV's own
@@ -480,6 +486,19 @@ export class LgWebOsDriver implements DeviceDriver {
         await client.sendButton("MENU");
         this.patchValues(device.id, { lastAction: "menu" });
         return;
+      case "textEntry": {
+        const text = command.args?.text;
+        if (typeof text !== "string" || text.length === 0) {
+          throw new Error("textEntry requires a non-empty string 'text' arg");
+        }
+        // replace: 0 -- append/insert at the cursor rather than clearing the field first, matching
+        // LGWebOSTVKeyboardInput.java's own always-used value (see Capability.ts's textEntry
+        // citation). Whether a field is already empty is the TV's own on-screen keyboard's concern,
+        // not something to guess an alternate value for.
+        await client.call("ssap://com.webos.service.ime/insertText", { text, replace: 0 });
+        this.patchValues(device.id, { lastAction: "textEntry" });
+        return;
+      }
       case "setChannel": {
         const channel = command.args?.channel;
         if (typeof channel !== "number") throw new Error("setChannel requires a numeric 'channel' arg");

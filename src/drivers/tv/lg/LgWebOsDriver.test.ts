@@ -105,6 +105,28 @@ describe("LgWebOsDriver", () => {
     ]);
   });
 
+  test("textEntry calls ssap://com.webos.service.ime/insertText with the whole string in one request (ADR-HEARTH-072)", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "user@example.com" } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(sent.uri).toBe("ssap://com.webos.service.ime/insertText");
+    expect(sent.payload).toEqual({ text: "user@example.com", replace: 0 });
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    await resultPromise;
+  });
+
+  test("textEntry rejects an empty string without sending anything", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+    const sentBefore = socket.sentMessages.length;
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "" } })).rejects.toThrow(/non-empty string/);
+    expect(socket.sentMessages.length).toBe(sentBefore);
+  });
+
   test("inputSelection calls ssap://tv/switchInput with the chosen input's real id", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();

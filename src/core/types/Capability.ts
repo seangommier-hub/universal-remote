@@ -80,7 +80,29 @@ export type CapabilityId =
   //    `stateInfo.state` field has been observed for the special `cast:audio` source only, not
   //    as a general documented mechanism — not a real basis for a universal capability. Sony's
   //    separate IRCC-IP protocol is unimplemented here (see SonyBraviaDriver.ts) and out of scope.
-  | "playPause";
+  | "playPause"
+  // Real-hardware research (2026-09-16): "so the user can type usernames and passwords rather
+  // than having to navigate to each letter on screen" -- verified per-brand from primary/official
+  // sources before adding, not assumed:
+  //  - Roku: real and declared. Official ECP docs document `POST /keypress/Lit_<char>` -- sends
+  //    one literal printable character to whichever on-screen field currently has focus. No
+  //    single-shot "insert this whole string" call exists; a full string is sent as a sequence of
+  //    per-character requests (RokuEcpDriver.ts, sendCharacterSequence.ts) -- the same pattern
+  //    this driver already uses for setChannel's digit entry.
+  //  - LG webOS: real and declared, sourced from LG's own official "Connect SDK" (2014, LG
+  //    Electronics), adopted verbatim by the openHAB LG webOS binding
+  //    (LGWebOSTVKeyboardInput.java) -- `ssap://com.webos.service.ime/insertText` takes the
+  //    entire string in one request (`{text, replace: 0}`), a strictly better mechanism than
+  //    Roku's per-character one. LgWebOsDriver.ts.
+  //  - Samsung Tizen: NOT declared. The unencrypted remote-control WebSocket this driver is
+  //    restricted to (ADR-HEARTH-005) is documented key-press emulation only (see this file's own
+  //    playPause comment for the same protocol-scope finding) -- no IME/text-injection service
+  //    exists on this channel in any source checked.
+  //  - Sony BRAVIA: NOT declared. IRCC-IP (this project's newly-added Sony capability set, see
+  //    ADR-HEARTH-071) only ever sends discrete named remote-button codes (Up/Down/Confirm/
+  //    Num0-9/etc.) -- no literal-character or string-insertion code exists in either primary
+  //    source this project's IRCC-IP codes were verified against.
+  | "textEntry";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

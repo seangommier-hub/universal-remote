@@ -194,6 +194,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const scaledSmDiameter = theme.circleDiameter.sm * scale;
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [channelInput, setChannelInput] = useState("");
+  const [keyboardInput, setKeyboardInput] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(device.name);
   const [reconnecting, setReconnecting] = useState(false);
@@ -212,7 +213,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // is the one change that actually buys back a screen's worth of height, rather than
   // incrementally shrinking padding everywhere. Only shown when there's something to split.
   const hasKeypad = has(device, "setChannel");
-  const [activeTab, setActiveTab] = useState<"remote" | "keypad">("remote");
+  // Sean, directly (2026-09-16): "add a keyboard so that the user can type usernames and
+  // passwords rather than having to navigate to each letter on screen, put this as an additional
+  // tab like the keypad." Same tab-split reasoning as hasKeypad above — only shown when the
+  // device's driver actually implements textEntry (Roku/LG; see Capability.ts's citation for why
+  // Samsung/Sony don't).
+  const hasKeyboard = has(device, "textEntry");
+  const [activeTab, setActiveTab] = useState<"remote" | "keypad" | "keyboard">("remote");
   // Sean's reference (2026-09-10): volume/channel rockers sit directly beside the d-pad as one
   // control cluster, not stacked as separate cards above it. Only devices with a d-pad (LG,
   // Samsung, Roku) get that merged layout; Sony has volume but no d-pad or channel keys at all,
@@ -295,6 +302,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     if (channelInput.length === 0) return;
     send("setChannel", { channel: Number(channelInput) });
     setChannelInput("");
+  }
+
+  function submitKeyboardInput() {
+    if (keyboardInput.length === 0) return;
+    send("textEntry", { text: keyboardInput });
+    setKeyboardInput("");
   }
 
   // Real-hardware finding (2026-09-14, spotted while building XboxDriver.ts): this used to default
@@ -509,20 +522,27 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         </View>
       )}
 
-      {hasKeypad && (
+      {(hasKeypad || hasKeyboard) && (
         <View style={styles.tabBar}>
           <Pressable style={[styles.tab, activeTab === "remote" && styles.tabActive]} onPress={() => setActiveTab("remote")}>
             <Text style={[styles.tabLabel, activeTab === "remote" && styles.tabLabelActive]}>Remote</Text>
           </Pressable>
-          <Pressable style={[styles.tab, activeTab === "keypad" && styles.tabActive]} onPress={() => setActiveTab("keypad")}>
-            <Text style={[styles.tabLabel, activeTab === "keypad" && styles.tabLabelActive]}>
-              Keypad{channelInput.length > 0 ? ` (${channelInput})` : ""}
-            </Text>
-          </Pressable>
+          {hasKeypad && (
+            <Pressable style={[styles.tab, activeTab === "keypad" && styles.tabActive]} onPress={() => setActiveTab("keypad")}>
+              <Text style={[styles.tabLabel, activeTab === "keypad" && styles.tabLabelActive]}>
+                Keypad{channelInput.length > 0 ? ` (${channelInput})` : ""}
+              </Text>
+            </Pressable>
+          )}
+          {hasKeyboard && (
+            <Pressable style={[styles.tab, activeTab === "keyboard" && styles.tabActive]} onPress={() => setActiveTab("keyboard")}>
+              <Text style={[styles.tabLabel, activeTab === "keyboard" && styles.tabLabelActive]}>Keyboard</Text>
+            </Pressable>
+          )}
         </View>
       )}
 
-      {(!hasKeypad || activeTab === "remote") && (
+      {(!(hasKeypad || hasKeyboard) || activeTab === "remote") && (
         <>
       {/* Sean's reference (2026-09-10): volume and channel rockers sit directly beside the d-pad
           as one control cluster — "everything in one place" — rather than as a separate card
@@ -880,6 +900,35 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           </View>
         </View>
       )}
+
+      {hasKeyboard && activeTab === "keyboard" && (
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Type on the TV</Text>
+          <Text style={styles.keyboardHint}>
+            Type using your phone's own keyboard, then tap Send to type it on the TV — no more navigating letter by letter with the
+            d-pad. Use the Remote tab's Select button to move to the next field or submit.
+          </Text>
+          <TextInput
+            style={styles.keyboardInput}
+            value={keyboardInput}
+            onChangeText={setKeyboardInput}
+            placeholder="Type a username, password, or search term…"
+            placeholderTextColor={theme.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!controlsDisabled}
+            onSubmitEditing={submitKeyboardInput}
+            returnKeyType="send"
+          />
+          <CapabilityButton
+            label="Send"
+            icon="arrow-forward-circle-outline"
+            variant="accent"
+            onPress={submitKeyboardInput}
+            disabled={controlsDisabled || keyboardInput.length === 0}
+          />
+        </View>
+      )}
     </ScrollView>
     </View>
   );
@@ -1131,6 +1180,18 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.35 },
   keypadHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   keypadDisplay: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700", letterSpacing: 2, minWidth: 48, textAlign: "right" },
+  keyboardHint: { color: theme.textSecondary, fontSize: theme.type.label, marginBottom: theme.spacing.sm },
+  keyboardInput: {
+    color: theme.textPrimary,
+    fontSize: theme.type.body,
+    backgroundColor: theme.surfaceRaised,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
   // Design pass (2026-09-10) on "the arrows on the front page" — four
   // individually-boxed circle buttons in a plus shape read as generic UI
   // chrome, indistinguishable from every other button on the screen, for

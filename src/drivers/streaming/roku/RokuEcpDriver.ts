@@ -6,6 +6,7 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { RokuEcpClient, RokuEcpConfig } from "./RokuEcpClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
+import { sendCharacterSequence } from "../../../core/util/sendCharacterSequence";
 
 const LOG_SCOPE = "RokuEcpDriver";
 export const ROKU_ECP_DRIVER_ID = "roku-ecp";
@@ -38,6 +39,10 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   // remote key are both documented directly by Roku itself — see Capability.ts's playPause entry
   // for the full citation. Real, not assumed.
   "playPause",
+  // Real-hardware research (2026-09-16, ADR-HEARTH-072): "Lit_<char>" (documented by Roku's own
+  // ECP docs) sends one literal printable character to whichever on-screen field currently has
+  // focus — see Capability.ts's textEntry entry for the full citation.
+  "textEntry",
 ];
 
 // See Capability.ts's playPause entry for the citation. Returns null (deliberately distinct from
@@ -293,6 +298,18 @@ export class RokuEcpDriver implements DeviceDriver {
         await client.keypress("Play");
         await this.refreshPlaybackState(device, client);
         return;
+      case "textEntry": {
+        const text = command.args?.text;
+        if (typeof text !== "string" || text.length === 0) {
+          throw new RokuValidationError("textEntry requires a non-empty string 'text' arg");
+        }
+        // encodeURIComponent per-character: Lit_<char> sits in a URL path segment, and a space or
+        // another reserved character would otherwise corrupt the request (real finding cited in
+        // Capability.ts's textEntry entry — non-ASCII/special characters must be URL-encoded).
+        await sendCharacterSequence(text, (char) => client.keypress(`Lit_${encodeURIComponent(char)}`));
+        this.patchValues(device.id, { lastAction: "textEntry" });
+        return;
+      }
       default:
         throw new Error(`RokuEcpDriver does not implement capability: ${command.capability}`);
     }

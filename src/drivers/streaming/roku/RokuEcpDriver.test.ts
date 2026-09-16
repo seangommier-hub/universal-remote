@@ -291,4 +291,41 @@ describe("RokuEcpDriver", () => {
     );
     expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2); // only the two connect() reads
   });
+
+  test("textEntry sends a Lit_<char> keypress per character, in order (ADR-HEARTH-072)", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "Hi5" } });
+
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(2).map((call) => call[0]);
+    expect(keypressUrls).toEqual([
+      "http://192.168.1.80:8060/keypress/Lit_H",
+      "http://192.168.1.80:8060/keypress/Lit_i",
+      "http://192.168.1.80:8060/keypress/Lit_5",
+    ]);
+  }, 10000);
+
+  test("textEntry URL-encodes characters that aren't safe in a URL path segment", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "a b" } });
+
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(2).map((call) => call[0]);
+    expect(keypressUrls).toEqual([
+      "http://192.168.1.80:8060/keypress/Lit_a",
+      "http://192.168.1.80:8060/keypress/Lit_%20",
+      "http://192.168.1.80:8060/keypress/Lit_b",
+    ]);
+  }, 10000);
+
+  test("textEntry rejects an empty string without any network call", async () => {
+    await connectRoku(driver);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "" } })).rejects.toThrow(
+      /non-empty string/
+    );
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
+  });
 });
