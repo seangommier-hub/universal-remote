@@ -8,6 +8,7 @@ import { CapabilityId, StreamingService } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
+import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { theme } from "./theme";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -225,6 +226,15 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // Samsung, Roku) get that merged layout; Sony has volume but no d-pad or channel keys at all,
   // so it keeps the older standalone rocker card as a fallback — see the render below.
   const hasDpad = has(device, "directionalNavigation");
+  // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-074): Apple TV Remote's signature
+  // feature, layered on top of (not replacing) the existing arrow buttons — see
+  // useDpadSwipeGesture.ts's own doc comment for the full citation and the honest caveat that
+  // this hasn't been verified end-to-end against a real device this session.
+  const dpadSwipeHandlers = useDpadSwipeGesture((direction) => {
+    if (controlsDisabled) return;
+    fireHapticClick();
+    send("directionalNavigation", { direction });
+  });
 
   async function handleReconnectPress() {
     setReconnecting(true);
@@ -579,7 +589,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 )}
               </View>
             )}
-            <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2 }]}>
+            <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2 }]} {...dpadSwipeHandlers}>
               <CapabilityButton
                 shape="circle"
                 scale={scale}
