@@ -29,10 +29,11 @@ describe("SonyBraviaDriver", () => {
     global.fetch = jest.fn();
   });
 
-  test("declares only capabilities the Sony REST API actually implements", () => {
+  test("declares REST-API capabilities plus IRCC-IP nav/select/back/home (ADR-HEARTH-071) — but not menu or textEntry, which neither protocol supports", () => {
     const caps = driver.getCapabilities();
-    expect(caps).toEqual(["power", "volumeUp", "volumeDown", "setVolume", "mute", "inputSelection"]);
-    expect(caps).not.toContain("directionalNavigation");
+    expect(caps).toEqual(["power", "volumeUp", "volumeDown", "setVolume", "mute", "inputSelection", "directionalNavigation", "select", "back", "home"]);
+    expect(caps).not.toContain("menu");
+    expect(caps).not.toContain("textEntry");
   });
 
   test("connect() reads real power + volume state from the TV", async () => {
@@ -140,5 +141,51 @@ describe("SonyBraviaDriver", () => {
   test("setVolume without a numeric arg rejects before making any network call", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setVolume" })).rejects.toThrow();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // ADR-HEARTH-071: directionalNavigation/select/back/home go through SonyIrccClient (a separate
+  // SOAP-over-HTTP protocol from the REST calls above), then executeCommand's own refreshState()
+  // still runs afterward the same as every other command — the IRCC POST itself has no JSON body
+  // to assert on the way the REST calls' JSON-RPC envelopes do, so these check the raw XML body.
+  test("directionalNavigation sends the real, sourced IRCC code for each direction", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, status: 200 } as Response) // IRCC POST
+      .mockResolvedValueOnce(powerStatusResponse("active"))
+      .mockResolvedValueOnce(volumeInfoResponse(20, false));
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation", args: { direction: "up" } });
+
+    const irccCall = (global.fetch as jest.Mock).mock.calls[0];
+    expect(irccCall[0]).toBe("http://192.168.1.50:80/sony/ircc");
+    expect(irccCall[1].body).toContain("<IRCCCode>AAAAAQAAAAEAAAB0Aw==</IRCCCode>"); // Up
+  });
+
+  test("directionalNavigation without a valid direction rejects before any network call", async () => {
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation" })).rejects.toThrow();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("select sends the real Confirm IRCC code", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "select" });
+
+    expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABlAw==</IRCCCode>");
+  });
+
+  test("back sends the real Return IRCC code", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "back" });
+
+    expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAgAAAJcAAAAjAw==</IRCCCode>");
+  });
+
+  test("home sends the real Home IRCC code", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "home" });
+
+    expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABgAw==</IRCCCode>");
   });
 });

@@ -1,10 +1,11 @@
 import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceDriver";
-import { CapabilityId } from "../../../core/types/Capability";
+import { CapabilityId, NavigationDirection } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
+import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
 
 const LOG_SCOPE = "SonyBraviaDriver";
 const VOLUME_STEP = 2;
@@ -19,12 +20,25 @@ const VOLUME_STEP = 2;
 const RECONNECT_BASE_DELAY_MS = 2000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 
-// Capabilities this driver actually implements against Sony's documented JSON-RPC API. Sony's
-// REST API has no method for directional nav/select/back/home/menu — those live in the separate
-// IRCC-IP protocol, which is NOT implemented here yet. Do not add those capabilities to a Sony
-// device until IRCC-IP is researched and implemented; a device must never claim a capability its
-// driver can't actually perform.
-const SONY_BRAVIA_CAPABILITIES: CapabilityId[] = ["power", "volumeUp", "volumeDown", "setVolume", "mute", "inputSelection"];
+// Capabilities against Sony's documented JSON-RPC REST API (power/volume/input), plus, as of
+// ADR-HEARTH-071 (2026-09-16), directionalNavigation/select/back/home via the separate IRCC-IP
+// protocol (SonyIrccClient.ts) — Sony's REST API has no method for these at all; see that file's
+// own doc comment for the two corroborating primary sources the code table came from. "menu" is
+// deliberately still NOT declared: no source checked has a plain, universal "Menu" code on this
+// remote's real key table (only app-specific variants like ActionMenu/SyncMenu exist, and
+// guessing which one a caller means isn't something this driver will do).
+const SONY_BRAVIA_CAPABILITIES: CapabilityId[] = [
+  "power",
+  "volumeUp",
+  "volumeDown",
+  "setVolume",
+  "mute",
+  "inputSelection",
+  "directionalNavigation",
+  "select",
+  "back",
+  "home",
+];
 
 export const SONY_BRAVIA_DRIVER_ID = "sony-bravia";
 
@@ -50,6 +64,13 @@ interface ExternalInputStatus {
   title?: string;
   label?: string;
 }
+
+const DIRECTION_TO_IRCC_CODE: Record<NavigationDirection, string> = {
+  up: SONY_IRCC_CODES.up,
+  down: SONY_IRCC_CODES.down,
+  left: SONY_IRCC_CODES.left,
+  right: SONY_IRCC_CODES.right,
+};
 
 function requireConfig(device: Device): SonyBraviaConfig {
   const ipAddress = device.config?.ipAddress;
@@ -230,6 +251,23 @@ export class SonyBraviaDriver implements DeviceDriver {
         await client.call("avContent", "setPlayContent", [{ uri: resolveInputUri(input) }]);
         return;
       }
+      case "directionalNavigation": {
+        const direction = command.args?.direction as NavigationDirection | undefined;
+        if (!direction || !(direction in DIRECTION_TO_IRCC_CODE)) {
+          throw new Error("directionalNavigation requires a valid 'direction' arg");
+        }
+        await new SonyIrccClient(requireConfig(device)).sendCode(DIRECTION_TO_IRCC_CODE[direction]);
+        return;
+      }
+      case "select":
+        await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.confirm);
+        return;
+      case "back":
+        await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.return);
+        return;
+      case "home":
+        await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.home);
+        return;
       default:
         throw new Error(`SonyBraviaDriver does not implement capability: ${command.capability}`);
     }

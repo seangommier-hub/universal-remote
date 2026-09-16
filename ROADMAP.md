@@ -59,7 +59,7 @@ Confirmed as a good pick: Sean owns a real Sony TV to validate against.
 - [x] `scripts/test-sony-connection.js` — standalone Node script to validate PSK/IP against a real TV without the mobile UI
 - [x] "Add device by IP" UI (`AddSonyDeviceScreen`) — attempts a real `driver.connect()` before accepting the device, shows the actual error inline if it fails
 - [ ] **Sean: enable IP Control + set a PSK on the real Sony TV, then run `node scripts/test-sony-connection.js <ip> <psk>`** — first real-hardware checkpoint for this driver (or just try "+ Add Sony TV" in the running app)
-- [ ] IRCC-IP research + implementation for directional nav/select/back/home/menu (separate follow-up ADR)
+- [x] IRCC-IP research + implementation for directional nav/select/back (ADR-HEARTH-071, 2026-09-16) — sourced from two independent corroborating real-code-table sources, 11 new tests. "menu" deliberately still not declared: no source has a plain universal Menu code on this remote. Not yet live-verified — same open real-hardware checkpoint as the line above.
 
 ## Phase 2 — Second real TV driver (proves the abstraction for real)
 
