@@ -320,13 +320,27 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // Real live media-playback state (ADR-HEARTH-051) — never a guess based on whether a streaming
   // app was launched. Only Roku and LG ever populate this (see Capability.ts's playPause entry
   // for the per-brand research: Samsung's protocol has no query mechanism at all, and Sony's
-  // documented REST surface has no reliable playback-state field). "playing"/"paused" are the
-  // only two values that swap the center d-pad button into a play/pause toggle; every other case
-  // — no playPause capability, or a value of "stopped"/undefined — falls back to the existing
-  // Select/checkmark button below. Purely additive: Select's own behavior is unchanged for every
-  // device/state this doesn't apply to.
+  // documented REST surface has no reliable playback-state field).
+  //
+  // Real-hardware correction (2026-09-15, ADR-HEARTH-068): ADR-HEARTH-051 originally had
+  // "playing"/"paused" SWAP the center d-pad button into a play/pause toggle, hiding the
+  // Select/checkmark button underneath whenever state was ambiguous. Two real, independent
+  // reports broke that design in opposite directions: (1) Netflix's PIN-protected profile lock
+  // makes /query/media-player's state genuinely ambiguous while a real app is still active — the
+  // center button silently became Select, which doesn't reliably get a user past a PIN/keyboard
+  // overlay, so the control felt "stuck"; (2) YouTube's in-video "Skip Ad" button appears while
+  // Roku correctly reports state="play" — but that's exactly when the center button was Select's
+  // OWN turn to disappear, so there was no way to tap Skip Ad at all. Both bugs are the same root
+  // cause: one physical button can't be exclusively Select OR exclusively Play/Pause, because
+  // real apps need either one at moments this driver can never reliably predict (deep research,
+  // 2026-09-15: neither Home Assistant's mature Roku integration nor any other reviewed
+  // remote-control product has solved this prediction problem either — it's a genuine, open gap
+  // in what ECP/similar protocols can tell a client, not something this app was uniquely missing).
+  // Fix: stop predicting. Select stays permanently in the d-pad center (its original, universal
+  // role); playPause is now its own always-visible button (see the dedicated row below the d-pad)
+  // whenever the capability exists, regardless of playbackState. Its icon/label still reflect
+  // real known state when available — this is now purely cosmetic, never gatekeeping.
   const playbackState = state.values.playbackState;
-  const showPlayPause = has(device, "playPause") && (playbackState === "playing" || playbackState === "paused");
   // LG's real input ids/labels, read live off the TV (LgWebOsDriver's refreshInputList — which
   // also filters out "Sling TV" at the source now, ADR-HEARTH-060, so every consumer of
   // state.values.inputs agrees, not just this screen) — never knowable ahead of time the way
@@ -564,18 +578,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   disabled={controlsDisabled}
                   containerStyle={styles.dpadArrow}
                 />
-                {showPlayPause ? (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    size="lg"
-                    icon={playbackState === "playing" ? "pause" : "play"}
-                    label={playbackState === "playing" ? "Pause" : "Play"}
-                    variant="accent"
-                    onPress={() => send("playPause")}
-                    disabled={controlsDisabled}
-                  />
-                ) : has(device, "select") ? (
+                {has(device, "select") ? (
                   <CapabilityButton
                     shape="circle"
                     scale={scale}
@@ -637,6 +640,26 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               </View>
             )}
           </View>
+          {/* ADR-HEARTH-068 (2026-09-15): always visible whenever the capability exists, never
+              gated on playbackState — see this file's own comment above playbackState's
+              declaration for why hiding this behind a state guess broke on real hardware twice
+              in opposite directions (Netflix's PIN lock, YouTube's Skip Ad). Icon/label reflect
+              real known state when available; otherwise a neutral, non-committal label rather
+              than asserting a guess. */}
+          {has(device, "playPause") && (
+            <View style={styles.playPauseRow}>
+              <CapabilityButton
+                shape="circle"
+                scale={scale}
+                size="lg"
+                icon={playbackState === "playing" ? "pause" : "play"}
+                label={playbackState === "playing" ? "Pause" : playbackState === "paused" ? "Play" : "Play/Pause"}
+                variant="accent"
+                onPress={() => send("playPause")}
+                disabled={controlsDisabled}
+              />
+            </View>
+          )}
         </View>
       )}
 
@@ -1039,6 +1062,10 @@ const styles = StyleSheet.create({
   // spacing.sm the rocker/d-pad/rocker cluster is 316px, fitting a 375pt screen with ~11px to
   // spare; tighter gaps also read more like one cluster, not three separate groups near each other.
   hubRow: { flexDirection: "row", gap: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
+  // ADR-HEARTH-068: kept tight (spacing.sm top margin, same button size as the d-pad's own
+  // center button) rather than a full separate card — this hub is already fighting for vertical
+  // space on a 375pt screen (see hubCard's own comment, "make it one page, no scrolling").
+  playPauseRow: { marginTop: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
   // Real-device feedback (2026-09-10): "settings and sleep timer overlap" — Samsung's utility row
   // can now hold up to 6 items (mute/back/home/menu/settings/sleepTimer); 6×52px alone (312px)
   // already exceeds a 375pt screen's available width before a single gap is added, let alone at

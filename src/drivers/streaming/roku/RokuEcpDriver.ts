@@ -2,7 +2,7 @@ import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceD
 import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
-import { DeviceState, PlaybackState } from "../../../core/types/DeviceState";
+import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { RokuEcpClient, RokuEcpConfig } from "./RokuEcpClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
@@ -40,13 +40,15 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   "playPause",
 ];
 
-// See Capability.ts's playPause entry for the citation. Anything other than the two states Roku's
-// own docs/community clients actually recognize collapses to "stopped" — deliberately coarse
-// rather than guessing at undocumented values like "close"/"buffer"/"startup".
-function normalizePlaybackState(rawState: string | undefined): PlaybackState {
+// See Capability.ts's playPause entry for the citation. Returns null (deliberately distinct from
+// "stopped") for anything other than the two states Roku's own docs/community clients actually
+// recognize — real-hardware research (2026-09-15, ADR-HEARTH-068) found that a null/ambiguous
+// read doesn't always mean playback actually stopped (see refreshPlaybackState, which decides
+// what to do with a null result using a second, corroborating query).
+function parsePlaybackState(rawState: string | undefined): "playing" | "paused" | null {
   if (rawState === "play") return "playing";
   if (rawState === "pause") return "paused";
-  return "stopped";
+  return null;
 }
 
 const DIRECTION_KEYS: Record<NavigationDirection, string> = {
@@ -312,11 +314,34 @@ export class RokuEcpDriver implements DeviceDriver {
    * refreshPowerState already gives power state after powerOff. No periodic/background polling
    * exists for this (or any other) field on this driver — playbackState is refreshed only at
    * connect() and after a playPause press, deliberately matching every other Roku field's
-   * existing update cadence rather than introducing a new polling mechanism (see ADR-HEARTH-051). */
+   * existing update cadence rather than introducing a new polling mechanism (see ADR-HEARTH-051).
+   *
+   * Real-hardware research (2026-09-15, ADR-HEARTH-068): a null (neither play nor pause) read
+   * used to be committed straight to "stopped" — but Netflix's PIN-protected profile lock (and
+   * likely other in-app modal overlays) leaves media-player genuinely ambiguous while the app is
+   * still active and probably still has real content loaded behind the overlay. Committing
+   * "stopped" in that moment was a false claim, not an honest unknown. A second query
+   * (/query/active-app) can't see the overlay itself (Roku's ECP has no endpoint for that — see
+   * RokuActiveApp's own doc comment) but CAN confirm whether the Roku is genuinely idle (home
+   * screen or screensaver) — only then is "stopped" an honest claim. Otherwise this holds
+   * whatever playbackState was already known rather than overwriting a real value with a guess.
+   */
   private async refreshPlaybackState(device: Device, client: RokuEcpClient): Promise<void> {
     try {
       const info = await client.getMediaPlayerState();
-      this.patchValues(device.id, { playbackState: normalizePlaybackState(info.state) });
+      const resolved = parsePlaybackState(info.state);
+      if (resolved !== null) {
+        this.patchValues(device.id, { playbackState: resolved });
+        return;
+      }
+      const activeApp = await client.getActiveApp().catch(() => undefined);
+      const confirmedIdle = activeApp !== undefined && (activeApp.isHomeScreen || activeApp.isScreensaver);
+      if (confirmedIdle) {
+        this.patchValues(device.id, { playbackState: "stopped" });
+      }
+      // else: leave playbackState exactly as it was (possibly still unset) -- an app is active
+      // (or we couldn't confirm otherwise) and media-player is ambiguous, so neither "stopped"
+      // nor a specific playing/paused guess would be honest.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(LOG_SCOPE, `Could not read back playback state for ${device.name}`, { message });

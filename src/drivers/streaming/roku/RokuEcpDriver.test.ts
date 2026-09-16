@@ -22,6 +22,20 @@ function okResponse() {
   return { ok: true, status: 200 } as Response;
 }
 
+// Real shape per Roku's own ECP docs (developer.roku.com/dev/docs/external-control-api) — see
+// RokuEcpClient.ts's RokuActiveApp comment. `hasId: false` reproduces the home-screen shape
+// (`<app>Roku</app>`, no id attribute); `screensaver: true` adds the sibling element Roku
+// includes when its screensaver is active.
+function activeAppResponse(appName: string, opts: { hasId?: boolean; screensaver?: boolean } = {}) {
+  const idAttr = opts.hasId === false ? "" : ' id="12" type="appl" version="4.3.109"';
+  const screensaverTag = opts.screensaver ? '<screensaver id="55c6" type="ssvr" version="1.0.0">Screen Saver</screensaver>' : "";
+  return {
+    ok: true,
+    status: 200,
+    text: async () => `<active-app><app${idAttr}>${appName}</app>${screensaverTag}</active-app>`,
+  } as Response;
+}
+
 const device: Device = {
   id: "roku-1",
   name: "Living Room Roku",
@@ -32,10 +46,13 @@ const device: Device = {
   config: { ipAddress: "192.168.1.80" },
 };
 
-/** connect() now reads device-info AND queries /query/media-player (real playback state,
- * ADR-HEARTH-051) — two fetch calls, in that order. Centralizing the mock setup here so every
- * test doesn't have to know that call count/order by hand. */
-async function connectRoku(driver: RokuEcpDriver, powerMode = "PowerOn", playbackState = "close"): Promise<void> {
+/** connect() reads device-info AND queries /query/media-player (real playback state,
+ * ADR-HEARTH-051) — two fetch calls, in that order, as long as media-player resolves cleanly to
+ * "play"/"pause" (the default here). Passing an ambiguous state (e.g. "close") triggers a THIRD
+ * corroborating /query/active-app call (ADR-HEARTH-068) — tested explicitly below, not through
+ * this helper, so tests that don't care about that logic keep a stable, unambiguous 2-call
+ * connect(). */
+async function connectRoku(driver: RokuEcpDriver, powerMode = "PowerOn", playbackState = "play"): Promise<void> {
   (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse(powerMode)).mockResolvedValueOnce(mediaPlayerResponse(playbackState));
   await driver.connect(device);
 }
@@ -68,10 +85,62 @@ describe("RokuEcpDriver", () => {
     expect(state.values.playbackState).toBe("playing");
   });
 
-  test("connect() normalizes a non-media 'close' state to 'stopped', not left blank or guessed", async () => {
-    await connectRoku(driver, "PowerOn", "close");
+  // Real-hardware research (2026-09-15, ADR-HEARTH-068): a non-media ("close") read used to
+  // collapse straight to "stopped" — but that's a false claim whenever an app is still actually
+  // active (Netflix's PIN-protected profile lock being the concrete real-world trigger). It's now
+  // corroborated with a second query (/query/active-app) before committing to "stopped".
+  test("an ambiguous 'close' read while the Roku is confirmed idle (home screen) resolves to 'stopped'", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false }));
+    await driver.connect(device);
     const state = await driver.getState(device);
     expect(state.values.playbackState).toBe("stopped");
+  });
+
+  test("an ambiguous 'close' read while the screensaver is active also resolves to 'stopped'", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false, screensaver: true }));
+    await driver.connect(device);
+    const state = await driver.getState(device);
+    expect(state.values.playbackState).toBe("stopped");
+  });
+
+  test("an ambiguous 'close' read on first connect, with a real app confirmed active, leaves playbackState unset rather than guessing 'stopped'", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Netflix"));
+    await driver.connect(device);
+    const state = await driver.getState(device);
+    expect(state.values.playbackState).toBeUndefined();
+  });
+
+  // The actual motivating scenario (Sean, 2026-09-15): Netflix's PIN-protected profile lock makes
+  // /query/media-player ambiguous while Netflix itself is still the active app. Before this fix,
+  // that flipped a real in-progress "playing" session to a false "stopped" on every poll.
+  test("holds a previously-known 'playing' state through a later ambiguous read while the same app is still active (Netflix PIN-lock scenario)", async () => {
+    await connectRoku(driver, "PowerOn", "play");
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(okResponse())
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Netflix"));
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+
+    expect(result.state?.playbackState).toBe("playing");
+  });
+
+  test("holds the previously-known state if the active-app corroboration query itself fails, rather than assuming stopped", async () => {
+    await connectRoku(driver, "PowerOn", "play");
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("close")).mockRejectedValueOnce(new Error("timeout"));
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+
+    expect(result.state?.playbackState).toBe("playing");
   });
 
   test("connect() still succeeds if the media-player query itself fails — playback state just stays unset", async () => {
@@ -104,7 +173,7 @@ describe("RokuEcpDriver", () => {
   });
 
   test("playPause sends the documented 'Play' toggle key then re-reads real playback state", async () => {
-    await connectRoku(driver, "PowerOn", "close"); // starts stopped
+    await connectRoku(driver); // starts playing (irrelevant to this test — just avoids the active-app corroboration path)
 
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("play"));
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });

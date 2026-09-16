@@ -57,4 +57,44 @@ describe("RokuEcpClient", () => {
 
     await expect(client.getDeviceInfo()).rejects.toThrow("HTTP 404");
   });
+
+  // Real shapes per Roku's own ECP docs (developer.roku.com/dev/docs/external-control-api),
+  // added 2026-09-15 (ADR-HEARTH-068) as the corroborating signal for RokuEcpDriver's
+  // refreshPlaybackState — see RokuActiveApp's own doc comment for what this can/can't detect.
+  test("getActiveApp reports a real app as running, not the home screen", async () => {
+    const xml = `<active-app><app id="12" type="appl" version="4.3.109">Netflix</app></active-app>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const activeApp = await client.getActiveApp();
+
+    expect(activeApp).toEqual({ appName: "Netflix", isHomeScreen: false, isScreensaver: false });
+  });
+
+  test("getActiveApp reports the home screen correctly (no id attribute, name 'Roku')", async () => {
+    const xml = `<active-app><app>Roku</app></active-app>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const activeApp = await client.getActiveApp();
+
+    expect(activeApp).toEqual({ appName: "Roku", isHomeScreen: true, isScreensaver: false });
+  });
+
+  test("getActiveApp detects the screensaver sibling element", async () => {
+    const xml = `<active-app><app>Roku</app><screensaver id="55c6" type="ssvr" version="1.0.0">Screen Saver</screensaver></active-app>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const activeApp = await client.getActiveApp();
+
+    expect(activeApp.isScreensaver).toBe(true);
+  });
+
+  test("getActiveApp throws on a non-OK response", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse("", false, 500));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    await expect(client.getActiveApp()).rejects.toThrow("HTTP 500");
+  });
 });
