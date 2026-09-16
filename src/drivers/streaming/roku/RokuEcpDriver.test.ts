@@ -22,6 +22,12 @@ function okResponse() {
   return { ok: true, status: 200 } as Response;
 }
 
+// Real shape per python-rokuecp's own Application model — see RokuEcpClient.ts's RokuApp comment.
+function appsResponse(apps: { id: string; name: string }[] = [{ id: "12", name: "Netflix" }]) {
+  const xml = apps.map((app) => `<app id="${app.id}" type="appl" version="1.0">${app.name}</app>`).join("");
+  return { ok: true, status: 200, text: async () => `<apps>${xml}</apps>` } as Response;
+}
+
 // Real shape per Roku's own ECP docs (developer.roku.com/dev/docs/external-control-api) — see
 // RokuEcpClient.ts's RokuActiveApp comment. `hasId: false` reproduces the home-screen shape
 // (`<app>Roku</app>`, no id attribute); `screensaver: true` adds the sibling element Roku
@@ -46,14 +52,14 @@ const device: Device = {
   config: { ipAddress: "192.168.1.80" },
 };
 
-/** connect() reads device-info AND queries /query/media-player (real playback state,
- * ADR-HEARTH-051) — two fetch calls, in that order, as long as media-player resolves cleanly to
- * "play"/"pause" (the default here). Passing an ambiguous state (e.g. "close") triggers a THIRD
- * corroborating /query/active-app call (ADR-HEARTH-068) — tested explicitly below, not through
- * this helper, so tests that don't care about that logic keep a stable, unambiguous 2-call
- * connect(). */
+/** connect() reads device-info, queries /query/media-player (real playback state,
+ * ADR-HEARTH-051), then /query/apps (the installed-channel catalog, ADR-HEARTH-076) — three fetch
+ * calls, in that order, as long as media-player resolves cleanly to "play"/"pause" (the default
+ * here). Passing an ambiguous state (e.g. "close") triggers an EXTRA corroborating
+ * /query/active-app call in between (ADR-HEARTH-068) — tested explicitly below, not through this
+ * helper, so tests that don't care about that logic keep a stable, predictable 3-call connect(). */
 async function connectRoku(driver: RokuEcpDriver, powerMode = "PowerOn", playbackState = "play"): Promise<void> {
-  (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse(powerMode)).mockResolvedValueOnce(mediaPlayerResponse(playbackState));
+  (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse(powerMode)).mockResolvedValueOnce(mediaPlayerResponse(playbackState)).mockResolvedValueOnce(appsResponse());
   await driver.connect(device);
 }
 
@@ -93,7 +99,8 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
       .mockResolvedValueOnce(mediaPlayerResponse("close"))
-      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false }));
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false }))
+      .mockResolvedValueOnce(appsResponse());
     await driver.connect(device);
     const state = await driver.getState(device);
     expect(state.values.playbackState).toBe("stopped");
@@ -103,7 +110,8 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
       .mockResolvedValueOnce(mediaPlayerResponse("close"))
-      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false, screensaver: true }));
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false, screensaver: true }))
+      .mockResolvedValueOnce(appsResponse());
     await driver.connect(device);
     const state = await driver.getState(device);
     expect(state.values.playbackState).toBe("stopped");
@@ -113,7 +121,8 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
       .mockResolvedValueOnce(mediaPlayerResponse("close"))
-      .mockResolvedValueOnce(activeAppResponse("Netflix"));
+      .mockResolvedValueOnce(activeAppResponse("Netflix"))
+      .mockResolvedValueOnce(appsResponse());
     await driver.connect(device);
     const state = await driver.getState(device);
     expect(state.values.playbackState).toBeUndefined();
@@ -144,11 +153,31 @@ describe("RokuEcpDriver", () => {
   });
 
   test("connect() still succeeds if the media-player query itself fails — playback state just stays unset", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(deviceInfoResponse("PowerOn")).mockRejectedValueOnce(new Error("timeout"));
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce(appsResponse());
     await driver.connect(device);
     const state = await driver.getState(device);
     expect(state.connection).toBe("connected");
     expect(state.values.playbackState).toBeUndefined();
+  });
+
+  test("connect() still succeeds if the apps query itself fails — the app list just stays unset (ADR-HEARTH-076)", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("play"))
+      .mockRejectedValueOnce(new Error("timeout"));
+    await driver.connect(device);
+    const state = await driver.getState(device);
+    expect(state.connection).toBe("connected");
+    expect(state.values.apps).toBeUndefined();
+  });
+
+  test("connect() populates state.values.apps from a real /query/apps response", async () => {
+    await connectRoku(driver);
+    const state = await driver.getState(device);
+    expect(state.values.apps).toEqual([{ id: "12", name: "Netflix" }]);
   });
 
   test("powerOff sends the PowerOff key then re-reads real state", async () => {
@@ -157,7 +186,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(deviceInfoResponse("PowerOff"));
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "powerOff" });
 
-    const keypressCall = (global.fetch as jest.Mock).mock.calls[2];
+    const keypressCall = (global.fetch as jest.Mock).mock.calls[3];
     expect(keypressCall[0]).toBe("http://192.168.1.80:8060/keypress/PowerOff");
     expect(result.state?.power).toBe("off");
   });
@@ -178,7 +207,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("play"));
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
 
-    const keypressCall = (global.fetch as jest.Mock).mock.calls[2];
+    const keypressCall = (global.fetch as jest.Mock).mock.calls[3];
     expect(keypressCall[0]).toBe("http://192.168.1.80:8060/keypress/Play");
     expect(keypressCall[1]).toMatchObject({ method: "POST" });
     expect(result.state?.playbackState).toBe("playing");
@@ -209,7 +238,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
     await driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "hdmi2" } });
 
-    const call = (global.fetch as jest.Mock).mock.calls[2];
+    const call = (global.fetch as jest.Mock).mock.calls[3];
     expect(call[0]).toBe("http://192.168.1.80:8060/keypress/InputHDMI2");
   });
 
@@ -219,7 +248,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
     await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
 
-    const call = (global.fetch as jest.Mock).mock.calls[2];
+    const call = (global.fetch as jest.Mock).mock.calls[3];
     expect(call[0]).toBe("http://192.168.1.80:8060/launch/12");
   });
 
@@ -231,6 +260,46 @@ describe("RokuEcpDriver", () => {
       driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "disneyPlus" } })
     ).rejects.toThrow(/supported 'service'/);
     expect((global.fetch as jest.Mock).mock.calls.length).toBe(callsBefore);
+  });
+
+  // ADR-HEARTH-076: launchApp can now target any installed channel directly by id (e.g. one
+  // discovered via state.values.apps — the "recently launched apps" feature), not just the four
+  // fixed streaming services.
+  test("launchApp launches any app by id, not just the four fixed streaming services", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { appId: "837" } });
+
+    const call = (global.fetch as jest.Mock).mock.calls[3];
+    expect(call[0]).toBe("http://192.168.1.80:8060/launch/837");
+  });
+
+  // ADR-HEARTH-076: lastLaunchedAppId lets the UI's recent-apps history record a launch
+  // regardless of which arg triggered it, without the UI needing to know Roku's own
+  // service-name-to-channel-id mapping.
+  test("launchApp reports lastLaunchedAppId as the real resolved channel id when launched via 'service'", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+
+    expect(result.state?.lastLaunchedAppId).toBe("12");
+  });
+
+  test("launchApp reports lastLaunchedAppId as the given id when launched via 'appId'", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { appId: "837" } });
+
+    expect(result.state?.lastLaunchedAppId).toBe("837");
+  });
+
+  test("launchApp requires either a service or an appId, not neither", async () => {
+    await connectRoku(driver);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "launchApp" })).rejects.toThrow(/supported 'service' or 'appId'/);
   });
 
   test("mute toggles the locally-tracked muted flag (ECP has no mute-state query)", async () => {
@@ -265,7 +334,7 @@ describe("RokuEcpDriver", () => {
     // No reconnect timer was scheduled — if one had been, a fetch call would eventually fire on
     // its own; confirm the mock was never called again beyond the two connect() reads (device-info
     // + media-player).
-    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(3);
   });
 
   test("setChannel sends a Lit_<digit> keypress per digit, in order, via Roku's documented literal-character format", async () => {
@@ -274,7 +343,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValue(okResponse());
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: 142 } });
 
-    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(2).map((call) => call[0]);
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
     expect(keypressUrls).toEqual([
       "http://192.168.1.80:8060/keypress/Lit_1",
       "http://192.168.1.80:8060/keypress/Lit_4",
@@ -289,7 +358,7 @@ describe("RokuEcpDriver", () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "12" } })).rejects.toThrow(
       /numeric 'channel'/
     );
-    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2); // only the two connect() reads
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(3); // only the three connect() reads
   });
 
   test("textEntry sends a Lit_<char> keypress per character, in order (ADR-HEARTH-072)", async () => {
@@ -298,7 +367,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValue(okResponse());
     await driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "Hi5" } });
 
-    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(2).map((call) => call[0]);
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
     expect(keypressUrls).toEqual([
       "http://192.168.1.80:8060/keypress/Lit_H",
       "http://192.168.1.80:8060/keypress/Lit_i",
@@ -312,7 +381,7 @@ describe("RokuEcpDriver", () => {
     (global.fetch as jest.Mock).mockResolvedValue(okResponse());
     await driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "a b" } });
 
-    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(2).map((call) => call[0]);
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
     expect(keypressUrls).toEqual([
       "http://192.168.1.80:8060/keypress/Lit_a",
       "http://192.168.1.80:8060/keypress/Lit_%20",
@@ -326,6 +395,6 @@ describe("RokuEcpDriver", () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "" } })).rejects.toThrow(
       /non-empty string/
     );
-    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(3);
   });
 });

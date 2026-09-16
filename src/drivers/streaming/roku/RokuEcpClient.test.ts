@@ -97,4 +97,46 @@ describe("RokuEcpClient", () => {
 
     await expect(client.getActiveApp()).rejects.toThrow("HTTP 500");
   });
+
+  // Real shape per python-rokuecp's own Application model, added 2026-09-16 (ADR-HEARTH-076) —
+  // see RokuApp's own doc comment for the full citation and its one honest caveat.
+  test("getApps parses every installed channel from a real-shaped /query/apps response", async () => {
+    const xml = `<apps><app id="12" type="appl" version="4.3.109">Netflix</app><app id="2285" type="appl" version="1.0">Hulu</app></apps>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const apps = await client.getApps();
+
+    expect(apps).toEqual([
+      { id: "12", name: "Netflix" },
+      { id: "2285", name: "Hulu" },
+    ]);
+  });
+
+  test("getApps returns a single-element list correctly, not just a lone object (the exact XML->dict pitfall python-rokuecp's own source works around)", async () => {
+    const xml = `<apps><app id="12" type="appl" version="4.3.109">Netflix</app></apps>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const apps = await client.getApps();
+
+    expect(apps).toEqual([{ id: "12", name: "Netflix" }]);
+  });
+
+  test("getApps drops an app with no id attribute rather than including one Hearth could never launch", async () => {
+    const xml = `<apps><app>Roku</app><app id="12" version="4.3.109">Netflix</app></apps>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const apps = await client.getApps();
+
+    expect(apps).toEqual([{ id: "12", name: "Netflix" }]);
+  });
+
+  test("getApps throws on a non-OK response", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse("", false, 500));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    await expect(client.getApps()).rejects.toThrow("HTTP 500");
+  });
 });

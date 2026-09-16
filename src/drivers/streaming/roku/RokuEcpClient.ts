@@ -44,6 +44,19 @@ export interface RokuActiveApp {
   isScreensaver: boolean;
 }
 
+// Real-hardware research (2026-09-16, ADR-HEARTH-076): confirmed byte-for-byte against
+// `python-rokuecp`'s own Application model (ctalkington/python-rokuecp, src/rokuecp/models.py) —
+// GET /query/apps returns `<apps><app id="12" type="appl" version="4.3.109">Netflix</app>...
+// </apps>`, the exact same per-app shape /query/active-app already uses for the single currently-
+// focused app, just repeated for every installed channel. Roku's own ECP docs page fetched this
+// session didn't surface a dedicated /query/apps section (Netlify/CDN blocked automated fetches
+// of the full doc), so this specific endpoint's shape rests on the community client rather than a
+// directly-read primary source — flagged honestly, not presented as more certain than it is.
+export interface RokuApp {
+  id: string;
+  name: string;
+}
+
 // device-info's fields we need are simple non-nested <tag>value</tag> pairs — a minimal regex
 // extractor is enough here and avoids pulling in a full XML parser for two fields. Not suitable
 // for nested/repeated elements.
@@ -70,6 +83,21 @@ function extractXmlElementText(xml: string, tag: string): string | undefined {
 
 function hasXmlElement(xml: string, tag: string): boolean {
   return new RegExp(`<${tag}[\\s/>]`).test(xml);
+}
+
+// /query/apps repeats the same <app id="..." version="...">Name</app> element once per installed
+// channel — extractXmlElementText/extractXmlAttribute only ever find the first match, hence a
+// dedicated multi-match variant rather than looping a single-match regex (which would loop
+// forever on a global-less pattern, or need its own lastIndex bookkeeping either way).
+function extractAllXmlElements(xml: string, tag: string): { text: string; id?: string }[] {
+  const pattern = new RegExp(`<${tag}([^>]*)>([^<]*)</${tag}>`, "g");
+  const results: { text: string; id?: string }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(xml)) !== null) {
+    const idMatch = match[1].match(/\bid="([^"]*)"/);
+    results.push({ text: match[2], id: idMatch?.[1] });
+  }
+  return results;
 }
 
 /** Talks to one Roku device's ECP interface. One instance per device. */
@@ -139,6 +167,23 @@ export class RokuEcpClient {
       isHomeScreen: !appId && appName === "Roku",
       isScreensaver: hasXmlElement(xml, "screensaver"),
     };
+  }
+
+  /** See RokuApp's own doc comment for sourcing. Apps with no id attribute (shouldn't happen for a real installed channel, but the type allows it) are dropped — an app Hearth can't launch by id isn't useful to list. */
+  async getApps(): Promise<RokuApp[]> {
+    const response = await requestWithRelayFallback({
+      ip: this.config.ipAddress,
+      port: this.port(),
+      path: "/query/apps",
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`Roku at ${this.config.ipAddress} returned HTTP ${response.status} for apps query`);
+    }
+    const xml = await response.text();
+    return extractAllXmlElements(xml, "app")
+      .filter((entry): entry is { text: string; id: string } => typeof entry.id === "string")
+      .map((entry) => ({ id: entry.id, name: entry.text }));
   }
 
   async getDeviceInfo(): Promise<RokuDeviceInfo> {

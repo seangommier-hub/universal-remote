@@ -9,6 +9,7 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
+import { loadRecentApps, recordAppLaunch } from "../runtime/recentAppsPersistence";
 import { theme } from "./theme";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -196,6 +197,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [channelInput, setChannelInput] = useState("");
   const [keyboardInput, setKeyboardInput] = useState("");
+  const [recentAppIds, setRecentAppIds] = useState<string[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(device.name);
   const [reconnecting, setReconnecting] = useState(false);
@@ -269,6 +271,19 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     return stateStore.subscribe(device.id, setState);
   }, [device.id, stateStore]);
 
+  // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-076): Roku's own app touts
+  // "quickly launch your most recent channels" — reloaded per device (not just once) so switching
+  // between two Roku TVs' remote screens shows each one's own history, not a stale carry-over.
+  useEffect(() => {
+    let cancelled = false;
+    loadRecentApps(device.id).then((ids) => {
+      if (!cancelled) setRecentAppIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [device.id]);
+
   useEffect(() => {
     // Navigating to a different device (or leaving the screen) shouldn't leave a stale error
     // from the previous device hanging around, and shouldn't leak the pending clear timer.
@@ -301,6 +316,26 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       if (commandErrorTimer.current) clearTimeout(commandErrorTimer.current);
       setCommandError(result.error?.message ?? "Command failed");
       commandErrorTimer.current = setTimeout(() => setCommandError(""), 4000);
+    });
+  }
+
+  // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-076): records a launch into the
+  // recent-apps history regardless of which tile triggered it (a fixed streaming tile or a real
+  // recent-apps tile) — driven by lastLaunchedAppId (RokuEcpDriver.ts), a generic field any driver
+  // could populate, so this stays brand-agnostic rather than hardcoding Roku's own channel ids
+  // here. Awaits the command (unlike the fire-and-forget send() above) since there's real
+  // follow-up work — recording history, then reloading it — only worth doing on success.
+  function sendLaunchApp(args: Record<string, unknown>) {
+    commandEngine.execute({ deviceId: device.id, capability: "launchApp", args }).then((result) => {
+      if (!result.success) {
+        if (commandErrorTimer.current) clearTimeout(commandErrorTimer.current);
+        setCommandError(result.error?.message ?? "Command failed");
+        commandErrorTimer.current = setTimeout(() => setCommandError(""), 4000);
+        return;
+      }
+      const appId = result.state?.lastLaunchedAppId;
+      if (typeof appId !== "string") return; // this driver doesn't report it -- nothing to record
+      recordAppLaunch(device.id, appId).then(() => loadRecentApps(device.id)).then(setRecentAppIds);
     });
   }
 
@@ -376,6 +411,21 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>).id === "string"
       )
     : undefined;
+  // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-076): resolved against the live
+  // catalog (state.values.apps) every render, not the persisted id list alone — an id the user
+  // hasn't launched in a while but has since uninstalled just silently drops out of the row
+  // instead of showing a stale/wrong name for something no longer there.
+  const installedApps = Array.isArray(state.values.apps)
+    ? (state.values.apps as unknown[]).filter(
+        (entry): entry is { id: string; name: string } =>
+          typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>).id === "string" && typeof (entry as Record<string, unknown>).name === "string"
+      )
+    : undefined;
+  const recentApps = installedApps
+    ? recentAppIds
+        .map((id) => installedApps.find((app) => app.id === id))
+        .filter((app): app is { id: string; name: string } => app !== undefined)
+    : [];
   const isConnected = state.connection === "connected";
   // Real-hardware finding (2026-09-09): a persisted device reappears in the device list
   // immediately on app load, but its live driver connection reconnects separately in the
@@ -774,8 +824,32 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 bg={app.bg}
                 fg={app.fg}
                 fontScale={app.fontScale}
-                onPress={() => send("launchApp", { service: app.service })}
+                onPress={() => sendLaunchApp({ service: app.service })}
                 disabled={controlsDisabled}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Real-hardware/competitive research (2026-09-16, ADR-HEARTH-076): Roku's own app touts
+          "quickly launch your most recent channels" (and a community writeup flagged its removal
+          in one release as making channel-finding "a crapshoot"). Only ever shows real installed
+          channels the device itself reported (state.values.apps) — currently Roku only; LG's own
+          equivalent (ssap://com.webos.applicationManager/listLaunchPoints) is real and sourced too
+          but not wired up yet, flagged as a follow-up rather than silently expanded to here. */}
+      {recentApps.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Recently Launched</Text>
+          <View style={styles.recentAppsRow}>
+            {recentApps.map((app) => (
+              <CapabilityButton
+                key={app.id}
+                label={app.name}
+                onPress={() => sendLaunchApp({ appId: app.id })}
+                disabled={controlsDisabled}
+                numberOfLines={1}
+                containerStyle={styles.recentAppTile}
               />
             ))}
           </View>
@@ -1084,6 +1158,12 @@ const styles = StyleSheet.create({
   // must NOT stretch to fill the row on its own — that's the exact "boxes not the same size" bug
   // the streaming row's own fix (above) already had to correct for the same reason.
   inputTile: { flexBasis: "31%" },
+  // Same fixed-3-column technique as inputGrid/inputTile just above, for the same reason (a
+  // remainder tile on the last row must not stretch to fill it alone) — app names vary more in
+  // length than HDMI1/2/3, hence numberOfLines={1} at the call site rather than relying on this
+  // layout alone to keep every tile the same height.
+  recentAppsRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  recentAppTile: { flexBasis: "31%" },
   rockerRow: { flexDirection: "row", gap: theme.spacing.xl, alignItems: "center", justifyContent: "center" },
   // Real-device ask (2026-09-10): "fix the navigation of the up down arrows... to be more
   // neatly oriented" — see the ROCKER_WIDTH comment above. Same surface/border treatment as

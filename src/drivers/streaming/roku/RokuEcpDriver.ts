@@ -150,6 +150,7 @@ export class RokuEcpDriver implements DeviceDriver {
       // guess based on whether a streaming app was launched. See refreshPlaybackState's own
       // comment for why this isn't kept continuously live via polling.
       await this.refreshPlaybackState(device, client);
+      await this.refreshApps(device, client);
     } catch (err) {
       if (generation !== (this.generations.get(device.id) ?? 0)) throw err;
       const current = this.states.get(device.id);
@@ -285,11 +286,22 @@ export class RokuEcpDriver implements DeviceDriver {
         return;
       }
       case "launchApp": {
+        // Real-hardware research (2026-09-16, ADR-HEARTH-076): `appId` (any id from
+        // state.values.apps, real-hardware/UX research: the "recently launched apps" row) targets
+        // any installed channel directly; `service` (the original four fixed streaming services)
+        // still works unchanged for every existing call site. Exactly one of the two is required —
+        // an arg bag with neither, or one that doesn't resolve, is a validation error either way.
         const service = command.args?.service as StreamingService | undefined;
-        const channelId = service ? ROKU_CHANNEL_IDS[service] : undefined;
-        if (!channelId) throw new RokuValidationError(`launchApp requires a supported 'service' arg (got ${String(service)})`);
+        const appId = command.args?.appId as string | undefined;
+        const channelId = appId ?? (service ? ROKU_CHANNEL_IDS[service] : undefined);
+        if (!channelId) throw new RokuValidationError(`launchApp requires a supported 'service' or 'appId' arg (got service=${String(service)}, appId=${String(appId)})`);
         await client.launchChannel(channelId);
-        this.patchValues(device.id, { lastAction: `launch:${service}` });
+        // lastLaunchedAppId is the real, resolved channel id regardless of which arg the caller
+        // used to get there — lets the UI's recent-apps history (ADR-HEARTH-076) record a launch
+        // triggered by either the four fixed streaming tiles OR a direct appId, through one
+        // generic, brand-agnostic field, rather than the UI needing to know Roku's own
+        // service-name-to-channel-id mapping.
+        this.patchValues(device.id, { lastAction: `launch:${appId ?? service}`, lastLaunchedAppId: channelId });
         return;
       }
       case "playPause":
@@ -362,6 +374,17 @@ export class RokuEcpDriver implements DeviceDriver {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(LOG_SCOPE, `Could not read back playback state for ${device.name}`, { message });
+    }
+  }
+
+  /** Best-effort, same treatment as every other inferred field on this driver (refreshPlaybackState, refreshPowerState) — a failed read just leaves state.values.apps unset rather than failing connect() (ADR-HEARTH-076). Populates the real installed-channel catalog so launchApp can target any of them by id, not just the four fixed streaming services. */
+  private async refreshApps(device: Device, client: RokuEcpClient): Promise<void> {
+    try {
+      const apps = await client.getApps();
+      this.patchValues(device.id, { apps });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not read the installed app list for ${device.name}`, { message });
     }
   }
 
