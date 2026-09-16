@@ -93,6 +93,9 @@ This only takes effect through `npx expo prebuild` (i.e., a Dev Build or standal
 ### 15. Secure storage (Keychain / Android Keystore) — `expo-secure-store`
 **Works in Expo Go.** Confirmed "Included in Expo Go," backed by iOS Keychain (`kSecClassGenericPassword`) and Android Keystore-backed `SharedPreferences`, also supported on tvOS. Two caveats worth carrying into implementation, not blockers: (a) values are historically capped around ~2KB by the underlying OS APIs on some iOS releases — Expo does not raise its own limit, so large tokens/blobs should be chunked or stored elsewhere; (b) the `requireAuthentication` (biometric-gated) option **does not work in Expo Go** because it needs an `NSFaceIDUsageDescription` Info.plist entry Expo Go's own binary doesn't declare — biometric-gated secure storage needs a Dev Build even though basic secure storage doesn't.
 
+### 16. Home screen / lock screen widgets
+**Not available in Expo Go.** Real-hardware/competitive research (2026-09-16): a lock/home-screen widget for one-tap quick actions is a real, evidenced feature request — competing products (Google Home's Favorites widget, Home Assistant's mobile widgets, third-party "Home Widget for HomeKit") all cite avoiding opening the full app as the whole point. Confirmed directly against Expo's own `expo-widgets` docs: "is not available in the Expo Go app — use development builds." Widget code runs in an isolated SwiftUI-only (iOS) / Glance-only (Android) runtime with no access to RN `View`/`Text`, hooks, or async — a fundamentally different rendering environment, not just a permissions gate. Same shape as items #3–#10 above: real, buildable, but only after the Dev Build transition.
+
 ---
 
 ## Summary table
@@ -114,6 +117,7 @@ This only takes effect through `npx expo prebuild` (i.e., a Dev Build or standal
 | 13 | Android local/multicast permissions | Not testable | Required to verify real behavior | No (manifest/config plugin) | Install-time permissions; emulator can't test multicast |
 | 14 | Push notifications | Partial | Required for Android remote push | No (Expo module) | iOS remote push OK in Expo Go; Android remote push removed since SDK 53; local notifications OK everywhere |
 | 15 | Secure storage | Yes (basic) | Required for biometric-gated mode | No | ~2KB practical value-size ceiling; `requireAuthentication` needs Dev Build |
+| 16 | Home/lock screen widgets | No | Required | No (Expo module, `expo-widgets`) | Isolated SwiftUI/Glance runtime, no RN View/hooks/async — a rendering-environment gap, not just a permission |
 
 ---
 

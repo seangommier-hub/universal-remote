@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
-import { runScene } from "./src/runtime/sceneRunner";
+import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
 import { Device } from "./src/core/types/Device";
 import { Scene } from "./src/core/types/Scene";
@@ -273,9 +273,28 @@ export default function App() {
   // without building a whole results UI for what's still a v1 feature (ADR-HEARTH-056).
   async function handleRunScene(scene: Scene): Promise<void> {
     const result = await runScene(scene, runtime.commandEngine);
+    presentSceneResult(scene.name, result, scene.actions.length, result.succeeded);
+  }
+
+  // Real UX research (2026-09-16, ADR-HEARTH-073): Logitech Harmony's own "Help" feature — widely
+  // praised in reviews — re-sends just the specific out-of-sync step rather than re-running an
+  // entire activity from scratch. `totalActions`/`cumulativeSucceeded` are threaded through
+  // explicitly (not re-derived from `result` alone) so a retry's own alert can still say "4 of 4
+  // actions ran" against the scene's real original total, not "1 of 1" against just the retry.
+  function presentSceneResult(sceneName: string, result: SceneRunResult, totalActions: number, cumulativeSucceeded: number): void {
     if (result.failed.length === 0) return;
     const failureLines = result.failed.map((f) => `${f.deviceId}: ${f.message}`).join("\n");
-    Alert.alert(`${scene.name}: ${result.succeeded} of ${scene.actions.length} actions ran`, failureLines);
+    Alert.alert(`${sceneName}: ${cumulativeSucceeded} of ${totalActions} actions ran`, failureLines, [
+      { text: "Dismiss", style: "cancel" },
+      {
+        text: "Retry Failed",
+        onPress: () => {
+          retrySceneActions(result.failed, runtime.commandEngine, sceneName).then((retryResult) => {
+            presentSceneResult(sceneName, retryResult, totalActions, cumulativeSucceeded + retryResult.succeeded);
+          });
+        },
+      },
+    ]);
   }
 
   if (!ready) {

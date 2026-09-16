@@ -1,4 +1,4 @@
-import { runScene } from "./sceneRunner";
+import { FailedSceneAction, retrySceneActions, runScene } from "./sceneRunner";
 import { Scene } from "../core/types/Scene";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { CommandResult } from "../core/types/Command";
@@ -104,5 +104,59 @@ describe("runScene", () => {
     const result = await runScene(oneActionScene, engine);
 
     expect(result.failed[0].message).toBe("Unknown error");
+  });
+
+  // Real-hardware/UX research (2026-09-16, ADR-HEARTH-073): a failed action's args (e.g.
+  // inputSelection's input id) must survive into the failed[] entry, or a retry couldn't
+  // reconstruct the original command.
+  test("a failed action with args carries those args through into the failed[] entry", async () => {
+    const engine = fakeEngine([failure("tv-1", "inputSelection", "TV unreachable")]);
+    const inputScene: Scene = { id: "s", name: "S", actions: [{ deviceId: "tv-1", capability: "inputSelection", args: { input: "hdmi1" } }] };
+
+    const result = await runScene(inputScene, engine);
+
+    expect(result.failed).toEqual([{ deviceId: "tv-1", capability: "inputSelection", args: { input: "hdmi1" }, message: "TV unreachable" }]);
+  });
+});
+
+describe("retrySceneActions", () => {
+  test("re-runs exactly the given failed actions, in order, passing their original args through", async () => {
+    const order: string[] = [];
+    const engine = {
+      execute: jest.fn(async (command) => {
+        order.push(`${command.deviceId}:${command.capability}`);
+        return success(command.deviceId, command.capability);
+      }),
+    } as unknown as CommandEngine;
+    const failed: FailedSceneAction[] = [
+      { deviceId: "tv-1", capability: "powerOff", message: "TV unreachable" },
+      { deviceId: "receiver-1", capability: "inputSelection", args: { input: "hdmi1" }, message: "Receiver unreachable" },
+    ];
+
+    const result = await retrySceneActions(failed, engine, "Movie Night");
+
+    expect(order).toEqual(["tv-1:powerOff", "receiver-1:inputSelection"]);
+    expect(engine.execute).toHaveBeenCalledWith({ deviceId: "receiver-1", capability: "inputSelection", args: { input: "hdmi1" } });
+    expect(result.succeeded).toBe(2);
+    expect(result.failed).toEqual([]);
+  });
+
+  test("an action that fails again on retry is still reported, not silently dropped", async () => {
+    const engine = fakeEngine([failure("tv-1", "powerOff", "TV still unreachable")]);
+    const failed: FailedSceneAction[] = [{ deviceId: "tv-1", capability: "powerOff", message: "TV unreachable" }];
+
+    const result = await retrySceneActions(failed, engine, "Movie Night");
+
+    expect(result.succeeded).toBe(0);
+    expect(result.failed).toEqual([{ deviceId: "tv-1", capability: "powerOff", message: "TV still unreachable" }]);
+  });
+
+  test("retrying an empty list runs cleanly with no actions", async () => {
+    const engine = fakeEngine([]);
+
+    const result = await retrySceneActions([], engine, "Movie Night");
+
+    expect(result).toEqual({ succeeded: 0, failed: [] });
+    expect(engine.execute).not.toHaveBeenCalled();
   });
 });
