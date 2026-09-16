@@ -7,7 +7,7 @@ import { StateStore } from "../core/state/StateStore";
 import { CapabilityId, StreamingService } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
-import { CapabilityButton } from "./CapabilityButton";
+import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { theme } from "./theme";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -107,6 +107,7 @@ function StreamingAppTile({
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={disabled ? undefined : fireHapticClick}
       disabled={disabled}
       style={[styles.streamingTile, { backgroundColor: bg }, disabled && styles.disabled]}
       accessibilityRole="button"

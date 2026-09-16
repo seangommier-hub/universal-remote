@@ -1,7 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { ComponentProps } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 import { theme } from "./theme";
+
+// Real-device ask (2026-09-16): "add slight haptic feedback... to make the user get the feel
+// like they are using an actual remote." A single Light impact fired the instant a press begins
+// (onPressIn, not onPress) is what reads as a physical button's own immediate click -- onPress
+// only fires on release inside the button's bounds, which would feel delayed compared to a real
+// remote's tactile response. Deliberately just one pulse per tap, not a second one on release:
+// two haptics for one tap reads as a buzz/glitch on real hardware, not a "click and release"
+// feel, on every device this was checked against. Swallowed defensively -- expo-haptics can throw
+// on a simulator/unsupported device with no real vibration hardware, and a cosmetic feature must
+// never be able to break a real button press.
+export function fireHapticClick(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -63,6 +77,7 @@ export function CapabilityButton({
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={disabled ? undefined : fireHapticClick}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
