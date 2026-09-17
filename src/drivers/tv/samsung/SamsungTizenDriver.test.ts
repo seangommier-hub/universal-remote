@@ -48,6 +48,30 @@ describe("SamsungTizenDriver", () => {
     expect(state.connection).toBe("connected");
   });
 
+  test("connect() writes the token it receives into device.config, so App.tsx can persist it and skip the on-screen prompt next time (real-hardware ask, restated 2026-09-17)", async () => {
+    const connectPromise = driver.connect(device);
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.connect", data: { token: "test-token" } });
+    await connectPromise;
+    expect(device.config?.token).toBe("test-token");
+    delete device.config?.token; // this `device` object is shared across this file's tests
+  });
+
+  test("a saved token is sent back as a query param, and the TV connecting without re-issuing one still keeps it saved", async () => {
+    device.config = { ...device.config, token: "known-token" };
+    const connectPromise = driver.connect(device);
+    const socket = MockWebSocket.latest();
+    expect(socket.url).toContain("&token=known-token");
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.connect", data: {} }); // no new token — TV just recognized the known one
+    await connectPromise;
+    expect(device.config?.token).toBe("known-token"); // not lost just because the TV didn't repeat it
+    delete device.config?.token;
+  });
+
   test("executeCommand throws if the device was never connected", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/not connected/);
   });

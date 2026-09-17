@@ -24,6 +24,31 @@ describe("SamsungTizenClient", () => {
     await expect(connectPromise).resolves.toBeUndefined();
   });
 
+  test("resolves with the token the TV issues on a first-ever pairing", async () => {
+    const client = new SamsungTizenClient({ ipAddress: "192.168.1.60", appName: "Hearth" });
+    const connectPromise = client.connect();
+
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.connect", data: { token: "12345678" } });
+
+    await expect(connectPromise).resolves.toBe("12345678");
+  });
+
+  test("sends a previously-known token back as a query param, skipping the on-screen prompt", async () => {
+    const client = new SamsungTizenClient({ ipAddress: "192.168.1.60", appName: "Hearth", token: "known-token" });
+    const connectPromise = client.connect();
+
+    const socket = MockWebSocket.latest();
+    expect(socket.url).toBe("ws://192.168.1.60:8001/api/v2/channels/samsung.remote.control?name=SGVhcnRo&token=known-token");
+
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.connect", data: {} });
+    await expect(connectPromise).resolves.toBe("known-token"); // TV didn't repeat it back, but it's still the valid known one
+  });
+
   test("rejects with SamsungPairingError when the TV denies pairing", async () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
     const connectPromise = client.connect();

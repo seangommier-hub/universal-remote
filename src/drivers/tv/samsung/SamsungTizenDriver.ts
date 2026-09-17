@@ -61,7 +61,8 @@ function requireConfig(device: Device): SamsungTizenConfig {
   if (typeof ipAddress !== "string") {
     throw new Error(`Device ${device.id} is missing Samsung config (config.ipAddress) — pair it first`);
   }
-  return { ipAddress, appName: "Hearth" };
+  const token = device.config?.token;
+  return { ipAddress, appName: "Hearth", token: typeof token === "string" ? token : undefined };
 }
 
 function keyCodeFor(command: Command): string {
@@ -184,11 +185,11 @@ export class SamsungTizenDriver implements DeviceDriver {
    * moved), producing a failure that was never `SamsungUnreachableError` — gating recovery on that
    * one error type left this driver retrying the same wrong address forever in exactly that case.
    */
-  private async connectClient(device: Device, config: SamsungTizenConfig): Promise<SamsungTizenClient> {
+  private async connectClient(device: Device, config: SamsungTizenConfig): Promise<{ client: SamsungTizenClient; token: string | undefined }> {
     const client = new SamsungTizenClient(config);
     try {
-      await client.connect();
-      return client;
+      const token = await client.connect();
+      return { client, token };
     } catch (err) {
       const hwaddr = device.config?.hwaddr;
       logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
@@ -206,18 +207,32 @@ export class SamsungTizenDriver implements DeviceDriver {
         if (discoveredMac) device.config.hwaddr = discoveredMac;
       }
       const retryClient = new SamsungTizenClient({ ...config, ipAddress: freshIp });
-      await retryClient.connect();
-      return retryClient;
+      const token = await retryClient.connect();
+      return { client: retryClient, token };
     }
   }
 
   private async doConnect(device: Device): Promise<void> {
     this.clearReconnectTimer(device.id);
     const generation = this.bumpGeneration(device.id);
-    const client = await this.connectClient(device, requireConfig(device));
+    const config = requireConfig(device);
+    // See LgWebOsDriver.ts's identical diagnostic line (ADR-HEARTH-021/adr-persist-and-not-time-out):
+    // makes it directly visible in the log whether this reconnect should be silent (known token) or
+    // will need a fresh physical approval (none saved yet).
+    logger.info(LOG_SCOPE, `Connecting to ${device.name} (${config.ipAddress}) — ${config.token ? "using a previously-saved token" : "no saved token yet, this will need a fresh on-screen approval"}`);
+    const { client, token } = await this.connectClient(device, config);
     if (!this.isCurrentGeneration(device.id, generation)) {
       client.close();
       return;
+    }
+    // Real-hardware ask (2026-09-09), Sean directly, restated 2026-09-17: a connection, once
+    // authed, should stay effectively persistent while the TV is on — "the same way a natural
+    // remote does." Samsung's protocol already supports this (a token from the ms.channel.connect
+    // event, replayable to skip re-prompting) but this driver never captured or resent it before
+    // now — every reconnect assumed a fresh physical approval, the actual cause of "a day of
+    // reconnecting." Mirrors LgWebOsDriver's identical clientKey persistence exactly.
+    if (token && device.config) {
+      device.config.token = token;
     }
     client.onDisconnect = () => {
       if (this.clients.get(device.id) !== client) return;

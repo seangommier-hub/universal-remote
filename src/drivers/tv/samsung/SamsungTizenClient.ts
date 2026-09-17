@@ -9,13 +9,19 @@
 
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 
-const CONNECT_TIMEOUT_MS = 20000; // the TV requires a physical on-screen approval tap
+const CONNECT_TIMEOUT_MS = 20000; // only hit on a first-time pairing, which needs a physical on-screen approval tap
 const MS_CHANNEL_CONNECT_EVENT = "ms.channel.connect";
 const MS_CHANNEL_UNAUTHORIZED_EVENT = "ms.channel.unauthorized";
 
 export interface SamsungTizenConfig {
   ipAddress: string;
   appName?: string;
+  /** A token from a previous successful pairing, if one is known. Sent back as a `?token=`
+   * query param on the connection URL lets the TV recognize this client without re-showing the
+   * on-screen Allow/Deny prompt — same mechanism as LgWebOsClient's `clientKey` (see
+   * ADR-HEARTH-021), verified against this file's own reference implementation
+   * (xchwarze/samsung-tv-ws-api's connection.py, which does exactly this). */
+  token?: string;
 }
 
 export class SamsungPairingError extends Error {}
@@ -48,9 +54,14 @@ export class SamsungTizenClient {
 
   constructor(private config: SamsungTizenConfig) {}
 
-  async connect(): Promise<void> {
+  /** Resolves with whatever token the TV confirms (new, on a first-ever pairing, or the same one
+   * echoed back on a returning client) — mirrors LgWebOsClient.connect()'s identical contract so
+   * the driver can persist it the same way. A known token rides along as a `?token=` query param;
+   * an unpaired device connects with none and gets prompted, exactly as before this existed. */
+  async connect(): Promise<string | undefined> {
     const name = encodeAsciiBase64(this.config.appName ?? "Hearth");
-    const url = `ws://${this.config.ipAddress}:8001/api/v2/channels/samsung.remote.control?name=${name}`;
+    const tokenParam = this.config.token ? `&token=${this.config.token}` : "";
+    const url = `ws://${this.config.ipAddress}:8001/api/v2/channels/samsung.remote.control?name=${name}${tokenParam}`;
     let socket: WebSocket;
     try {
       socket = await openSocketWithRelayFallback(url);
@@ -62,11 +73,14 @@ export class SamsungTizenClient {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         socket.close();
-        reject(new Error("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again"));
+        const message = this.config.token
+          ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
+          : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
+        reject(new Error(message));
       }, CONNECT_TIMEOUT_MS);
 
       socket.onmessage = (event: { data: unknown }) => {
-        let message: { event?: string };
+        let message: { event?: string; data?: { token?: string } };
         try {
           message = JSON.parse(String(event.data));
         } catch {
@@ -80,7 +94,8 @@ export class SamsungTizenClient {
             this.socket = null;
             if (!this.closingDeliberately) this.onDisconnect?.();
           };
-          resolve();
+          const token = message.data?.token;
+          resolve(typeof token === "string" && token.length > 0 ? token : this.config.token);
         } else if (message.event === MS_CHANNEL_UNAUTHORIZED_EVENT) {
           clearTimeout(timeout);
           socket.close();
