@@ -42,6 +42,13 @@ module.exports = {
       resizeMode: "contain",
       backgroundColor: "#12141C",
     },
+    // Real bug found live (2026-09-19, ADR-HEARTH-087): expo-updates does NOT get the same
+    // automatic "legacy plugin" application that expo-camera/expo-secure-store get from just being
+    // installed — confirmed by downloading the actual compiled .ipa and finding zero EXUpdates*
+    // keys anywhere in its Info.plist, while expo-camera's NSCameraUsageDescription was correctly
+    // present. Without an explicit entry here, prebuild never wires the update-checker into the
+    // native binary at all — no server-side config or OTA push can work around that; it must be a
+    // real rebuild.
     plugins: [
       "expo-secure-store",
       [
@@ -51,6 +58,7 @@ module.exports = {
         },
       ],
       "expo-web-browser",
+      "expo-updates",
     ],
     // EAS Update (ADR-HEARTH-084): lets a JS-only change push directly to an already-installed
     // build with no App Store/TestFlight review and no reinstall. "appVersion" runtime policy
