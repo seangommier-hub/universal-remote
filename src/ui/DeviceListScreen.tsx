@@ -17,7 +17,7 @@ import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -32,6 +32,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "xbox", label: "Xbox", icon: "game-controller-outline" },
   { brand: "kasa", label: "TP-Link Kasa Plug", icon: "flash-outline" },
   { brand: "sonos", label: "Sonos Speaker", icon: "musical-notes-outline" },
+  { brand: "ps5", label: "PS5", icon: "game-controller-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -44,7 +45,9 @@ const CATEGORY_ICON: Record<string, IconName> = {
 
 // Mirrors DiscoverDevicesScreen.tsx's identical list — the 7 brands with a real "manufacturer +
 // IP, no other credential" manual-add shape (Hue needs a separate bridge-IP device, SmartThings
-// is cloud-linked with no IP-based add, neither fits this "pick a brand for this one IP" flow).
+// is cloud-linked with no IP-based add, neither fits this "pick a brand for this one IP" flow;
+// PS5 is excluded too — its own credential comes from the PlayStation-App capture dance, not from
+// an IP alone, so pre-filling just the IP from a discovered-but-unrecognized row wouldn't help).
 const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "sony", label: "Sony TV" },
   { brand: "samsung", label: "Samsung TV" },
