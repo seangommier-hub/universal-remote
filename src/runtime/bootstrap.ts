@@ -13,6 +13,7 @@ import { XboxDriver } from "../drivers/gaming/xbox/XboxDriver";
 import { KasaPlugDriver } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { SonosDriver } from "../drivers/audio/sonos/SonosDriver";
 import { Ps5Driver } from "../drivers/gaming/ps5/Ps5Driver";
+import { DenonDriver } from "../drivers/tv/denon/DenonDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -43,6 +44,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new KasaPlugDriver());
   driverRegistry.register(new SonosDriver());
   driverRegistry.register(new Ps5Driver());
+  driverRegistry.register(new DenonDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

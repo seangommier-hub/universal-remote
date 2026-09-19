@@ -4,6 +4,7 @@ import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
+import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 
 // An explicit factory, not bare jest.mock(path) -- automocking still
 // requires the real module once to learn its shape, and that module
@@ -54,6 +55,7 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
           { hwaddr: "f8:b9:5a:43:7e:3e", ip: "192.168.1.60", name: "LGwebOSTV.lan", vendor: "LG Innotek" },
           { hwaddr: "d4:ab:cd:3e:b0:25", ip: "192.168.1.70", name: "32HisenseRokuTV", vendor: null },
           { hwaddr: "00:0e:58:aa:bb:cc", ip: "192.168.1.90", name: "Sonos-000E58AABBCC", vendor: "Sonos, Inc." },
+          { hwaddr: "00:05:cd:aa:bb:cc", ip: "192.168.1.85", name: "AVR-X2700H", vendor: "Denon" },
         ],
       })
     );
@@ -67,6 +69,7 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
       { name: "LGwebOSTV.lan", driverId: LG_WEBOS_DRIVER_ID, category: "tv" },
       { name: "32HisenseRokuTV", driverId: ROKU_ECP_DRIVER_ID, category: "streaming" },
       { name: "Sonos-000E58AABBCC", driverId: SONOS_DRIVER_ID, category: "audio" },
+      { name: "AVR-X2700H", driverId: DENON_DRIVER_ID, category: "tv" },
     ]);
   });
 

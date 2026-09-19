@@ -17,7 +17,7 @@ import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -33,6 +33,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "kasa", label: "TP-Link Kasa Plug", icon: "flash-outline" },
   { brand: "sonos", label: "Sonos Speaker", icon: "musical-notes-outline" },
   { brand: "ps5", label: "PS5", icon: "game-controller-outline" },
+  { brand: "denon", label: "Denon / Marantz", icon: "musical-notes-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -56,6 +57,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "yamaha", label: "Yamaha Receiver" },
   { brand: "xbox", label: "Xbox" },
   { brand: "sonos", label: "Sonos Speaker" },
+  { brand: "denon", label: "Denon / Marantz" },
 ];
 
 // ADR-HEARTH-094: which of the Family Command Center dashboard's own DEVICE_CATEGORIES

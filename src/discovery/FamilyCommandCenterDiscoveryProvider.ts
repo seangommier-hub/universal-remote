@@ -7,6 +7,7 @@ import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
+import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -63,6 +64,11 @@ const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceC
   // only config.ipAddress (SonosClient's local SOAP/UPnP surface has no auth), same "safe to
   // auto-match" reasoning as every entry above except Xbox/SmartThings.
   { pattern: /sonos/i, manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID },
+  // Denon/Marantz OUI vendor strings ("Denon", "D&M Holdings", "Marantz") plus a plain hostname
+  // match — DenonDriver's connect() needs only config.ipAddress (DenonClient's legacy
+  // formiPhoneApp surface has no auth), same "safe to auto-match" reasoning as every entry above
+  // except Xbox/SmartThings.
+  { pattern: /denon|marantz|d&m holdings/i, manufacturer: "Denon", category: "tv", driverId: DENON_DRIVER_ID },
 ];
 
 // Real household data (2026-09-13): this household's own router DHCP hostnames literally contain

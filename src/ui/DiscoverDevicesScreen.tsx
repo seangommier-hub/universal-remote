@@ -39,6 +39,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "yamaha", label: "Yamaha Receiver" },
   { brand: "xbox", label: "Xbox" },
   { brand: "sonos", label: "Sonos Speaker" },
+  { brand: "denon", label: "Denon / Marantz" },
 ];
 
 type ConnectState = "idle" | "connecting" | "error";
