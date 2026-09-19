@@ -37,6 +37,17 @@ export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialI
   const abortRef = useRef<AbortController | null>(null);
 
   async function handlePair() {
+    // Real-device finding (2026-09-19): a silently disabled button gave no way to tell, over
+    // remote troubleshooting, whether the IP field's value genuinely wasn't registering or
+    // something else was wrong — the button is now always tappable (except while actively
+    // listening/saving) and validates on tap instead, same as tapping a real button always does
+    // something rather than nothing.
+    if (ipAddress.trim().length === 0) {
+      setStatus("error");
+      setErrorMessage("Enter the PS5's IP address first.");
+      return;
+    }
+
     const driver = driverRegistry.get(PS5_DRIVER_ID);
     if (!driver) {
       setStatus("error");
@@ -78,8 +89,11 @@ export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialI
   // Real bug found live (2026-09-19): unlike every other Add screen's `status !== "connecting"`
   // pattern, this required status to be exactly "idle" — so a failed pairing attempt (timeout,
   // cancel, anything) left the button permanently disabled with no way to retry, even with a
-  // valid IP still typed in. "error" must re-enable it, matching every sibling screen.
-  const canSubmit = ipAddress.trim().length > 0 && status !== "listening" && status !== "saving";
+  // valid IP still typed in. "error" must re-enable it, matching every sibling screen. The IP
+  // check itself was also removed from here (see handlePair's own validation) — silently
+  // disabling on empty IP gave no way to tell, over remote troubleshooting, whether that was
+  // really the cause.
+  const canSubmit = status !== "listening" && status !== "saving";
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
