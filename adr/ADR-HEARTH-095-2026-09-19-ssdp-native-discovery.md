@@ -1,7 +1,7 @@
 # ADR-HEARTH-095: SSDP discovery — native device finding with zero Pi dependency
 
 **Date:** 2026-09-19
-**Status:** Accepted, implemented; blocked on Sean's own Apple entitlement request to fully work on iOS
+**Status:** Accepted, implemented (JS/discovery logic); iOS-side entitlement deferred after a real build failure — see Addendum
 
 ## Context
 
@@ -56,22 +56,37 @@ This is a real, accepted risk, not a hidden one.
   `DiscoverDevicesScreen` — the latter's old hard "Family Command Center isn't connected" error
   state is gone entirely (nothing throws anymore); an empty result now shows a soft, non-blocking
   suggestion to connect FCC for broader coverage, not a wall.
-- **Native config**: `com.apple.developer.networking.multicast` entitlement declared in
-  `app.config.js` (iOS gates raw multicast behind this specifically — separate from
-  `NSLocalNetworkUsageDescription`, ADR-HEARTH-090, which doesn't cover multicast). Android gets
-  `CHANGE_WIFI_MULTICAST_STATE` (without it, WiFi chips silently filter multicast frames as a
-  battery-saving default even with a working socket).
+- **Native config**: Android gets `CHANGE_WIFI_MULTICAST_STATE` (without it, WiFi chips silently
+  filter multicast frames as a battery-saving default even with a working socket) — this permission
+  needs no approval and ships immediately. iOS's `com.apple.developer.networking.multicast`
+  entitlement is intentionally NOT in `app.config.js` yet — see Addendum below for why.
 
-## What Sean still needs to do himself
+## Addendum (same day): the iOS entitlement can't just be declared "ahead of approval"
 
-**Apple must separately approve this entitlement** — declaring it in the app config is necessary
-but not sufficient. Sean has to submit a request himself at
-`developer.apple.com/contact/request/networking-multicast`; this is not something any tool or
-script can do on his behalf, and approval is discretionary, not guaranteed. Until granted, SSDP is
-expected to fail to bind/send on real iOS hardware — caught and treated exactly like FCC being
-unconfigured (silently nothing found, never a crash or error the user sees). **Android has no
-equivalent gate** and should work as soon as the permission above is granted, which happens
-automatically at install.
+Originally declared the multicast entitlement in `app.config.js` on the assumption that it would
+sit harmlessly unused until Apple approved it — the same pattern as declaring
+`NSLocalNetworkUsageDescription` before a user grants the runtime permission. **That assumption was
+wrong, and a real build failure corrected it immediately**, not a hypothetical caught in review:
+
+```
+error: Provisioning profile "..." doesn't include the Multicast Networking capability.
+Multicast Networking capability needs to be assigned to your team and bundle identifier by
+Apple in order to be included in a profile.
+error: Entitlement com.apple.developer.networking.multicast requires approval from Apple to
+include in a profile. Please request access to the associated capability. To continue building
+for device during request processing, remove entitlement and add upon approval.
+```
+
+Unlike a runtime permission (which just fails at runtime if unapproved), Xcode's own provisioning-
+profile generation refuses to build *at all* with an unapproved entitlement declared — this would
+have blocked every future build (SSDP-related or not) until Apple approved the request, with no way
+to ship anything else in the meantime. Removed the entitlement from `app.config.js` entirely.
+**Sean must request it himself** at `developer.apple.com/contact/request/networking-multicast` —
+not something any tool or script here can do — and only once Apple confirms approval should the
+entitlement be re-added and the app rebuilt. Until then, `SsdpDiscoveryProvider.ts`'s code ships as-
+is (it's a pure JS/UI concern) but its actual UDP sends will fail at runtime on iOS specifically
+(caught, degrading to "nothing found," never a crash) — Android needs no such approval and should
+work correctly as soon as a build with the code above is installed.
 
 ## Verification
 

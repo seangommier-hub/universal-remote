@@ -31,17 +31,16 @@ module.exports = {
         NSLocalNetworkUsageDescription:
           "Hearth connects directly to TVs, outlets, and other devices on your home network to control them.",
       },
-      // SSDP discovery (ADR-HEARTH-095): raw UDP multicast on iOS is gated behind this specific
-      // entitlement, separate from NSLocalNetworkUsageDescription above and separate from this
-      // config existing at all — Apple must also approve a manual request
-      // (developer.apple.com/contact/request/networking-multicast) before it actually functions on
-      // a real device, something only Sean's own Apple Developer account can do. Declared here so
-      // the app is ready the moment that's approved; until then, SSDP discovery is expected to fail
-      // silently on iOS (the same graceful "nothing found" treatment as FCC not being configured)
-      // while still working on Android, which has no equivalent platform-level gate.
-      entitlements: {
-        "com.apple.developer.networking.multicast": true,
-      },
+      // SSDP discovery (ADR-HEARTH-095): com.apple.developer.networking.multicast REMOVED here
+      //2026-09-19 after a real build failure corrected a wrong assumption — declaring this
+      // entitlement before Apple approves it doesn't just make multicast silently fail at
+      // runtime, it makes Xcode refuse to create a provisioning profile AT ALL ("Entitlement...
+      // requires approval from Apple... Please request access... To continue building for device
+      // during request processing, remove entitlement and add upon approval" — Apple's own error,
+      // confirmed live). Stays out of config until Sean requests it
+      // (developer.apple.com/contact/request/networking-multicast) and Apple approves it for this
+      // team/bundle identifier — re-add and rebuild only after that. Android needs no such
+      // approval; its CHANGE_WIFI_MULTICAST_STATE permission below is unaffected.
     },
     android: {
       package: BUNDLE_IDENTIFIER,
