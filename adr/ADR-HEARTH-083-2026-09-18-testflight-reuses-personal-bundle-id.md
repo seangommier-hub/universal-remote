@@ -57,3 +57,16 @@ uses for direct device installs keeps the no-personal-name choice untouched.
 - If Sean later decides the old `com.seangommier.hearthapp` App Store Connect record should be
   abandoned in favor of a clean, name-free one, that's a new decision, not a silent reversal of this
   one.
+
+## Addendum: `cli.appVersionSource` changed to `remote`
+
+The first real production build attempt failed outright: `autoIncrement option is not supported
+when using app.config.js` — confirmed in `eas-cli`'s own source
+(`ensureStaticConfigExists`/`updateAppJsonConfigAsync`) that `autoIncrement` with
+`appVersionSource: "local"` requires physically rewriting a static `app.json`, which no longer
+exists. Fixed by switching `eas.json`'s top-level `cli.appVersionSource` from `"local"` to
+`"remote"` — the documented supported combination, where EAS tracks/increments each bundle
+identifier's build number on its own servers instead of local config. No separate initialization
+step needed; it self-initializes from the current local version on first build per identifier.
+This is a mechanical consequence of the `app.config.js` conversion above, not an independent
+judgment call, so it's recorded here rather than as its own ADR.
