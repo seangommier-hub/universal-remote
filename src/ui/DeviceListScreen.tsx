@@ -175,6 +175,14 @@ export function DeviceListScreen({
   const [manualAddTarget, setManualAddTarget] = useState<DiscoveredDevice | null>(null);
 
   const knownHwaddrs = devices.map((d) => (typeof d.config?.hwaddr === "string" ? d.config.hwaddr.toLowerCase() : null)).filter((h): h is string => h !== null);
+  // Real bug found live (2026-09-19): every manual "Add Device" screen (AddLgDeviceScreen etc.)
+  // stores only `{ ipAddress }` in config, never `hwaddr` — that field is only ever populated by
+  // this screen's own handleQuickAdd below. A device paired through manual entry (the only path
+  // that currently works for LG, which needs Family Command Center's relay to connect at all) can
+  // never match the hwaddr-only check above, so it kept reappearing here as "suggested" forever
+  // even after being successfully added. IP is a weaker identity than hwaddr (it can change), but
+  // it's what every manual-add screen actually has, so it's a real fallback, not a guess.
+  const knownIps = devices.map((d) => (typeof d.config?.ipAddress === "string" ? d.config.ipAddress : null)).filter((ip): ip is string => ip !== null);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +192,8 @@ export function DeviceListScreen({
         found.filter((d) => {
           const alreadyPaired = knownHwaddrs.includes(String(d.metadata?.hwaddr ?? "").toLowerCase());
           if (alreadyPaired) return false;
+          const alreadyPairedByIp = knownIps.includes(String(d.metadata?.ipAddress ?? ""));
+          if (alreadyPairedByIp) return false;
           const householdCategory = String(d.metadata?.householdCategory ?? "");
           return d.driverId.length > 0 || HOUSEHOLD_PLAUSIBLE_CATEGORIES.includes(householdCategory);
         })
@@ -192,8 +202,8 @@ export function DeviceListScreen({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-scanning on every knownHwaddrs
-    // identity change (a new array every render) would re-fire this on every keystroke elsewhere
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-scanning on every knownHwaddrs/
+    // knownIps identity change (a new array every render) would re-fire this on every keystroke elsewhere
     // in the app; devices.length is a cheap enough proxy for "the paired list actually changed".
   }, [devices.length]);
 
