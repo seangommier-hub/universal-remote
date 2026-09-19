@@ -10,6 +10,7 @@ const volumeInfoResponse = (volume: number, mute: boolean) =>
   jsonResponse({ result: [{ target: "speaker", volume, mute, maxVolume: 100, minVolume: 0 }], id: 1 });
 const emptyResultResponse = () => jsonResponse({ result: [], id: 1 });
 const externalInputsResponse = (inputs: { uri: string; title: string }[]) => jsonResponse({ result: [inputs], id: 1 });
+const systemInformationResponse = (name: string) => jsonResponse({ result: [{ name }], id: 1 });
 
 const device: Device = {
   id: "sony-1",
@@ -67,6 +68,21 @@ describe("SonyBraviaDriver", () => {
       { id: "extInput:hdmi?port=1", label: "HDMI 1" },
       { id: "extInput:hdmi?port=2", label: "HDMI 2" },
     ]);
+  });
+
+  // ADR-HEARTH-096: verified directly against Sony's own BRAVIA Professional Displays Knowledge
+  // Center — getSystemInformation's "name" field is the user-set TV name, present since v1.0.
+  test("connect() surfaces the TV's real device name into state.values.deviceName", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(powerStatusResponse("active"))
+      .mockResolvedValueOnce(volumeInfoResponse(20, false))
+      .mockResolvedValueOnce(externalInputsResponse([]))
+      .mockResolvedValueOnce(systemInformationResponse("Living Room Sony"));
+
+    await driver.connect(device);
+    const state = await driver.getState(device);
+
+    expect(state.values.deviceName).toBe("Living Room Sony");
   });
 
   test("a command run after connect() doesn't wipe the input list back out of state (real bug found alongside this feature)", async () => {

@@ -48,6 +48,17 @@ describe("SamsungTizenDriver", () => {
     expect(state.connection).toBe("connected");
   });
 
+  // ADR-HEARTH-096: a separate, unauthenticated HTTP call (not part of the WebSocket handshake
+  // connectDriver() drives) — mocked here since this is the one test that cares about its result;
+  // every other test's bare, unmocked global.fetch degrades this to undefined gracefully instead
+  // (confirmed by the full suite passing unchanged after this call became awaited).
+  test("connect() surfaces the TV's real device name into state.values.deviceName", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ device: { name: "[TV] Living Room Samsung" } }) } as Response);
+    await connectDriver(driver);
+    const state = await driver.getState(device);
+    expect(state.values.deviceName).toBe("Living Room Samsung");
+  });
+
   test("connect() writes the token it receives into device.config, so App.tsx can persist it and skip the on-screen prompt next time (real-hardware ask, restated 2026-09-17)", async () => {
     const connectPromise = driver.connect(device);
     const socket = MockWebSocket.latest();

@@ -9,6 +9,7 @@ describe("SamsungTizenClient", () => {
   beforeEach(() => {
     installMockWebSocket();
     mockLoadConfig.mockReset();
+    global.fetch = jest.fn();
   });
 
   test("connects to the unencrypted port 8001 endpoint with a base64-encoded app name", async () => {
@@ -117,5 +118,32 @@ describe("SamsungTizenClient", () => {
   test("sendKey throws if called before a successful connect", () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
     expect(() => client.sendKey("KEY_POWER")).toThrow(/not connected/);
+  });
+
+  // ADR-HEARTH-096: verified against Home Assistant's samsungtv integration — GET /api/v2/
+  // returns {"device": {"name": "[TV] <real name>"}}; the "[TV] " prefix is a fixed protocol
+  // artifact HA itself strips, not part of the name a user actually set.
+  describe("getDeviceName", () => {
+    test("strips the fixed '[TV] ' prefix from the real device name", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ device: { name: "[TV] Living Room Samsung" } }) } as Response);
+      const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
+
+      await expect(client.getDeviceName()).resolves.toBe("Living Room Samsung");
+      expect(global.fetch).toHaveBeenCalledWith("http://192.168.1.60:8001/api/v2/", expect.objectContaining({ method: "GET" }));
+    });
+
+    test("returns undefined when the endpoint fails", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+      const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
+
+      await expect(client.getDeviceName()).resolves.toBeUndefined();
+    });
+
+    test("returns undefined when the response has no device name at all", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ device: {} }) } as Response);
+      const client = new SamsungTizenClient({ ipAddress: "192.168.1.60" });
+
+      await expect(client.getDeviceName()).resolves.toBeUndefined();
+    });
   });
 });

@@ -245,6 +245,29 @@ export class SamsungTizenDriver implements DeviceDriver {
     if (previous && previous !== client) previous.close();
     this.clients.set(device.id, client);
     this.setState(device.id, { connection: "connected", values: {}, lastUpdated: Date.now() });
+    await this.refreshDeviceName(device, client);
+  }
+
+  /** Best-effort, same "never fail connect() over an inferred field" treatment every other
+   * driver's refreshXxx already gets (ADR-HEARTH-096) — surfaces the TV's own real name as a
+   * suggestion for the add/discovery flow (ADR-HEARTH-085), never overwrites an already-saved
+   * Device.name. A separate, unauthenticated HTTP call from the paired WebSocket channel above;
+   * failing here (network hiccup, older firmware without this endpoint) leaves deviceName unset
+   * rather than touching connection state at all. */
+  private async refreshDeviceName(device: Device, client: SamsungTizenClient): Promise<void> {
+    try {
+      const deviceName = await client.getDeviceName();
+      if (deviceName) this.patchValues(device.id, { deviceName });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not read the real device name for ${device.name}`, { message });
+    }
+  }
+
+  private patchValues(deviceId: string, patch: DeviceState["values"]): void {
+    const current = this.states.get(deviceId);
+    if (!current) return;
+    this.setState(deviceId, { ...current, values: { ...current.values, ...patch } });
   }
 
   /** See LgWebOsDriver.ts's identical method and comment — one shared retry path for a connect() that fails outright and a connection dropping after it succeeded, with a dedup guard against stacking a second competing timer. */

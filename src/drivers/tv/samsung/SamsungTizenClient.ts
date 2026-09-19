@@ -8,6 +8,7 @@
 // phone), connect() falls back to relaying through Family Command Center.
 
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
+import { requestWithRelayFallback } from "../../../core/network/httpRelayFallback";
 
 const CONNECT_TIMEOUT_MS = 20000; // only hit on a first-time pairing, which needs a physical on-screen approval tap
 const MS_CHANNEL_CONNECT_EVENT = "ms.channel.connect";
@@ -125,5 +126,20 @@ export class SamsungTizenClient {
     this.closingDeliberately = true;
     this.socket?.close();
     this.socket = null;
+  }
+
+  /** Real device name suggestion (2026-09-19, ADR-HEARTH-096): a plain, unauthenticated HTTP GET
+   * to `http://<ip>:8001/api/v2/` — a separate endpoint from the remote-control WebSocket channel
+   * above, needs no pairing. Verified against Home Assistant's `samsungtv` integration
+   * (`config_flow.py`, an actively-maintained project): the response is `{"device": {"name": "[TV]
+   * <the name the user set>", ...}}`, and HA itself strips the `"[TV] "` prefix the same way this
+   * does — that prefix is a fixed protocol artifact, not part of the real name. */
+  async getDeviceName(): Promise<string | undefined> {
+    const response = await requestWithRelayFallback({ ip: this.config.ipAddress, port: 8001, path: "/api/v2/", method: "GET" });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as { device?: { name?: string } };
+    const rawName = body.device?.name;
+    if (typeof rawName !== "string") return undefined;
+    return rawName.replace(/^\[TV\]\s*/, "").trim() || undefined;
   }
 }

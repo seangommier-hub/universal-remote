@@ -65,6 +65,16 @@ interface ExternalInputStatus {
   label?: string;
 }
 
+// ADR-HEARTH-096 (2026-09-19): verified directly against Sony's own BRAVIA Professional Displays
+// Knowledge Center (pro-bravia.sony.net) — both the v1.0 and v1.7 getSystemInformation schemas
+// include a "name" field (e.g. `{"result": [{"generation": "5.6.0", "product": "TV", "name":
+// "BRAVIA", ...}], "id": 33}`), and it's the name a user sets on the TV, not a fixed model string.
+// No version override needed — v1.0 (this client's default, same as every other call in this
+// driver) already has the field.
+interface SystemInformation {
+  name?: string;
+}
+
 const DIRECTION_TO_IRCC_CODE: Record<NavigationDirection, string> = {
   up: SONY_IRCC_CODES.up,
   down: SONY_IRCC_CODES.down,
@@ -140,6 +150,24 @@ export class SonyBraviaDriver implements DeviceDriver {
     this.clearReconnectTimer(device.id);
     await this.refreshState(device);
     await this.refreshInputList(device);
+    await this.refreshDeviceName(device);
+  }
+
+  /** Real device name suggestion (ADR-HEARTH-085/096) — same best-effort treatment as
+   * refreshInputList above: a TV that rejects this call just leaves deviceName unset rather than
+   * failing connect(). Never overwrites an already-saved Device.name. */
+  private async refreshDeviceName(device: Device): Promise<void> {
+    try {
+      const client = new SonyBraviaClient(requireConfig(device));
+      const [info] = await client.call<SystemInformation[]>("system", "getSystemInformation");
+      if (info.name) {
+        const current = this.states.get(device.id);
+        this.setState(device.id, { connection: "connected", values: { ...current?.values, deviceName: info.name }, lastUpdated: Date.now() });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not read the real device name for ${device.name}`, { message });
+    }
   }
 
   // Real-hardware ask (2026-09-10), following the same fix LG got in ADR-HEARTH-027: the UI's
