@@ -16,7 +16,7 @@ const device: Device = {
   config: { ipAddress: "192.168.1.70" },
 };
 
-/** Drives the mock socket through: open -> register handshake -> paired -> connect()'s own getVolume and getExternalInputList reads. */
+/** Drives the mock socket through: open -> register handshake -> paired -> connect()'s own getVolume, getExternalInputList, and listLaunchPoints (ADR-HEARTH-078) reads. */
 async function connectDriver(driver: LgWebOsDriver): Promise<void> {
   const connectPromise = driver.connect(device);
   const socket = MockWebSocket.latest();
@@ -35,6 +35,14 @@ async function connectDriver(driver: LgWebOsDriver): Promise<void> {
     type: "response",
     id: inputListRequest.id,
     payload: { returnValue: true, devices: [{ id: "HDMI_1", label: "HDMI 1" }, { id: "HDMI_2", label: "HDMI 2" }] },
+  });
+
+  await flushMicrotasks(); // let refreshInputList resolve and refreshApps send its own request
+  const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+  socket.simulateMessage({
+    type: "response",
+    id: appsRequest.id,
+    payload: { returnValue: true, launchPoints: [{ id: "netflix", title: "Netflix" }] },
   });
 
   await connectPromise;
@@ -97,6 +105,10 @@ describe("LgWebOsDriver", () => {
       },
     });
 
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
+
     await connectPromise;
     const state = await driver.getState(device);
     expect(state.values.inputs).toEqual([
@@ -157,10 +169,46 @@ describe("LgWebOsDriver", () => {
     const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
     socket.simulateMessage({ type: "error", id: inputListRequest.id, error: "403 access denied" });
 
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
+
     await connectPromise;
     const state = await driver.getState(device);
     expect(state.connection).toBe("connected"); // the failure is contained, not fatal to connect()
     expect(state.values.inputs).toBeUndefined();
+  });
+
+  test("connect() still finishes if listLaunchPoints itself fails — the app list just stays unset (ADR-HEARTH-078)", async () => {
+    const connectPromise = driver.connect(device);
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    const registerSent = JSON.parse(socket.sentMessages[0]);
+    socket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key" } });
+
+    await flushMicrotasks();
+    const volumeRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 15, mute: false } });
+
+    await flushMicrotasks();
+    const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "error", id: appsRequest.id, error: "403 access denied" });
+
+    await connectPromise;
+    const state = await driver.getState(device);
+    expect(state.connection).toBe("connected");
+    expect(state.values.apps).toBeUndefined();
+  });
+
+  test("connect() populates state.values.apps from a real listLaunchPoints response", async () => {
+    await connectDriver(driver);
+    const state = await driver.getState(device);
+    expect(state.values.apps).toEqual([{ id: "netflix", name: "Netflix" }]);
   });
 
   test("connect() writes the pairing key it receives into device.config, so App.tsx can persist it and skip the on-screen prompt next time (real-hardware ask, 2026-09-10)", async () => {
@@ -225,6 +273,42 @@ describe("LgWebOsDriver", () => {
       driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "disneyPlus" } })
     ).rejects.toThrow(/supported 'service'/);
     expect(socket.sentMessages.length).toBe(sentBefore);
+  });
+
+  // ADR-HEARTH-078: launchApp can target any installed app directly by id (e.g. one from
+  // state.values.apps — the recent-apps row), not just the four fixed streaming services, and
+  // reports lastLaunchedAppId regardless of which arg triggered it (same pattern as Roku's
+  // identical extension, ADR-HEARTH-076) so the UI's recent-apps history stays brand-agnostic.
+  test("launchApp launches any app by id, not just the four fixed streaming services", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { appId: "com.some.app" } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(sent.uri).toBe("ssap://system.launcher/launch");
+    expect(sent.payload).toEqual({ id: "com.some.app" });
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    const result = await resultPromise;
+    expect(result.state?.lastLaunchedAppId).toBe("com.some.app");
+  });
+
+  test("launchApp reports lastLaunchedAppId as the real resolved id when launched via 'service'", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    const result = await resultPromise;
+    expect(result.state?.lastLaunchedAppId).toBe("netflix");
+  });
+
+  test("launchApp requires either a service or an appId, not neither", async () => {
+    await connectDriver(driver);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "launchApp" })).rejects.toThrow(/supported 'service' or 'appId'/);
   });
 
   test("directionalNavigation opens the pointer socket and sends the mapped button", async () => {
@@ -559,6 +643,9 @@ describe("LgWebOsDriver", () => {
       const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
       retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
       await flushMicrotasks();
+      const appsRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
+      await flushMicrotasks();
 
       await connectPromise;
       expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
@@ -604,6 +691,9 @@ describe("LgWebOsDriver", () => {
         await flushMicrotasks();
         const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
         retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+        await flushMicrotasks();
+        const appsRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+        retrySocket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
         await flushMicrotasks();
 
         await connectPromise;
@@ -669,6 +759,9 @@ describe("LgWebOsDriver", () => {
       await flushMicrotasks();
       const inputListRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
       retrySocket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+      await flushMicrotasks();
+      const appsRequest = JSON.parse(retrySocket.sentMessages[retrySocket.sentMessages.length - 1]);
+      retrySocket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
       await flushMicrotasks();
 
       await connectPromise;
@@ -743,6 +836,10 @@ describe("LgWebOsDriver", () => {
     await flushMicrotasks();
     const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
     socket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [{ id: "HDMI_1", label: "HDMI 1" }] } });
+
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
 
     await Promise.all([firstConnect, secondConnect]); // both resolve successfully off the one real attempt
     expect((await driver.getState(device)).connection).toBe("connected");

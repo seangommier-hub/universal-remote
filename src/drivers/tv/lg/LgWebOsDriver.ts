@@ -327,6 +327,7 @@ export class LgWebOsDriver implements DeviceDriver {
     this.setState(device.id, { connection: "connected", values: { power: "on" }, lastUpdated: Date.now() });
     await this.refreshVolumeState(device, client);
     await this.refreshInputList(device, client);
+    await this.refreshApps(device, client);
     this.subscribeToPlaybackState(device, client);
   }
 
@@ -518,18 +519,26 @@ export class LgWebOsDriver implements DeviceDriver {
         return;
       }
       case "launchApp": {
+        // Real-hardware research (2026-09-19, ADR-HEARTH-078): 'appId' (any id from
+        // state.values.apps, populated by refreshApps below) targets any installed app directly,
+        // the same LG-side counterpart to Roku's identical extension (ADR-HEARTH-076) — 'service'
+        // (the four fixed streaming services) still works unchanged for every existing call site.
         const service = command.args?.service as StreamingService | undefined;
-        const appId = service ? LG_APP_IDS[service] : undefined;
-        if (!appId) throw new Error(`launchApp requires a supported 'service' arg (got ${String(service)})`);
+        const directAppId = command.args?.appId as string | undefined;
+        const resolvedAppId = directAppId ?? (service ? LG_APP_IDS[service] : undefined);
+        if (!resolvedAppId) throw new Error(`launchApp requires a supported 'service' or 'appId' arg (got service=${String(service)}, appId=${String(directAppId)})`);
         // ssap://system.launcher/launch — sourced from hobbyquaker/lgtv2, same reference this
         // driver already cites for the button list and pairing manifest.
-        await client.call("ssap://system.launcher/launch", { id: appId });
+        await client.call("ssap://system.launcher/launch", { id: resolvedAppId });
         // Fresh app launch always lands on that app's own browse/home screen, never straight into
         // playback — Select stays the center button until the real second-Select signal (see the
         // "select" case above) says the user actually started watching something.
         this.assumedInStreamingApp.set(device.id, true);
         this.selectPressesSinceLaunch.set(device.id, 0);
-        this.patchValues(device.id, { lastAction: `launch:${service}`, playbackState: "stopped" });
+        // lastLaunchedAppId lets the UI's recent-apps history (ADR-HEARTH-076/078) record this
+        // launch regardless of whether 'service' or 'appId' triggered it, through one generic,
+        // brand-agnostic field — same pattern RokuEcpDriver.ts already established.
+        this.patchValues(device.id, { lastAction: `launch:${directAppId ?? service}`, playbackState: "stopped", lastLaunchedAppId: resolvedAppId });
         return;
       }
       case "inputSelection": {
@@ -639,6 +648,41 @@ export class LgWebOsDriver implements DeviceDriver {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(LOG_SCOPE, `Could not read input list for ${device.name}`, { message });
+    }
+  }
+
+  // Real-hardware research (2026-09-19, ADR-HEARTH-078): ssap://com.webos.applicationManager/
+  // listLaunchPoints ("installed apps (id → title)") is documented directly in hobbyquaker/lgtv2's
+  // own README, this driver's existing primary reference. The response's top-level wrapper key
+  // (`{launchPoints: [...]}`) is confirmed against Home Assistant's own production
+  // `aiowebostv` library (`get_apps()`: `res.get("launchPoints")`) — not guessed; that same
+  // library's sibling `listApps` endpoint wraps its array under `apps` instead, which is why both
+  // keys are checked below (only `listLaunchPoints` is actually called here, but the shapes are
+  // corroborated together). Per-app field-name flexibility (id/appId, name/appName/title) sourced
+  // from LG's own official "Connect SDK" (2014, LG Electronics) via its AppInfo.java model,
+  // adopted verbatim by the openHAB LG webOS binding — the exact same dual-field-name handling
+  // refreshInputList above already applies for a different endpoint. Best-effort, same treatment
+  // as every other inferred field on this driver: a failed read just leaves state.values.apps
+  // unset rather than failing connect().
+  private async refreshApps(device: Device, client: LgWebOsClient): Promise<void> {
+    try {
+      const payload = await client.call("ssap://com.webos.applicationManager/listLaunchPoints");
+      const rawApps = Array.isArray(payload.launchPoints) ? payload.launchPoints : Array.isArray(payload.apps) ? payload.apps : [];
+      const apps = rawApps
+        .map((entry) => {
+          const record = entry as Record<string, unknown>;
+          const id = typeof record.id === "string" ? record.id : typeof record.appId === "string" ? record.appId : undefined;
+          const name = typeof record.name === "string" ? record.name : typeof record.appName === "string" ? record.appName : typeof record.title === "string" ? record.title : undefined;
+          if (!id || !name) return null;
+          return { id, name };
+        })
+        .filter((entry): entry is { id: string; name: string } => entry !== null);
+      if (apps.length > 0) {
+        this.patchValues(device.id, { apps });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Could not read the installed app list for ${device.name}`, { message });
     }
   }
 
