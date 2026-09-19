@@ -498,8 +498,10 @@ export default function App() {
         <DeviceListScreen
           devices={devices}
           stateStore={runtime.stateStore}
+          driverRegistry={runtime.driverRegistry}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
+          onQuickAdd={handleDeviceAdded}
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
