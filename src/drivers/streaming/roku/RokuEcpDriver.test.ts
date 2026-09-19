@@ -91,6 +91,24 @@ describe("RokuEcpDriver", () => {
     expect(state.values.playbackState).toBe("playing");
   });
 
+  // ADR-HEARTH-085: the Roku's own real name is already fetched as part of the same device-info
+  // read used for power/model above — surfaced into state so the add/discovery flow can offer it
+  // as a suggested name instead of the network's generic DHCP hostname.
+  test("connect() surfaces the Roku's own real name into state.values.deviceName", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => `<device-info><power-mode>PowerOn</power-mode><model-name>Roku Ultra</model-name><user-device-name>Living Room Roku</user-device-name></device-info>`,
+      } as Response)
+      .mockResolvedValueOnce(mediaPlayerResponse("play"))
+      .mockResolvedValueOnce(appsResponse());
+    await driver.connect(device);
+    const state = await driver.getState(device);
+
+    expect(state.values.deviceName).toBe("Living Room Roku");
+  });
+
   // Real-hardware research (2026-09-15, ADR-HEARTH-068): a non-media ("close") read used to
   // collapse straight to "stopped" — but that's a false claim whenever an app is still actually
   // active (Netflix's PIN-protected profile lock being the concrete real-world trigger). It's now

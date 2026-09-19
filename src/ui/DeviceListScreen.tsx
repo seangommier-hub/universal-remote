@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
+import { UpdateBanner } from "./UpdateBanner";
 
 export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa";
 
@@ -42,10 +43,17 @@ interface DeviceListScreenProps {
   onConnectFamilyCommandCenter: () => void;
   /** Opens the phone-as-trackpad-and-keyboard screen for the Family Command Center itself (ADR-HEARTH-033) — a different thing from pairing/discovering *devices*, so its own header button rather than folding into onConnectFamilyCommandCenter. */
   onOpenCommandCenterRemote: () => void;
+  /** Manually triggers an EAS Update check (ADR-HEARTH-084/086) — Sean's "a true update button" ask, rather than only ever waiting for the silent automatic check on launch/foreground. */
+  onCheckForUpdates: () => void;
+  updateBanner: { status: "checking" | "downloaded" | "error" | "up-to-date" } | null;
+  onApplyUpdate: () => void;
+  onDismissUpdateBanner: () => void;
   /** Unpairs a device (disconnects it, removes it from the registry and from persisted storage) — triggered by a long-press, confirmed first since it's not reversible from this screen. */
   onRemove: (device: Device) => void;
   /** Opens a small form to correct a device's saved IP address without a full remove-and-re-add — real-hardware need (2026-09-10): a device's IP can go stale (moved to a different WiFi network) and the fastest fix shouldn't be "unpair everything and start over." Offered from the same long-press menu as Remove. */
   onEditAddress: (device: Device) => void;
+  /** Opens a small form to rename a device — the action already existed (tap a device's own name inside its remote screen), but that's not discoverable from here, so it's offered from the same long-press menu as Edit address/Remove (ADR-HEARTH-085). */
+  onRename: (device: Device) => void;
   /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056) — a horizontal row of chips
    * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
    * for vertical space on the home screen, the same "one screen" pressure every other layout
@@ -86,8 +94,13 @@ export function DeviceListScreen({
   onDiscover,
   onConnectFamilyCommandCenter,
   onOpenCommandCenterRemote,
+  onCheckForUpdates,
+  updateBanner,
+  onApplyUpdate,
+  onDismissUpdateBanner,
   onRemove,
   onEditAddress,
+  onRename,
   scenes,
   onRunScene,
   onCreateScene,
@@ -97,6 +110,10 @@ export function DeviceListScreen({
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
+  // Android's Alert.alert silently drops any button past the 3rd (the same bug already found and
+  // fixed in DiscoverDevicesScreen.tsx's brand picker, 2026-09-12) — with Cancel + Rename + Edit
+  // address + Remove this is 4, so a custom modal replaces Alert.alert here for the same reason.
+  const [actionsTarget, setActionsTarget] = useState<Device | null>(null);
 
   function showSceneActions(scene: Scene) {
     Alert.alert(scene.name, undefined, [
@@ -106,20 +123,11 @@ export function DeviceListScreen({
     ]);
   }
 
-  function showDeviceActions(device: Device) {
-    const hasAddress = typeof device.config?.ipAddress === "string";
-    Alert.alert(device.name, undefined, [
+  function handleRemovePress(device: Device) {
+    setActionsTarget(null);
+    Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
       { text: "Cancel", style: "cancel" },
-      ...(hasAddress ? [{ text: "Edit address", onPress: () => onEditAddress(device) }] : []),
-      {
-        text: "Remove",
-        style: "destructive" as const,
-        onPress: () =>
-          Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
-            { text: "Cancel", style: "cancel" },
-            { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
-          ]),
-      },
+      { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
     ]);
   }
   return (
@@ -152,7 +160,17 @@ export function DeviceListScreen({
         >
           <Ionicons name="link-outline" size={20} color={theme.accentEnd} />
         </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
+          onPress={onCheckForUpdates}
+          accessibilityRole="button"
+          accessibilityLabel="Check for updates"
+        >
+          <Ionicons name="cloud-download-outline" size={20} color={theme.accentEnd} />
+        </Pressable>
       </View>
+
+      {updateBanner && <UpdateBanner status={updateBanner.status} onApply={onApplyUpdate} onDismiss={onDismissUpdateBanner} />}
 
       {/* Real bug found live (2026-09-12): a horizontal FlatList's data-item cells rendered at a
           wildly oversized, distorted height (a ~300px-tall oval instead of a compact chip) while
@@ -205,7 +223,7 @@ export function DeviceListScreen({
             <Pressable
               style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
               onPress={() => onSelect(item)}
-              onLongPress={() => showDeviceActions(item)}
+              onLongPress={() => setActionsTarget(item)}
               accessibilityRole="button"
               accessibilityLabel={item.name}
               accessibilityHint="Double tap to open. Long press for more options."
@@ -255,6 +273,49 @@ export function DeviceListScreen({
           </Pressable>
         ))}
       </View>
+
+      <Modal visible={actionsTarget !== null} transparent animationType="fade" onRequestClose={() => setActionsTarget(null)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setActionsTarget(null)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>{actionsTarget?.name}</Text>
+            {actionsTarget && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                  onPress={() => {
+                    const device = actionsTarget;
+                    setActionsTarget(null);
+                    onRename(device);
+                  }}
+                >
+                  <Text style={styles.modalOptionLabel}>Rename</Text>
+                </Pressable>
+                {typeof actionsTarget.config?.ipAddress === "string" && (
+                  <Pressable
+                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                    onPress={() => {
+                      const device = actionsTarget;
+                      setActionsTarget(null);
+                      onEditAddress(device);
+                    }}
+                  >
+                    <Text style={styles.modalOptionLabel}>Edit address</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                  onPress={() => handleRemovePress(actionsTarget)}
+                >
+                  <Text style={styles.modalDestructiveLabel}>Remove</Text>
+                </Pressable>
+              </>
+            )}
+            <Pressable style={styles.modalCancel} onPress={() => setActionsTarget(null)}>
+              <Text style={styles.modalCancelLabel}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -408,4 +469,20 @@ const styles = StyleSheet.create({
   sceneLabel: { color: theme.textPrimary, fontSize: theme.type.label, fontWeight: "600" },
   newSceneChip: { borderColor: theme.accentEnd, borderStyle: "dashed" },
   newSceneLabel: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "600" },
+  modalBackdrop: { flex: 1, backgroundColor: "#00000099", alignItems: "center", justifyContent: "center", padding: theme.spacing.xl },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: theme.surfaceRaised,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  modalTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", marginBottom: theme.spacing.xs },
+  modalOption: { paddingVertical: theme.spacing.md, borderRadius: theme.radius.sm },
+  modalOptionPressed: { backgroundColor: theme.surface },
+  modalOptionLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "600" },
+  modalDestructiveLabel: { color: theme.statusError, fontSize: theme.type.body, fontWeight: "600" },
+  modalCancel: { paddingVertical: theme.spacing.md, marginTop: theme.spacing.xs, borderTopWidth: 1, borderTopColor: theme.border },
+  modalCancelLabel: { color: theme.textSecondary, fontSize: theme.type.body, fontWeight: "600", textAlign: "center" },
 });

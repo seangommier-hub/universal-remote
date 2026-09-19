@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
+import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { AddableBrand } from "./DeviceListScreen";
@@ -12,6 +13,7 @@ import { theme } from "./theme";
 
 interface DiscoverDevicesScreenProps {
   driverRegistry: DriverRegistry;
+  stateStore: StateStore;
   onCancel: () => void;
   onAdded: (device: Device) => void;
   onOpenSettings: () => void;
@@ -47,7 +49,7 @@ type ConnectState = "idle" | "connecting" | "error";
  * "Add manually as..." (ADR-HEARTH-062) so a brand-detection miss (or a
  * device this screen can see but can't classify) is never a dead end.
  */
-export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpenSettings, onAddManually }: DiscoverDevicesScreenProps) {
+export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, onAdded, onOpenSettings, onAddManually }: DiscoverDevicesScreenProps) {
   // Real-hardware finding (2026-09-10): every screen in this app used a hardcoded paddingTop
   // (56 here) guessed to clear an iPhone's notch — never verified against Android, where the
   // status bar's actual height varies by device/emulator and can be taller than that guess,
@@ -109,7 +111,14 @@ export function DiscoverDevicesScreen({ driverRegistry, onCancel, onAdded, onOpe
     setConnectError(null);
     try {
       await driver.connect(device);
-      onAdded(device);
+      // Suggested name (ADR-HEARTH-085): `discovered.name` is only ever the network's generic
+      // DHCP hostname — a driver that fetched the device's own real, human-set name at connect
+      // time (Roku's `deviceName`, so far — see RokuEcpDriver.ts) reports it as live state, which
+      // is a better initial name whenever it's actually available. Never overrides anything the
+      // user later renames; this only shapes what gets saved the first time.
+      const suggestedName = stateStore.get(device.id).values.deviceName;
+      const named: Device = typeof suggestedName === "string" && suggestedName.trim() ? { ...device, name: suggestedName.trim() } : device;
+      onAdded(named);
     } catch (err) {
       setConnectError({ id: discovered.id, message: err instanceof Error ? err.message : String(err) });
       // See ADR-HEARTH-052 / AddLgDeviceScreen.tsx: several of the drivers reachable from this

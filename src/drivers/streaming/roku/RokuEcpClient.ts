@@ -14,6 +14,15 @@ export interface RokuEcpConfig {
 export interface RokuDeviceInfo {
   powerMode?: string;
   modelName?: string;
+  /** The device's own real, human-set name (e.g. "Living Room Roku"), not the generic DHCP
+   * hostname discovery otherwise falls back on. Sourced and verified directly (2026-09-18,
+   * ADR-HEARTH-085) against `ctalkington/python-rokuecp`'s `Info.from_dict` (`models.py`):
+   * `user-device-name` is the actual "Name your Roku" setting; Roku leaves it empty until a user
+   * sets one, at which point `friendly-device-name` (Roku's own generated default, e.g. "Roku
+   * Ultra") is the better of the two remaining fallbacks — `default-device-name` (a generic
+   * model-based string) is deliberately not used here since it carries no real information beyond
+   * what `modelName` above already gives. */
+  name?: string;
 }
 
 // Real-hardware research (2026-09-12, ADR-HEARTH-051): sourced directly from Roku's own ECP docs
@@ -197,9 +206,11 @@ export class RokuEcpClient {
       throw new Error(`Roku at ${this.config.ipAddress} returned HTTP ${response.status} for device-info`);
     }
     const xml = await response.text();
+    const userDeviceName = extractXmlTag(xml, "user-device-name");
     return {
       powerMode: extractXmlTag(xml, "power-mode"),
       modelName: extractXmlTag(xml, "model-name"),
+      name: (userDeviceName && userDeviceName.trim()) || extractXmlTag(xml, "friendly-device-name"),
     };
   }
 }

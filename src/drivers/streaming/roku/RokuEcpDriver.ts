@@ -143,7 +143,10 @@ export class RokuEcpDriver implements DeviceDriver {
       if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected while this was in flight
       this.setState(device.id, {
         connection: "connected",
-        values: { power: info.powerMode === "PowerOn" ? "on" : "off", model: info.modelName },
+        // deviceName (ADR-HEARTH-085): the Roku's own real name, already fetched above for
+        // power/model — surfaced here purely as a *suggestion* for the add/discovery flow to
+        // offer, never used to silently overwrite an already-saved Device.name.
+        values: { power: info.powerMode === "PowerOn" ? "on" : "off", model: info.modelName, deviceName: info.name },
         lastUpdated: Date.now(),
       });
       // Real playback state as of right now, the moment the remote screen connects — not a

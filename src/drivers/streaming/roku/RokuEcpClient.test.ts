@@ -48,7 +48,40 @@ describe("RokuEcpClient", () => {
 
     const info = await client.getDeviceInfo();
 
-    expect(info).toEqual({ powerMode: "PowerOn", modelName: "Roku Ultra" });
+    expect(info).toEqual({ powerMode: "PowerOn", modelName: "Roku Ultra", name: undefined });
+  });
+
+  // Real-hardware research (2026-09-18, ADR-HEARTH-085): field names verified directly against
+  // ctalkington/python-rokuecp's Info.from_dict (models.py) — user-device-name is the actual
+  // "Name your Roku" setting a person sets in Roku's own settings menu.
+  test("getDeviceInfo prefers the real user-set name (user-device-name) when one exists", async () => {
+    const xml = `<device-info><power-mode>PowerOn</power-mode><model-name>Roku Ultra</model-name><user-device-name>Living Room Roku</user-device-name><friendly-device-name>Roku Ultra</friendly-device-name></device-info>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const info = await client.getDeviceInfo();
+
+    expect(info.name).toBe("Living Room Roku");
+  });
+
+  test("getDeviceInfo falls back to friendly-device-name when user-device-name is empty (never set)", async () => {
+    const xml = `<device-info><power-mode>PowerOn</power-mode><model-name>Roku Ultra</model-name><user-device-name></user-device-name><friendly-device-name>Roku Ultra</friendly-device-name></device-info>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const info = await client.getDeviceInfo();
+
+    expect(info.name).toBe("Roku Ultra");
+  });
+
+  test("getDeviceInfo's name is undefined when neither field is present", async () => {
+    const xml = `<device-info><power-mode>PowerOn</power-mode><model-name>Roku Ultra</model-name></device-info>`;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(textResponse(xml));
+    const client = new RokuEcpClient({ ipAddress: "192.168.1.80" });
+
+    const info = await client.getDeviceInfo();
+
+    expect(info.name).toBeUndefined();
   });
 
   test("getDeviceInfo throws on a non-OK response", async () => {

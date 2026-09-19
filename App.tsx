@@ -9,6 +9,9 @@ import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
 import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
+import { findMacByIp } from "./src/discovery/familyCommandCenterDeviceLookup";
+import { applyDownloadedUpdateAsync, checkAndDownloadUpdateAsync } from "./src/runtime/appUpdates";
+import { UpdateBanner } from "./src/ui/UpdateBanner";
 import { Device } from "./src/core/types/Device";
 import { Scene } from "./src/core/types/Scene";
 import { logger } from "./src/core/logging/logger";
@@ -29,6 +32,7 @@ import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterS
 import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
 import { CommandCenterRemoteScreen } from "./src/ui/CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./src/ui/EditDeviceAddressScreen";
+import { RenameDeviceScreen } from "./src/ui/RenameDeviceScreen";
 import { CreateSceneScreen } from "./src/ui/CreateSceneScreen";
 import { theme } from "./src/ui/theme";
 
@@ -41,6 +45,7 @@ type Screen =
   | { name: "fcc-settings" }
   | { name: "fcc-remote" }
   | { name: "edit-address"; device: Device }
+  | { name: "rename-device"; device: Device }
   | { name: "create-scene"; editingScene?: Scene };
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
@@ -77,6 +82,11 @@ export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "list" });
+  // ADR-HEARTH-084/086: "checking"/"error" only ever come from a manual check (DeviceListScreen's
+  // header button) — the automatic launch/foreground check below stays silent unless it actually
+  // finds something, so opening the app doesn't flash a banner nearly every time for nothing.
+  const [updateBanner, setUpdateBanner] = useState<{ status: "checking" | "downloaded" | "error" | "up-to-date" } | null>(null);
+  const updateBannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
   const lastNetworkState = useRef<Network.NetworkState | null>(null);
   // Real-hardware finding (2026-09-10): a device's driver was never wired to the shared
@@ -137,6 +147,7 @@ export default function App() {
       appState.current = nextState;
       if (cameFromBackground) {
         reconnectAllDevices(runtime, runtime.deviceRegistry.list());
+        runUpdateCheck(false);
       }
     });
     return () => subscription.remove();
@@ -191,6 +202,7 @@ export default function App() {
       if (cancelled) return;
       setDevices(runtime.deviceRegistry.list());
       setReady(true);
+      runUpdateCheck(false);
 
       // Reconnecting a real device (Samsung/LG especially) can mean waiting up to 30s for an
       // on-screen pairing prompt the user may not be next to right now — never block app
@@ -205,26 +217,80 @@ export default function App() {
     };
   }, [runtime]);
 
+  // ADR-HEARTH-084/086: `manual` controls whether "checking"/"nothing found"/"error" are shown at
+  // all — the automatic launch/foreground call passes false and only ever surfaces a "downloaded"
+  // banner, so a normal app open stays silent; DeviceListScreen's header button passes true so
+  // tapping it always gives visible feedback either way, matching Sean's "a true update button"
+  // ask for the test/dev side of this.
+  async function runUpdateCheck(manual: boolean): Promise<void> {
+    if (updateBannerTimer.current) clearTimeout(updateBannerTimer.current);
+    if (manual) setUpdateBanner({ status: "checking" });
+    const outcome = await checkAndDownloadUpdateAsync();
+    if (outcome === "downloaded") {
+      setUpdateBanner({ status: "downloaded" });
+    } else if (manual && outcome === "error") {
+      setUpdateBanner({ status: "error" });
+    } else if (manual && outcome === "no-update") {
+      setUpdateBanner({ status: "up-to-date" });
+      updateBannerTimer.current = setTimeout(() => setUpdateBanner(null), 2500);
+    } else if (manual) {
+      setUpdateBanner(null); // "not-supported" (Expo Go / a build without expo-updates baked in)
+    }
+  }
+
   async function handleReconnect(device: Device): Promise<void> {
     const driver = runtime.driverRegistry.get(device.driverId);
     await driver?.connect(device);
     saveDeviceQuietly(device); // see reconnectAllDevices' identical comment — may carry a freshly-learned pairing key
   }
 
+  // ADR-HEARTH-085: the same physical device can reach this function twice — re-discovered after
+  // an IP change before its own driver's reconnect logic caught up, or added once via Discover and
+  // again manually as a (possibly different) brand — and nothing before this compared identities
+  // across ids, so it just kept adding a second card. `hwaddr` is the one identity discovery
+  // already treats as stable (FamilyCommandCenterDiscoveryProvider's `fcc-${hwaddr}` id,
+  // LgWebOsDriver's re-discovery); a match there means "this is the same device," so the existing
+  // entry's id/name/room are kept (preserving any rename the user already did) and only its
+  // connection info refreshes, rather than creating a duplicate. A device with no hwaddr (every
+  // manually-added device without a backfilled one yet) can't be checked this way and is added
+  // as-is, same as before — no regression for that case, just no new protection either.
   function handleDeviceAdded(device: Device) {
-    runtime.deviceRegistry.add(device);
-    attachStateBridge(device);
+    const hwaddr = typeof device.config?.hwaddr === "string" ? device.config.hwaddr : undefined;
+    const duplicate = hwaddr
+      ? runtime.deviceRegistry
+          .list()
+          .find((d) => d.id !== device.id && typeof d.config?.hwaddr === "string" && d.config.hwaddr.toLowerCase() === hwaddr.toLowerCase())
+      : undefined;
+    const toStore: Device = duplicate ? { ...device, id: duplicate.id, name: duplicate.name, roomId: duplicate.roomId } : device;
+
+    runtime.deviceRegistry.add(toStore);
+    if (duplicate) {
+      rebindStateBridge(toStore);
+    } else {
+      attachStateBridge(toStore);
+    }
     setDevices(runtime.deviceRegistry.list());
-    setScreen({ name: "remote", device });
-    saveDeviceQuietly(device);
+    setScreen({ name: "remote", device: toStore });
+    saveDeviceQuietly(toStore);
   }
 
   // Real-device feedback (2026-09-10): "the name should be able to be edited" — previously fixed
   // at pairing time. Reuses deviceRegistry.add() (a Map keyed by id) to overwrite the entry rather
   // than adding a rename-specific registry method; also updates the open remote screen's own
   // `screen.device` snapshot so the header reflects the new name immediately, not just the list.
-  function handleRenameDevice(device: Device, newName: string) {
+  //
+  // ADR-HEARTH-085: a device with no `hwaddr` on file re-locates itself after an IP change by
+  // matching its saved `name` against the Family Command Center's inventory
+  // (familyCommandCenterDeviceLookup.ts's findCurrentIpByName) — renaming such a device would
+  // silently break that fallback forever, with nothing telling the user why reconnect stopped
+  // working later. Backfilling `hwaddr` here (same lookup EditDeviceAddressScreen already uses)
+  // neutralizes it going forward, the same "fix it by hand once, self-heal after" pattern.
+  async function handleRenameDevice(device: Device, newName: string): Promise<void> {
     const updated: Device = { ...device, name: newName };
+    if (typeof updated.config?.hwaddr !== "string" && typeof updated.config?.ipAddress === "string") {
+      const hwaddr = await findMacByIp(updated.config.ipAddress);
+      if (hwaddr && updated.config) updated.config.hwaddr = hwaddr;
+    }
     runtime.deviceRegistry.add(updated);
     rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
@@ -383,6 +449,7 @@ export default function App() {
       {screen.name === "discover" && (
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}
+          stateStore={runtime.stateStore}
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleDeviceAdded}
           onOpenSettings={() => setScreen({ name: "fcc-scan" })}
@@ -417,6 +484,16 @@ export default function App() {
           onSaved={handleAddressUpdated}
         />
       )}
+      {screen.name === "rename-device" && (
+        <RenameDeviceScreen
+          device={screen.device}
+          onCancel={() => setScreen({ name: "list" })}
+          onSaved={(newName) => {
+            handleRenameDevice(screen.device, newName);
+            setScreen({ name: "list" });
+          }}
+        />
+      )}
       {screen.name === "list" && (
         <DeviceListScreen
           devices={devices}
@@ -426,8 +503,13 @@ export default function App() {
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
+          onCheckForUpdates={() => runUpdateCheck(true)}
+          updateBanner={updateBanner}
+          onApplyUpdate={() => applyDownloadedUpdateAsync()}
+          onDismissUpdateBanner={() => setUpdateBanner(null)}
           onRemove={handleRemoveDevice}
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
+          onRename={(device) => setScreen({ name: "rename-device", device })}
           scenes={scenes}
           onRunScene={handleRunScene}
           onCreateScene={() => setScreen({ name: "create-scene" })}
