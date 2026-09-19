@@ -31,6 +31,17 @@ module.exports = {
         NSLocalNetworkUsageDescription:
           "Hearth connects directly to TVs, outlets, and other devices on your home network to control them.",
       },
+      // SSDP discovery (ADR-HEARTH-095): raw UDP multicast on iOS is gated behind this specific
+      // entitlement, separate from NSLocalNetworkUsageDescription above and separate from this
+      // config existing at all — Apple must also approve a manual request
+      // (developer.apple.com/contact/request/networking-multicast) before it actually functions on
+      // a real device, something only Sean's own Apple Developer account can do. Declared here so
+      // the app is ready the moment that's approved; until then, SSDP discovery is expected to fail
+      // silently on iOS (the same graceful "nothing found" treatment as FCC not being configured)
+      // while still working on Android, which has no equivalent platform-level gate.
+      entitlements: {
+        "com.apple.developer.networking.multicast": true,
+      },
     },
     android: {
       package: BUNDLE_IDENTIFIER,
@@ -41,7 +52,11 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
       predictiveBackGestureEnabled: false,
-      permissions: ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+      // CHANGE_WIFI_MULTICAST_STATE (ADR-HEARTH-095): without this, Android's WiFi chip silently
+      // filters out multicast frames as a battery-saving default — SSDP responses would never
+      // reach the app even with a working UDP socket. react-native-udp's MulticastSocket needs
+      // this permission to actually acquire the lock that lifts that filtering.
+      permissions: ["android.permission.CAMERA", "android.permission.RECORD_AUDIO", "android.permission.CHANGE_WIFI_MULTICAST_STATE"],
     },
     web: {
       favicon: "./assets/favicon.png",

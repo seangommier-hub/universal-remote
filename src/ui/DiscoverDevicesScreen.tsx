@@ -1,12 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
+import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
+import { scanAllProviders } from "../discovery/scanAllProviders";
+import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { AddableBrand } from "./DeviceListScreen";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -56,9 +59,14 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
   // pushing this screen's own header (title + Cancel) up underneath it. Now derived from the
   // real device inset via react-native-safe-area-context instead of a fixed number.
   const insets = useSafeAreaInsets();
-  const [status, setStatus] = useState<"scanning" | "done" | "error">("scanning");
-  const [errorMessage, setErrorMessage] = useState("");
+  // ADR-HEARTH-095: scanAllProviders (SSDP + Family Command Center, merged) never throws — each
+  // source already degrades to "found nothing" on its own (FCC unconfigured, SSDP's multicast
+  // entitlement not yet granted on iOS), so this screen no longer has a genuine "error" state to
+  // reach from a normal scan. `fccConfigured` is checked separately, only to decide whether the
+  // empty-results hint below suggests connecting Family Command Center or not — not a blocker.
+  const [status, setStatus] = useState<"scanning" | "done">("scanning");
   const [found, setFound] = useState<DiscoveredDevice[]>([]);
+  const [fccConfigured, setFccConfigured] = useState(true); // optimistic default — avoids a flash of the hint before the real check resolves
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<{ id: string; message: string } | null>(null);
   // Real bug found live (2026-09-12): Android's native Alert.alert silently drops any button past
@@ -68,18 +76,13 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
 
   const runScan = useCallback(async () => {
     setStatus("scanning");
-    setErrorMessage("");
     setFound([]);
-    const provider = new FamilyCommandCenterDiscoveryProvider();
-    const results: DiscoveredDevice[] = [];
-    try {
-      await provider.scan((device) => results.push(device));
-      setFound(results);
-      setStatus("done");
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err));
-      setStatus("error");
-    }
+    const [results] = await Promise.all([
+      scanAllProviders([new SsdpDiscoveryProvider(), new FamilyCommandCenterDiscoveryProvider()]),
+      loadFamilyCommandCenterConfig().then((config) => setFccConfigured(config !== null)),
+    ]);
+    setFound(results);
+    setStatus("done");
   }, []);
 
   useEffect(() => {
@@ -140,42 +143,16 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
     onAddManually(brand, ipAddress);
   }
 
-  if (status === "error") {
-    const notConfigured = errorMessage.includes("isn't connected yet");
-    return (
-      <ScrollView style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]} contentContainerStyle={styles.centered}>
-        <Ionicons name="wifi-outline" size={40} color={theme.textTertiary} />
-        <Text style={styles.errorTitle}>Couldn't scan your network</Text>
-        <Text style={styles.errorBody}>{errorMessage}</Text>
-        {/* Real gap found in review (2026-09-19, ADR-HEARTH-089): this used to leave Family
-            Command Center as the only way forward from here, even though most brands (everything
-            except SmartThings, which genuinely needs it) work fine added manually with just an IP
-            address — Discover is one option among several, not a precondition. */}
-        {notConfigured && (
-          <Text style={styles.errorBody}>
-            Family Command Center is only needed for automatic discovery and SmartThings — every other brand can be added
-            manually from the home screen right now, no setup required.
-          </Text>
-        )}
-        <View style={styles.row}>
-          <CapabilityButton label="Back" variant="ghost" onPress={onCancel} />
-          {notConfigured ? (
-            <CapabilityButton label="Connect Family Command Center" variant="accent" onPress={onOpenSettings} />
-          ) : (
-            <CapabilityButton label="Try Again" variant="accent" onPress={runScan} />
-          )}
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
     <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Discover Devices</Text>
         <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} />
       </View>
-      <Text style={styles.subtitle}>Found on your home network via Family Command Center</Text>
+      {/* ADR-HEARTH-095: scans directly (SSDP, no Pi needed) AND through Family Command Center
+          when connected — Sean: "the pi5 and command center are a symbiotic supplement to
+          Hearth," not something discovery should require. */}
+      <Text style={styles.subtitle}>Found directly on your network, and via Family Command Center if connected</Text>
 
       {status === "scanning" ? (
         <View style={styles.centered}>
@@ -185,7 +162,20 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
       ) : found.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="search-outline" size={36} color={theme.textTertiary} />
-          <Text style={styles.errorBody}>No devices reported by your network right now.</Text>
+          <Text style={styles.errorBody}>No devices found on your network right now.</Text>
+          {/* Non-blocking — this used to be the only path forward (a hard error state) even
+              though most brands work fine added manually with just an IP, and now SSDP can find
+              plenty without FCC at all. Just a suggestion for broader coverage. */}
+          {!fccConfigured && (
+            <>
+              <Text style={styles.errorBody}>
+                Connecting Family Command Center can widen coverage (other network segments, household device labels) —
+                or add a device manually from the home screen right now, no setup required.
+              </Text>
+              <CapabilityButton label="Connect Family Command Center" variant="accent" onPress={onOpenSettings} />
+            </>
+          )}
+          <CapabilityButton label="Try Again" variant="ghost" onPress={runScan} />
         </View>
       ) : (
         <FlatList
@@ -266,9 +256,7 @@ const styles = StyleSheet.create({
   subtitle: { color: theme.textSecondary, fontSize: theme.type.label, marginBottom: theme.spacing.lg },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md, paddingVertical: theme.spacing.xxl },
   scanningText: { color: theme.textSecondary, fontSize: theme.type.body },
-  errorTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
   errorBody: { color: theme.textSecondary, fontSize: theme.type.label, textAlign: "center", paddingHorizontal: theme.spacing.xl },
-  row: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md },
   list: { gap: theme.spacing.md, paddingBottom: theme.spacing.xl },
   card: {
     gap: theme.spacing.sm,

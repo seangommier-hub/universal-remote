@@ -9,6 +9,8 @@ import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
+import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
+import { scanAllProviders } from "../discovery/scanAllProviders";
 import { CapabilityButton } from "./CapabilityButton";
 import { NowPlayingWidget } from "./NowPlayingWidget";
 import { theme } from "./theme";
@@ -154,12 +156,14 @@ export function DeviceListScreen({
   const [showAddPicker, setShowAddPicker] = useState(false);
   const nowPlaying = useNowPlaying(devices, stateStore);
 
-  // "Suggested from your network" (ADR-HEARTH-092, expanded by ADR-HEARTH-094): runs the same
-  // Family Command Center scan DiscoverDevicesScreen's own full flow uses, but inline and silent —
-  // a household that never configured FCC (a deliberate opt-in choice, ADR-HEARTH-089) just sees
-  // no section at all, never an error, since this is a bonus convenience, not a required step.
-  // Shown here: a recognized brand (instant one-tap connect), OR an unrecognized device the
-  // household has already labeled on the FCC dashboard as a plausible smart-home category
+  // "Suggested from your network" (ADR-HEARTH-092, expanded by ADR-HEARTH-094/095): runs BOTH
+  // SSDP (native, zero-Pi-dependency — ADR-HEARTH-095, Sean: "the pi5 and command center are a
+  // symbiotic supplement to Hearth," not something discovery should be gated behind) and Family
+  // Command Center concurrently via scanAllProviders, merged. A household with neither configured
+  // (no FCC set up, SSDP's multicast entitlement not yet granted on iOS) just sees no section at
+  // all, never an error, since this is a bonus convenience, not a required step. Shown here: a
+  // recognized brand (instant one-tap connect), OR an unrecognized device the household has
+  // already labeled on the FCC dashboard as a plausible smart-home category
   // (HOUSEHOLD_PLAUSIBLE_CATEGORIES) — for those, "Add" opens the same brand-picker
   // ADR-HEARTH-062 already established, since there's no driver to instant-connect with. Anything
   // else (no recognized brand AND no plausible label) stays excluded — too uncertain to suggest
@@ -174,24 +178,17 @@ export function DeviceListScreen({
 
   useEffect(() => {
     let cancelled = false;
-    const provider = new FamilyCommandCenterDiscoveryProvider();
-    const found: DiscoveredDevice[] = [];
-    provider
-      .scan((device) => found.push(device))
-      .then(() => {
-        if (cancelled) return;
-        setSuggested(
-          found.filter((d) => {
-            const alreadyPaired = knownHwaddrs.includes(String(d.metadata?.hwaddr ?? "").toLowerCase());
-            if (alreadyPaired) return false;
-            const householdCategory = String(d.metadata?.householdCategory ?? "");
-            return d.driverId.length > 0 || HOUSEHOLD_PLAUSIBLE_CATEGORIES.includes(householdCategory);
-          })
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setSuggested([]); // not configured, unreachable, timed out — silently nothing to suggest
-      });
+    scanAllProviders([new SsdpDiscoveryProvider(), new FamilyCommandCenterDiscoveryProvider()]).then((found) => {
+      if (cancelled) return;
+      setSuggested(
+        found.filter((d) => {
+          const alreadyPaired = knownHwaddrs.includes(String(d.metadata?.hwaddr ?? "").toLowerCase());
+          if (alreadyPaired) return false;
+          const householdCategory = String(d.metadata?.householdCategory ?? "");
+          return d.driverId.length > 0 || HOUSEHOLD_PLAUSIBLE_CATEGORIES.includes(householdCategory);
+        })
+      );
+    });
     return () => {
       cancelled = true;
     };
