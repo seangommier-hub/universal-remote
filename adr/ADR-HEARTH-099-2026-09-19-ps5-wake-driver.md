@@ -58,3 +58,58 @@ an *interactive* pairing screen (listens live, shows "open the PlayStation App a
   own tests pass). `npx tsc --noEmit` clean. No new native dependency, so fully OTA-shippable.
 - **Not yet verified against a real console** — pending a live test with Sean's actual PS5 and the
   official PlayStation App.
+
+## Addendum (2026-09-19, same day): the phone-direct assumption was wrong — real crash, moved server-side
+
+Live on Sean's iPhone: `Ps5Client.captureCredentials` crashed immediately with "cannot read
+createSocket of null". Root cause, confirmed against the library's own known issues and Expo's SDK
+57 changelog: **`react-native-udp` doesn't support React Native's "New Architecture", which Expo
+SDK 57 makes mandatory with no opt-out.** The native module fails to register at all under it —
+`dgram` really is `null`.
+
+This retroactively explains something misdiagnosed earlier the same day: SSDP discovery
+(ADR-HEARTH-095) was attributed to "works, just needs Apple's multicast entitlement." In fact it's
+been silently failing this whole time for the same underlying reason — `SsdpDiscoveryProvider.ts`
+also calls `dgram.createSocket()` unguarded, and `scanAllProviders`'s `Promise.allSettled` quietly
+absorbed the rejection, making it look like "found nothing" rather than "crashed." SSDP is left
+as-is for now (a real, separate, lower-urgency fix — see Consequences below), since Family Command
+Center's own discovery path never depended on this library and is unaffected.
+
+**Fix applied**: moved the entire DDP mechanism (both the one-time credential capture and the
+ongoing wake) into Family Command Center — `src/lib/network/ps5-client.ts` there, three new
+routes under `/api/integrations/hearth/ps5/` (`pair/start`, `pair/status`, `poweron`), same
+pattern XboxDriver.ts's power-on already used for a different reason (no raw-socket capability at
+all, vs. this library's New-Architecture incompatibility). Full details, including the
+`CAP_NET_BIND_SERVICE` systemd capability grant port 987 required (confirmed live: plain non-root
+bind attempt returned `EACCES`), are in that project's own `adr/0174-hearth-ps5-pairing-wake-relay.md`.
+
+Hearth's own `Ps5Client.ts` was rewritten to call these routes via `fetch` (mirroring
+XboxDriver.ts's `loadFamilyCommandCenterConfig` + bearer-token pattern) instead of touching
+`react-native-udp` at all. Pairing is now poll-based (`captureCredentials` starts a session, then
+polls `pair/status` every 2s) rather than one long-held phone-side request — deliberately, since a
+single in-flight fetch from a backgrounded React Native app is not reliably guaranteed to survive
+iOS suspending it for however long the household member takes to switch to the PlayStation App and
+tap the device; polling a few seconds apart works regardless of Hearth's own foreground state,
+since the actual listening now happens on Family Command Center, independent of the phone.
+`Ps5Driver.ts` and `AddPs5DeviceScreen.tsx` needed no changes — both already talked to `Ps5Client`
+through the same interface.
+
+**Consequences of this addendum:**
+- PS5 now requires Family Command Center to be paired, same as LG (for a different underlying
+  reason — LG needs it for TLS trust, PS5 needs it because the UDP library it would otherwise use
+  doesn't work under this Expo SDK at all). Documented directly in this driver's own scope, not
+  hidden.
+- `react-native-udp` remains a project dependency (SSDP still references it) but is now unused by
+  the PS5 driver entirely — a net simplification for this driver, and one fewer thing depending on
+  a library now confirmed broken under this app's own Expo SDK.
+- SSDP discovery being silently non-functional is a real, separate, flagged gap — worth fixing
+  (likely by finding or building a genuinely New-Architecture-compatible UDP library, or by
+  routing SSDP's own scan through Family Command Center too) but deliberately not bundled into
+  this same change, since it degrades safely today rather than crashing.
+- Verified end-to-end against the real Family Command Center service (not yet against a real PS5):
+  `POST pair/start` returned a real session id, `GET pair/status` confirmed `"pending"` (the
+  server socket is genuinely bound and listening on port 987). `npx tsc --noEmit` clean, full
+  `npx jest --silent` → 425/425 passing. Still fully OTA-shippable — this removes a native
+  dependency from this driver rather than adding one.
+- **Still not yet verified against a real console** — the server-side capture session works; the
+  actual "tap the device in the PlayStation App" step is Sean's own next test.
