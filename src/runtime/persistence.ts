@@ -4,8 +4,13 @@ import { Device } from "../core/types/Device";
 
 const DEVICES_STORAGE_KEY = "hearth.devices";
 // Config fields whose values are credentials, not just connection metadata — kept out of
-// AsyncStorage (plaintext) and stored per-device in SecureStore instead.
-const SENSITIVE_CONFIG_KEYS = ["psk"];
+// AsyncStorage (plaintext) and stored per-device in SecureStore instead. Real gap found in a
+// security audit (2026-09-19, ADR-HEARTH-091): this list was never updated when LG's `clientKey`
+// (LgWebOsDriver.ts) and Samsung's `token` (SamsungTizenDriver.ts) were added, even though
+// ADR-HEARTH-008 already documented the standing rule that a new driver's real credential field
+// must be added here. Both are real pairing secrets, the same class as Sony's `psk` already
+// covered — landed in plain AsyncStorage until now.
+const SENSITIVE_CONFIG_KEYS = ["psk", "clientKey", "token"];
 
 // Real-hardware finding (2026-09-09): SecureStore keys may only contain alphanumerics, ".",
 // "-", and "_" -- a device id built from a MAC address (FamilyCommandCenterDiscoveryProvider's

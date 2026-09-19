@@ -41,11 +41,33 @@ describe("persistence", () => {
     expect(stored[0].config.psk).toBeUndefined();
   });
 
+  // Security audit finding (2026-09-19, ADR-HEARTH-091): clientKey (LG) and token (Samsung) are
+  // real pairing credentials that landed in plain AsyncStorage until now, the exact class of gap
+  // ADR-HEARTH-008's own standing rule was supposed to prevent — same treatment as psk above.
+  test("saveDevice stores LG's clientKey and Samsung's token in SecureStore too, not just psk", async () => {
+    const lgDevice: Device = { ...sonyDevice, id: "lg-1", config: { ipAddress: "192.168.1.60", clientKey: "lg-secret-key" } };
+    await saveDevice(lgDevice);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.device.lg-1.clientKey", "lg-secret-key");
+    const [, lgStoredJson] = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
+    expect(JSON.parse(lgStoredJson)[0].config.clientKey).toBeUndefined();
+
+    jest.clearAllMocks();
+
+    const samsungDevice: Device = { ...sonyDevice, id: "samsung-1", config: { ipAddress: "192.168.1.61", token: "samsung-secret-token" } };
+    await saveDevice(samsungDevice);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.device.samsung-1.token", "samsung-secret-token");
+    const [, samsungStoredJson] = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
+    expect(JSON.parse(samsungStoredJson)[0].config.token).toBeUndefined();
+  });
+
   test("loadDevices rehydrates the psk from SecureStore back onto the device config", async () => {
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
       JSON.stringify([{ ...sonyDevice, config: { ipAddress: "192.168.1.50" } }])
     );
-    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("super-secret-psk");
+    // Only psk applies to this device — clientKey/token must come back null, not leak across
+    // fields just because SecureStore is asked about them too (loadDevices checks every key in
+    // SENSITIVE_CONFIG_KEYS for every device, regardless of which one that device actually has).
+    (SecureStore.getItemAsync as jest.Mock).mockImplementation((key: string) => Promise.resolve(key.endsWith(".psk") ? "super-secret-psk" : null));
 
     const devices = await loadDevices();
 
