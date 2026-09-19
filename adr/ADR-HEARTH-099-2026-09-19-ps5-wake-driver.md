@@ -113,3 +113,23 @@ through the same interface.
   dependency from this driver rather than adding one.
 - **Still not yet verified against a real console** — the server-side capture session works; the
   actual "tap the device in the PlayStation App" step is Sean's own next test.
+
+## Addendum (2026-09-19, live testing): a real server-side bug blocked every retry, and a real app-identity correction
+
+Two findings from Sean's actual live test attempt:
+
+1. **The right app is "Remote Play," not the general "PlayStation App."** Sony ships these as two
+   separate apps — the general one is account/notifications/store management, while Remote Play is
+   the one built for discovering and streaming to a specific console, which is what the credential
+   capture this driver depends on actually needs. Corrected directly by Sean, who has real
+   first-hand familiarity with the ecosystem this session doesn't.
+2. **A real bug blocked pairing from ever working past the first attempt**: `POST /pair/start`
+   returned a 502 on any retry. Root-caused and fixed on Family Command Center's side — see that
+   project's own `adr/0174-hearth-ps5-pairing-wake-relay.md` addendum for the full diagnosis
+   (closing an already-closed `dgram` socket during session cleanup threw uncaught). This fully
+   explains why the first live attempt found nothing in the PlayStation App: pairing had already
+   silently broken itself before Remote Play was ever tried.
+
+No Hearth-side code changed for this fix — it lives entirely in Family Command Center's
+`ps5-client.ts`. Still pending: an actual successful capture against Sean's real PS5 via Remote
+Play, now that both the app-identity confusion and the server-side bug are resolved.
