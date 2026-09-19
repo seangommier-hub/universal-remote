@@ -10,13 +10,13 @@
     "backgroundColor": "#12141C",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hearth.app",
+      "bundleIdentifier": "com.hearthremote.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.hearth.app",
+      "package": "com.hearthremote.app",
       "adaptiveIcon": {
         "backgroundColor": "#12141C",
         "foregroundImage": "./assets/android-icon-foreground.png",
