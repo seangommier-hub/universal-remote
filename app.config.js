@@ -19,8 +19,17 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: BUNDLE_IDENTIFIER,
+      // Real gap found live (2026-09-19, ADR-HEARTH-090): completely missing from every build
+      // made so far — confirmed by inspecting the compiled Info.plist directly. iOS gates ALL
+      // app-initiated connections to local/private-network addresses behind this permission since
+      // iOS 14; Expo Go already has it granted for itself, so every driver's direct connection to
+      // a device's local IP "just worked" there and nowhere else. Without this string, iOS never
+      // even shows the permission prompt, and local network requests are silently blocked —
+      // almost certainly why discovery/connection behaves differently in a standalone build.
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSLocalNetworkUsageDescription:
+          "Hearth connects directly to TVs, outlets, and other devices on your home network to control them.",
       },
     },
     android: {

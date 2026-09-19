@@ -246,17 +246,12 @@ export function DeviceListScreen({
         />
       )}
 
-      <Pressable
-        style={({ pressed }) => [styles.discoverTile, pressed && styles.cardPressed]}
-        onPress={onDiscover}
-        accessibilityRole="button"
-        accessibilityLabel="Discover devices on your network"
-      >
-        <Ionicons name="search-outline" size={20} color={theme.accentEnd} />
-        <Text style={styles.discoverLabel}>Discover devices on your network</Text>
-      </Pressable>
-
-      <Text style={styles.sectionLabel}>Or add a device manually</Text>
+      {/* Real gap found in review (2026-09-19, ADR-HEARTH-089): manual add works standalone for
+          every brand except SmartThings, but used to render BELOW the full-width Discover tile —
+          visually presenting Family Command Center as the default/first path rather than one
+          option among several. Manual add now comes first; Discover is offered as a genuinely
+          optional accelerant, not a precondition. */}
+      <Text style={styles.sectionLabel}>Add a device manually</Text>
       <View style={styles.addGrid}>
         {ADD_DEVICE_OPTIONS.map((option) => (
           <Pressable
@@ -273,6 +268,16 @@ export function DeviceListScreen({
           </Pressable>
         ))}
       </View>
+
+      <Pressable
+        style={({ pressed }) => [styles.discoverTile, pressed && styles.cardPressed]}
+        onPress={onDiscover}
+        accessibilityRole="button"
+        accessibilityLabel="Discover devices on your network"
+      >
+        <Ionicons name="search-outline" size={20} color={theme.accentEnd} />
+        <Text style={styles.discoverLabel}>Or discover devices automatically (optional)</Text>
+      </Pressable>
 
       <Modal visible={actionsTarget !== null} transparent animationType="fade" onRequestClose={() => setActionsTarget(null)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setActionsTarget(null)}>

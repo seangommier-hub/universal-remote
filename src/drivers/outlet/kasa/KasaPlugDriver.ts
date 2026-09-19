@@ -51,6 +51,11 @@ export class KasaPlugDriver implements DeviceDriver {
       // values entirely rather than defaulting to a false claim.
       const values: DeviceState["values"] = info.model ? { model: info.model } : {};
       if (info.relayState !== undefined) values.power = info.relayState ? "on" : "off";
+      // deviceName (ADR-HEARTH-085/088): `alias` is the outlet's own real name, set by the user in
+      // the Kasa app — already fetched by getSysInfo() above for `model`, no extra call needed.
+      // Surfaced purely as a suggestion for the add/discovery flow; never overwrites an
+      // already-saved Device.name.
+      if (info.alias) values.deviceName = info.alias;
       this.setState(device.id, { connection: "connected", values, lastUpdated: Date.now() });
     } catch (err) {
       const current = this.states.get(device.id);

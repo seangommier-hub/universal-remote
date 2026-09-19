@@ -37,6 +37,25 @@ describe("KasaPlugDriver", () => {
     expect(await driver.getState(device)).toMatchObject({ connection: "connected", values: { power: "on", model: "HS103(US)" } });
   });
 
+  // ADR-HEARTH-088: `alias` is the plug's own real, user-set name — already fetched by
+  // getSysInfo() for `model` above, surfaced into state so the add/discovery flow can suggest it
+  // instead of a generic default, the same pattern established for Roku (ADR-HEARTH-085).
+  test("connect() surfaces the plug's real alias into state.values.deviceName", async () => {
+    mockGetSysInfo.mockResolvedValue({ relayState: true, alias: "Christmas Lights", model: "HS103(US)" });
+
+    await driver.connect(device);
+
+    expect((await driver.getState(device)).values.deviceName).toBe("Christmas Lights");
+  });
+
+  test("connect() leaves deviceName unset when the plug reports no alias", async () => {
+    mockGetSysInfo.mockResolvedValue({ relayState: true, model: "HS103(US)" });
+
+    await driver.connect(device);
+
+    expect((await driver.getState(device)).values.deviceName).toBeUndefined();
+  });
+
   test("connect() reports power off correctly, not just a truthy check", async () => {
     mockGetSysInfo.mockResolvedValue({ relayState: false });
 

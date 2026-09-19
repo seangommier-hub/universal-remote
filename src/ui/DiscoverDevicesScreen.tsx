@@ -147,6 +147,16 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
         <Ionicons name="wifi-outline" size={40} color={theme.textTertiary} />
         <Text style={styles.errorTitle}>Couldn't scan your network</Text>
         <Text style={styles.errorBody}>{errorMessage}</Text>
+        {/* Real gap found in review (2026-09-19, ADR-HEARTH-089): this used to leave Family
+            Command Center as the only way forward from here, even though most brands (everything
+            except SmartThings, which genuinely needs it) work fine added manually with just an IP
+            address — Discover is one option among several, not a precondition. */}
+        {notConfigured && (
+          <Text style={styles.errorBody}>
+            Family Command Center is only needed for automatic discovery and SmartThings — every other brand can be added
+            manually from the home screen right now, no setup required.
+          </Text>
+        )}
         <View style={styles.row}>
           <CapabilityButton label="Back" variant="ghost" onPress={onCancel} />
           {notConfigured ? (
