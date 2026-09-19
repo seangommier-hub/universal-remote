@@ -110,3 +110,42 @@ native module requiring a real rebuild, and the iOS entitlement isn't granted ye
   either of those paths.
 - Yamaha's SSDP match is real but weaker than the other four brands (generic ST + string-matching)
   — worth revisiting if it produces false positives/negatives on real hardware.
+
+## Addendum (same day, later): the accepted risk above happened — react-native-udp doesn't support Expo SDK 57's mandatory New Architecture
+
+Live on Sean's iPhone (surfaced first through the PS5 driver, which used the same library — see
+ADR-HEARTH-099's own addendum for the full diagnosis): `dgram.createSocket` genuinely resolves to
+`null` at runtime. Root cause confirmed against the library's own known issues and Expo's SDK 57
+changelog: React Native's New Architecture is mandatory as of SDK 55+, with no opt-out, and
+`react-native-udp` (dormant since January 2023, already flagged above) never added support for it.
+
+This retroactively corrects something misdiagnosed earlier in this same session: "SSDP has found
+nothing all day" was attributed entirely to Apple's multicast entitlement not being granted yet.
+That's real and still a separate gate for later, but it was never the whole story — the native
+module fails to register at all under this Expo SDK, independent of any entitlement.
+
+**Fix**: `SsdpDiscoveryProvider.scan()` now wraps the entire native attempt (including
+`dgram.createSocket()` itself, which previously ran unguarded) and falls back to Family Command
+Center's own server-side M-SEARCH sweep (`ssdp-scanner.ts` there, that project's own
+`adr/0175-hearth-ssdp-scan-fallback.md`) whenever the native path fails outright — a real Node
+process has no React Native native-module concerns at all. This is a fallback, not a replacement:
+the native attempt always runs first and stays preferred for whenever a genuinely
+New-Architecture-compatible, cross-platform UDP library exists (checked live: the one candidate
+found, `react-native-udp-turbo`, is explicitly Android-only right now, so not a real fix for iOS
+today).
+
+**Consequences of this addendum:**
+- SSDP-based discovery is now functionally restored via the Family Command Center relay — a real,
+  if imperfect, improvement over "silently finds nothing," and consistent with this file's own
+  earlier statement that FCC-based discovery is the natural fallback if this library ever broke.
+- This does mean SSDP-sourced suggestions once again depend on Family Command Center being paired
+  — a partial, honest retreat from "zero Pi dependency" for the specific case where the native
+  library doesn't work, not a reversal of the underlying principle (native is still tried first,
+  always).
+- New tests added to `SsdpDiscoveryProvider.test.ts` (3 more — native-crash-triggers-fallback,
+  native-success-skips-fallback, fallback-itself-degrades-safely-when-FCC-unconfigured). Full
+  suite: 43 suites / 443 tests passing, `tsc --noEmit` clean.
+- **Not yet confirmed with a real positive SSDP match** through either the native or fallback
+  path — the fallback's own server-side scanner found zero devices in its first live test (see
+  Family Command Center's own ADR 0175), most likely because no target device was in an
+  SSDP-responsive power state at that exact moment, not a remaining bug.

@@ -25,11 +25,17 @@
 // multicast group membership (addMembership) is needed, only for the outbound send to
 // 239.255.255.250:1900 and for receiving the point-to-point replies that follow.
 //
-// iOS: raw multicast is gated behind the `com.apple.developer.networking.multicast` entitlement
-// (declared in app.config.js) AND a separate manual Apple approval Sean must request himself —
-// until granted, sends here are expected to fail (caught, never throws) the same as any other
-// "nothing found" case. Android has no equivalent restriction once
-// CHANGE_WIFI_MULTICAST_STATE (already declared) is granted.
+// Real-hardware finding (2026-09-19): the native path below crashes outright on iOS —
+// `react-native-udp` (this library) does not support React Native's New Architecture, which Expo
+// SDK 57 makes mandatory with no opt-out; `dgram.createSocket` genuinely resolves to `null`. This
+// was previously misdiagnosed as "just needs Apple's multicast entitlement" — that's still a real,
+// separate gate for whenever a working library exists, but isn't the reason this has found nothing
+// all session. Rather than let that crash propagate (or silently swallow it and report "nothing
+// found" the same as a real empty scan), `scan()` now falls back to Family Command Center's own
+// server-side M-SEARCH sweep (`ssdp-scanner.ts` there, ADR 0175) when the native attempt fails —
+// a real Node process has no React Native native-module concerns at all. This is a fallback, not a
+// replacement: the native attempt always runs first and is preferred when it works, matching this
+// file's own "Pi is a supplement, never required" principle.
 
 import dgram from "react-native-udp";
 import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/DiscoveryProvider";
@@ -40,6 +46,7 @@ import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
+import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 const SSDP_MULTICAST_ADDRESS = "239.255.255.250";
 const SSDP_PORT = 1900;
@@ -91,6 +98,25 @@ function buildMSearch(st: string): string {
   ].join("\r\n");
 }
 
+/** Resolves an ST (+ its response's own SERVER string, for the one target that needs it) to a real driver — shared between the native scan's own message handler and the Family Command Center fallback below, so the two can never drift apart on what counts as a match. */
+function classify(st: string | undefined, server: string): SearchTarget | undefined {
+  const target = SEARCH_TARGETS.find((t) => t.st === st);
+  if (!target) return undefined;
+  if (target.requireServerMatch && !target.requireServerMatch.test(server)) return undefined;
+  return target;
+}
+
+function toDiscoveredDevice(target: SearchTarget, ipAddress: string): DiscoveredDevice {
+  return {
+    id: `ssdp-${ipAddress}-${target.driverId}`,
+    name: `${target.manufacturer} (${ipAddress})`,
+    category: target.category,
+    manufacturer: target.manufacturer,
+    driverId: target.driverId,
+    metadata: { ipAddress },
+  };
+}
+
 export const SSDP_DISCOVERY_ID = "ssdp";
 
 export class SsdpDiscoveryProvider implements DiscoveryProvider {
@@ -98,10 +124,25 @@ export class SsdpDiscoveryProvider implements DiscoveryProvider {
   displayName = "Your home network (direct, no Family Command Center needed)";
 
   async scan(onFound: (device: DiscoveredDevice) => void, signal?: AbortSignal): Promise<void> {
-    // Never throws outward — a household with no multicast entitlement granted yet, or a
-    // network that blocks multicast entirely, is exactly the same "nothing found" case FCC
-    // being unconfigured already is, not an error state for this to surface.
-    const socket = dgram.createSocket({ type: "udp4" });
+    const nativeScanSucceeded = await this.runNativeScan(onFound, signal);
+    if (!nativeScanSucceeded) {
+      await this.runFccFallbackScan(onFound, signal);
+    }
+  }
+
+  /** Returns false (never throws) the moment the native path can't even get started — a household
+   * with no multicast entitlement granted yet, a network that blocks multicast, or (confirmed
+   * live, 2026-09-19) react-native-udp's own New Architecture incompatibility all fall into "try
+   * the fallback instead," not "give up entirely." */
+  private async runNativeScan(onFound: (device: DiscoveredDevice) => void, signal?: AbortSignal): Promise<boolean> {
+    let socket: ReturnType<typeof dgram.createSocket>;
+    try {
+      socket = dgram.createSocket({ type: "udp4" });
+    } catch {
+      return false;
+    }
+    if (!socket) return false;
+
     const seen = new Set<string>(); // `${ip}|${st}` — a responder can reply more than once to the same request
 
     try {
@@ -109,32 +150,22 @@ export class SsdpDiscoveryProvider implements DiscoveryProvider {
         socket.once("error", reject);
         socket.bind(0, () => resolve());
       });
-    } catch (err) {
+    } catch {
       socket.close();
-      return; // couldn't even open a local UDP socket — treat as "nothing found", not a thrown error
+      return false;
     }
 
     socket.on("message", (msg: Buffer, rinfo: { address: string }) => {
       const response = msg.toString("utf8");
       if (!/^HTTP\/1\.1 200/i.test(response)) return;
-      const st = extractSsdpHeader(response, "ST");
-      const server = extractSsdpHeader(response, "SERVER") ?? "";
-      const target = SEARCH_TARGETS.find((t) => t.st === st);
+      const target = classify(extractSsdpHeader(response, "ST"), extractSsdpHeader(response, "SERVER") ?? "");
       if (!target) return;
-      if (target.requireServerMatch && !target.requireServerMatch.test(server)) return;
 
       const key = `${rinfo.address}|${target.st}`;
       if (seen.has(key)) return;
       seen.add(key);
 
-      onFound({
-        id: `ssdp-${rinfo.address}-${target.driverId}`,
-        name: `${target.manufacturer} (${rinfo.address})`,
-        category: target.category,
-        manufacturer: target.manufacturer,
-        driverId: target.driverId,
-        metadata: { ipAddress: rinfo.address },
-      });
+      onFound(toDiscoveredDevice(target, rinfo.address));
     });
 
     for (const target of SEARCH_TARGETS) {
@@ -153,5 +184,30 @@ export class SsdpDiscoveryProvider implements DiscoveryProvider {
     });
 
     socket.close();
+    return true;
+  }
+
+  /** Family Command Center's own M-SEARCH sweep (ADR 0175 there) — never throws outward, same
+   * "degrade to nothing found" treatment as the native path, since FCC being unconfigured or
+   * briefly unreachable is exactly as unremarkable here as no multicast entitlement being granted. */
+  private async runFccFallbackScan(onFound: (device: DiscoveredDevice) => void, signal?: AbortSignal): Promise<void> {
+    try {
+      const config = await loadFamilyCommandCenterConfig();
+      if (!config) return;
+
+      const response = await fetch(`${config.baseUrl}/api/integrations/hearth/ssdp/scan`, {
+        headers: { Authorization: `Bearer ${config.token}` },
+        signal,
+      });
+      if (!response.ok) return;
+
+      const body = (await response.json()) as { devices: { ipAddress: string; st: string; server: string }[] };
+      for (const device of body.devices) {
+        const target = classify(device.st, device.server);
+        if (target) onFound(toDiscoveredDevice(target, device.ipAddress));
+      }
+    } catch {
+      // Aborted, unreachable, malformed response — all the same "found nothing this way" case.
+    }
   }
 }

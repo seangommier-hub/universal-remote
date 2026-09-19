@@ -4,6 +4,11 @@ import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { flushMicrotasks } from "../testUtils/mockWebSocket";
+import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+
+jest.mock("./familyCommandCenterConfig", () => ({
+  loadFamilyCommandCenterConfig: jest.fn(),
+}));
 
 // react-native-udp needs a real native module that doesn't exist in Jest's Node environment — a
 // minimal EventEmitter-backed fake stands in for the socket, same shape as the real library's
@@ -29,6 +34,8 @@ jest.mock("react-native-udp", () => ({
 beforeEach(() => {
   mockSocket = new MockUdpSocket();
   jest.useFakeTimers();
+  (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+  global.fetch = jest.fn();
 });
 
 afterEach(() => {
@@ -174,5 +181,59 @@ describe("SsdpDiscoveryProvider", () => {
 
     await expect(provider.scan((d) => found.push(d))).resolves.toBeUndefined();
     expect(found).toEqual([]);
+  });
+
+  test("falls back to Family Command Center's own SSDP sweep when the native socket can't even be created (react-native-udp's real New Architecture crash)", async () => {
+    // Real-hardware finding, 2026-09-19: react-native-udp's createSocket returns null under
+    // Expo SDK 57's mandatory New Architecture — calling .createSocket on it throws a TypeError
+    // synchronously, before this file's own bind()/try-catch ever gets a socket to work with.
+    const dgram = jest.requireMock("react-native-udp") as { default: { createSocket: jest.Mock } };
+    dgram.default.createSocket.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read property 'createSocket' of null");
+    });
+    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ devices: [{ ipAddress: "192.168.1.90", st: "urn:schemas-upnp-org:device:ZonePlayer:1", server: "" }] }),
+    });
+
+    const provider = new SsdpDiscoveryProvider();
+    const found: unknown[] = [];
+    await provider.scan((d) => found.push(d));
+
+    expect(found).toEqual([expect.objectContaining({ manufacturer: "Sonos", driverId: SONOS_DRIVER_ID })]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.172:3210/api/integrations/hearth/ssdp/scan",
+      expect.objectContaining({ headers: { Authorization: "Bearer test-token" } })
+    );
+  });
+
+  test("does not call the Family Command Center fallback at all when the native scan already found something", async () => {
+    const provider = new SsdpDiscoveryProvider();
+    const found: unknown[] = [];
+    const scanPromise = provider.scan((d) => found.push(d));
+    await flushMicrotasks();
+
+    mockSocket.emit("message", Buffer.from(ssdpResponse("roku:ecp")), { address: "192.168.1.50" });
+    jest.runAllTimers();
+    await scanPromise;
+
+    expect(found).toHaveLength(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("the fallback itself degrades to nothing found when Family Command Center isn't configured", async () => {
+    const dgram = jest.requireMock("react-native-udp") as { default: { createSocket: jest.Mock } };
+    dgram.default.createSocket.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read property 'createSocket' of null");
+    });
+    // loadFamilyCommandCenterConfig already resolves null by default (see beforeEach).
+
+    const provider = new SsdpDiscoveryProvider();
+    const found: unknown[] = [];
+
+    await expect(provider.scan((d) => found.push(d))).resolves.toBeUndefined();
+    expect(found).toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
