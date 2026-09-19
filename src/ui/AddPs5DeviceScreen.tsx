@@ -75,7 +75,11 @@ export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialI
     abortRef.current?.abort();
   }
 
-  const canSubmit = ipAddress.trim().length > 0 && status === "idle";
+  // Real bug found live (2026-09-19): unlike every other Add screen's `status !== "connecting"`
+  // pattern, this required status to be exactly "idle" — so a failed pairing attempt (timeout,
+  // cancel, anything) left the button permanently disabled with no way to retry, even with a
+  // valid IP still typed in. "error" must re-enable it, matching every sibling screen.
+  const canSubmit = ipAddress.trim().length > 0 && status !== "listening" && status !== "saving";
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -95,7 +99,7 @@ export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialI
       </View>
 
       <Text style={styles.label}>Name</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="PS5" placeholderTextColor={theme.textTertiary} editable={status === "idle"} />
+      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="PS5" placeholderTextColor={theme.textTertiary} editable={status !== "listening" && status !== "saving"} />
 
       <Text style={styles.label}>IP address</Text>
       <TextInput
@@ -106,7 +110,7 @@ export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialI
         placeholderTextColor={theme.textTertiary}
         autoCapitalize="none"
         keyboardType="numbers-and-punctuation"
-        editable={status === "idle"}
+        editable={status !== "listening" && status !== "saving"}
       />
 
       {status === "listening" && (
