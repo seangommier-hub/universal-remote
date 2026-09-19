@@ -52,6 +52,17 @@ module.exports = {
       ],
       "expo-web-browser",
     ],
+    // EAS Update (ADR-HEARTH-084): lets a JS-only change push directly to an already-installed
+    // build with no App Store/TestFlight review and no reinstall. "appVersion" runtime policy
+    // means any build sharing the current `version` above can receive these updates; bumping
+    // `version` (not just the build number) is what signals "this needs a new binary, not an OTA
+    // push" going forward.
+    updates: {
+      url: "https://u.expo.dev/55f64f3e-6b45-423c-8510-7d8ec7673992",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     extra: {
       eas: {
         projectId: "55f64f3e-6b45-423c-8510-7d8ec7673992",
