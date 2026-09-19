@@ -146,6 +146,31 @@ describe("RokuEcpDriver", () => {
     expect(state.values.playbackState).toBeUndefined();
   });
 
+  // ADR-HEARTH-093: the real app name was already being fetched here for isHomeScreen/
+  // isScreensaver corroboration and then discarded — now surfaced for the home screen's
+  // now-playing widget to use as a real title instead of a generic label.
+  test("an ambiguous read with a real app confirmed active surfaces its name as activeAppName", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Netflix"))
+      .mockResolvedValueOnce(appsResponse());
+    await driver.connect(device);
+    const state = await driver.getState(device);
+    expect(state.values.activeAppName).toBe("Netflix");
+  });
+
+  test("does not set activeAppName when confirmed idle (home screen) instead of a real app", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false }))
+      .mockResolvedValueOnce(appsResponse());
+    await driver.connect(device);
+    const state = await driver.getState(device);
+    expect(state.values.activeAppName).toBeUndefined();
+  });
+
   // The actual motivating scenario (Sean, 2026-09-15): Netflix's PIN-protected profile lock makes
   // /query/media-player ambiguous while Netflix itself is still the active app. Before this fix,
   // that flipped a real in-progress "playing" session to a false "stopped" on every poll.

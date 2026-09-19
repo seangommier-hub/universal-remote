@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CommandEngine } from "../core/engine/CommandEngine";
 import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
@@ -9,8 +10,10 @@ import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { CapabilityButton } from "./CapabilityButton";
+import { NowPlayingWidget } from "./NowPlayingWidget";
 import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
+import { useNowPlaying } from "./useNowPlaying";
 
 export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa";
 
@@ -41,6 +44,8 @@ interface DeviceListScreenProps {
   stateStore: StateStore;
   /** Needed to actually connect a "Suggested from your network" tile on tap (ADR-HEARTH-092) — the same driver lookup DiscoverDevicesScreen already uses for its own Connect buttons. */
   driverRegistry: DriverRegistry;
+  /** Drives the now-playing widget's back/playPause/home buttons (ADR-HEARTH-093). */
+  commandEngine: CommandEngine;
   onSelect: (device: Device) => void;
   onAddDevice: (brand: AddableBrand) => void;
   /** A quick-add from the inline "Suggested from your network" section (ADR-HEARTH-092) — routed through the same handler as every other add path (App.tsx's handleDeviceAdded), so duplicate prevention and persistence work identically regardless of which screen the add started from. */
@@ -97,6 +102,7 @@ export function DeviceListScreen({
   devices,
   stateStore,
   driverRegistry,
+  commandEngine,
   onSelect,
   onAddDevice,
   onQuickAdd,
@@ -124,6 +130,7 @@ export function DeviceListScreen({
   // address + Remove this is 4, so a custom modal replaces Alert.alert here for the same reason.
   const [actionsTarget, setActionsTarget] = useState<Device | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
+  const nowPlaying = useNowPlaying(devices, stateStore);
 
   // "Suggested from your network" (ADR-HEARTH-092): runs the same Family Command Center scan
   // DiscoverDevicesScreen's own full flow uses, but inline and silent — a household that never
@@ -288,6 +295,18 @@ export function DeviceListScreen({
           </Pressable>
         ))}
       </ScrollView>
+
+      {/* ADR-HEARTH-093: one at a time, per Sean's own explicit scoping — not a widget per
+          playing device. Absent entirely when nothing is playing/paused anywhere. */}
+      {nowPlaying && (
+        <NowPlayingWidget
+          device={nowPlaying.device}
+          title={nowPlaying.title}
+          stateStore={stateStore}
+          commandEngine={commandEngine}
+          onOpen={() => onSelect(nowPlaying.device)}
+        />
+      )}
 
       <Text style={styles.sectionLabel}>Connected Devices</Text>
       {devices.length === 0 ? (

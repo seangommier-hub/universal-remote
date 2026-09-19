@@ -499,6 +499,7 @@ export default function App() {
           devices={devices}
           stateStore={runtime.stateStore}
           driverRegistry={runtime.driverRegistry}
+          commandEngine={runtime.commandEngine}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
           onQuickAdd={handleDeviceAdded}

@@ -370,6 +370,13 @@ export class RokuEcpDriver implements DeviceDriver {
       const confirmedIdle = activeApp !== undefined && (activeApp.isHomeScreen || activeApp.isScreensaver);
       if (confirmedIdle) {
         this.patchValues(device.id, { playbackState: "stopped" });
+      } else if (activeApp?.appName) {
+        // activeAppName (ADR-HEARTH-093): already fetched above for isHomeScreen/isScreensaver —
+        // the real app name was previously discarded. Opportunistic, not authoritative: only
+        // refreshed in this ambiguous-media-player branch, not every cycle, so it can lag behind
+        // what's actually on screen if the user switches apps without Hearth's own playPause ever
+        // seeing an ambiguous read in between.
+        this.patchValues(device.id, { activeAppName: activeApp.appName });
       }
       // else: leave playbackState exactly as it was (possibly still unset) -- an app is active
       // (or we couldn't confirm otherwise) and media-player is ambiguous, so neither "stopped"
