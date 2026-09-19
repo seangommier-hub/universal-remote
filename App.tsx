@@ -23,6 +23,7 @@ import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
 import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
 import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
+import { AddSonosDeviceScreen } from "./src/ui/AddSonosDeviceScreen";
 import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
@@ -445,6 +446,9 @@ export default function App() {
       )}
       {screen.name === "add" && screen.brand === "kasa" && (
         <AddKasaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "sonos" && (
+        <AddSonosDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
       )}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen

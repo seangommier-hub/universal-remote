@@ -17,6 +17,9 @@
 //  - Kasa (TP-Link): NOT SSDP at all — its legacy protocol uses its own UDP broadcast/encryption
 //    scheme. Not attempted here; stays FCC-only (or manual add) until a real Kasa-specific
 //    discovery mechanism is researched.
+//  - Sonos: `urn:schemas-upnp-org:device:ZonePlayer:1`, verified directly against SoCo
+//    (github.com/SoCo/SoCo), the de facto reference implementation for Sonos local control —
+//    confirmed in its own `discovery.py`.
 //
 // M-SEARCH responses arrive as unicast UDP sent directly back to this socket's own port — no
 // multicast group membership (addMembership) is needed, only for the outbound send to
@@ -36,6 +39,7 @@ import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDrive
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
+import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 
 const SSDP_MULTICAST_ADDRESS = "239.255.255.250";
 const SSDP_PORT = 1900;
@@ -66,6 +70,7 @@ const SEARCH_TARGETS: SearchTarget[] = [
     driverId: YAMAHA_MUSICCAST_DRIVER_ID,
     requireServerMatch: /yamaha/i,
   },
+  { st: "urn:schemas-upnp-org:device:ZonePlayer:1", manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID },
 ];
 
 /** Extracts one HTTP-style header value from a raw SSDP response ("KEY: value\r\n..."). Exported for direct unit testing. */

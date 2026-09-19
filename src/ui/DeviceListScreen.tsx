@@ -17,7 +17,7 @@ import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -31,6 +31,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
   { brand: "xbox", label: "Xbox", icon: "game-controller-outline" },
   { brand: "kasa", label: "TP-Link Kasa Plug", icon: "flash-outline" },
+  { brand: "sonos", label: "Sonos Speaker", icon: "musical-notes-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -38,9 +39,10 @@ const CATEGORY_ICON: Record<string, IconName> = {
   streaming: "play-circle-outline",
   lighting: "bulb-outline",
   gaming: "game-controller-outline",
+  audio: "musical-notes-outline",
 };
 
-// Mirrors DiscoverDevicesScreen.tsx's identical list — the 6 brands with a real "manufacturer +
+// Mirrors DiscoverDevicesScreen.tsx's identical list — the 7 brands with a real "manufacturer +
 // IP, no other credential" manual-add shape (Hue needs a separate bridge-IP device, SmartThings
 // is cloud-linked with no IP-based add, neither fits this "pick a brand for this one IP" flow).
 const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
@@ -50,6 +52,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "roku", label: "Roku" },
   { brand: "yamaha", label: "Yamaha Receiver" },
   { brand: "xbox", label: "Xbox" },
+  { brand: "sonos", label: "Sonos Speaker" },
 ];
 
 // ADR-HEARTH-094: which of the Family Command Center dashboard's own DEVICE_CATEGORIES

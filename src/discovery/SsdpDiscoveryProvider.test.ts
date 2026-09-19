@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
+import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { flushMicrotasks } from "../testUtils/mockWebSocket";
 
 // react-native-udp needs a real native module that doesn't exist in Jest's Node environment — a
@@ -88,6 +89,19 @@ describe("SsdpDiscoveryProvider", () => {
     await scanPromise;
 
     expect(found).toEqual([expect.objectContaining({ manufacturer: "LG", driverId: LG_WEBOS_DRIVER_ID })]);
+  });
+
+  test("reports a real Sonos speaker found via its documented ST (ZonePlayer)", async () => {
+    const provider = new SsdpDiscoveryProvider();
+    const found: unknown[] = [];
+    const scanPromise = provider.scan((d) => found.push(d));
+    await flushMicrotasks();
+
+    mockSocket.emit("message", Buffer.from(ssdpResponse("urn:schemas-upnp-org:device:ZonePlayer:1")), { address: "192.168.1.90" });
+    jest.runAllTimers();
+    await scanPromise;
+
+    expect(found).toEqual([expect.objectContaining({ manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID })]);
   });
 
   test("Yamaha's generic MediaRenderer ST is only accepted when the SERVER string also confirms the brand", async () => {

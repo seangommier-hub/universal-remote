@@ -28,7 +28,7 @@ interface DiscoverDevicesScreenProps {
   onAddManually: (brand: AddableBrand, ipAddress: string) => void;
 }
 
-// The 5 brands with a real "manufacturer + IP, no other credential" manual-add shape — Hue needs a
+// The 7 brands with a real "manufacturer + IP, no other credential" manual-add shape — Hue needs a
 // bridge IP (a different device than what's being added here) and SmartThings has no IP-based add
 // at all (cloud-linked), so neither belongs in this fallback list.
 const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
@@ -38,6 +38,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "roku", label: "Roku" },
   { brand: "yamaha", label: "Yamaha Receiver" },
   { brand: "xbox", label: "Xbox" },
+  { brand: "sonos", label: "Sonos Speaker" },
 ];
 
 type ConnectState = "idle" | "connecting" | "error";

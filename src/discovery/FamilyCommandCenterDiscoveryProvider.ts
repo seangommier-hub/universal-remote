@@ -6,6 +6,7 @@ import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
+import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -58,6 +59,10 @@ const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceC
   // specific household's network -- no Kasa plug has shown up in a real scan as of 2026-09-15) --
   // a mismatch fails safe to "Unknown" with manual add still available, same as any brand here.
   { pattern: /tp-?link|\bkasa\b/i, manufacturer: "TP-Link", category: "outlet", driverId: KASA_PLUG_DRIVER_ID },
+  // "Sonos, Inc." is that vendor's real, standard MAC OUI string; SonosDriver's connect() needs
+  // only config.ipAddress (SonosClient's local SOAP/UPnP surface has no auth), same "safe to
+  // auto-match" reasoning as every entry above except Xbox/SmartThings.
+  { pattern: /sonos/i, manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID },
 ];
 
 // Real household data (2026-09-13): this household's own router DHCP hostnames literally contain

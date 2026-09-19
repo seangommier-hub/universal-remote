@@ -3,6 +3,7 @@ import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
+import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 
 // An explicit factory, not bare jest.mock(path) -- automocking still
 // requires the real module once to learn its shape, and that module
@@ -52,6 +53,7 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
           { hwaddr: "14:ac:60:00:f9:8d", ip: "192.168.1.50", name: "SonyTV.lan", vendor: null },
           { hwaddr: "f8:b9:5a:43:7e:3e", ip: "192.168.1.60", name: "LGwebOSTV.lan", vendor: "LG Innotek" },
           { hwaddr: "d4:ab:cd:3e:b0:25", ip: "192.168.1.70", name: "32HisenseRokuTV", vendor: null },
+          { hwaddr: "00:0e:58:aa:bb:cc", ip: "192.168.1.90", name: "Sonos-000E58AABBCC", vendor: "Sonos, Inc." },
         ],
       })
     );
@@ -64,6 +66,7 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
       { name: "SonyTV.lan", driverId: SONY_BRAVIA_DRIVER_ID, category: "tv" },
       { name: "LGwebOSTV.lan", driverId: LG_WEBOS_DRIVER_ID, category: "tv" },
       { name: "32HisenseRokuTV", driverId: ROKU_ECP_DRIVER_ID, category: "streaming" },
+      { name: "Sonos-000E58AABBCC", driverId: SONOS_DRIVER_ID, category: "audio" },
     ]);
   });
 

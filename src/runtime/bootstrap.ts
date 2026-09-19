@@ -11,6 +11,7 @@ import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThin
 import { YamahaMusicCastDriver } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { XboxDriver } from "../drivers/gaming/xbox/XboxDriver";
 import { KasaPlugDriver } from "../drivers/outlet/kasa/KasaPlugDriver";
+import { SonosDriver } from "../drivers/audio/sonos/SonosDriver";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -39,6 +40,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new YamahaMusicCastDriver());
   driverRegistry.register(new XboxDriver());
   driverRegistry.register(new KasaPlugDriver());
+  driverRegistry.register(new SonosDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 
