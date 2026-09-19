@@ -26,6 +26,7 @@ import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
 import { AddSonosDeviceScreen } from "./src/ui/AddSonosDeviceScreen";
 import { AddPs5DeviceScreen } from "./src/ui/AddPs5DeviceScreen";
 import { AddDenonDeviceScreen } from "./src/ui/AddDenonDeviceScreen";
+import { AddChromecastDeviceScreen } from "./src/ui/AddChromecastDeviceScreen";
 import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
@@ -457,6 +458,9 @@ export default function App() {
       )}
       {screen.name === "add" && screen.brand === "denon" && (
         <AddDenonDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "add" && screen.brand === "chromecast" && (
+        <AddChromecastDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
       )}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen

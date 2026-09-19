@@ -40,6 +40,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "xbox", label: "Xbox" },
   { brand: "sonos", label: "Sonos Speaker" },
   { brand: "denon", label: "Denon / Marantz" },
+  { brand: "chromecast", label: "Chromecast" },
 ];
 
 type ConnectState = "idle" | "connecting" | "error";
