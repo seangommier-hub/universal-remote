@@ -502,6 +502,7 @@ export default function App() {
           commandEngine={runtime.commandEngine}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
+          onAddDeviceWithIp={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
           onQuickAdd={handleDeviceAdded}
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}

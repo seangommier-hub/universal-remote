@@ -29,6 +29,14 @@ interface LanDevice {
   ip: string;
   name: string | null;
   vendor: string | null;
+  /** A household-labeled category from the Family Command Center dashboard (2026-09-19,
+   * ADR-HEARTH-094) — deliberately a plain string here, not Hearth's own DeviceCategory type
+   * (this is a different vocabulary entirely: "is this a phone/computer/smart device", not "what
+   * kind of controllable device is this"). Confirmed with Sean before this field started crossing
+   * the endpoint's own documented no-Supabase-data boundary — only the category bucket, never the
+   * household's human-typed device nickname. Absent/null whenever nothing's been labeled, or the
+   * lookup failed — never something to treat as authoritative. */
+  category: string | null;
 }
 
 // Matched against BOTH the device's DHCP hostname and its MAC vendor string
@@ -121,7 +129,7 @@ export class FamilyCommandCenterDiscoveryProvider implements DiscoveryProvider {
         category,
         manufacturer,
         driverId,
-        metadata: { ipAddress: device.ip, hwaddr: device.hwaddr },
+        metadata: { ipAddress: device.ip, hwaddr: device.hwaddr, householdCategory: device.category },
       });
     }
   }

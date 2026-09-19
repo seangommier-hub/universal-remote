@@ -79,6 +79,34 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
     expect(found).toEqual([{ name: "iRobot-vacuum", driverId: "", category: "other" }]);
   });
 
+  // ADR-HEARTH-094: the Family Command Center dashboard's own device-category label (confirmed
+  // with Sean to expose only this bucket, never the household's human-typed nickname) rides along
+  // in metadata so DeviceListScreen's "Suggested" section can offer an unrecognized-but-labeled
+  // device without Hearth having to guess from vendor/hostname alone.
+  test("passes the household's own dashboard-labeled category through in metadata", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse({ devices: [{ hwaddr: "aa:bb:cc:dd:ee:ff", ip: "192.168.1.99", name: "Living Room Speaker", vendor: null, category: "smart_speaker" }] })
+    );
+    const provider = new FamilyCommandCenterDiscoveryProvider();
+    const found: unknown[] = [];
+
+    await provider.scan((d) => found.push(d.metadata?.householdCategory));
+
+    expect(found).toEqual(["smart_speaker"]);
+  });
+
+  test("householdCategory is null when the device has never been labeled", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse({ devices: [{ hwaddr: "aa:bb:cc:dd:ee:ff", ip: "192.168.1.99", name: "iRobot-vacuum", vendor: null, category: null }] })
+    );
+    const provider = new FamilyCommandCenterDiscoveryProvider();
+    const found: unknown[] = [];
+
+    await provider.scan((d) => found.push(d.metadata?.householdCategory));
+
+    expect(found).toEqual([null]);
+  });
+
   test("throws a clear error on a rejected token (401)", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({}, false, 401));
     const provider = new FamilyCommandCenterDiscoveryProvider();
