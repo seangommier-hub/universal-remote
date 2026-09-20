@@ -19,6 +19,9 @@
       "ios": {
         "simulator": false,
         "credentialsSource": "local"
+      },
+      "env": {
+        "RCT_USE_PREBUILT_RNCORE": "0"
       }
     },
     "production": {
