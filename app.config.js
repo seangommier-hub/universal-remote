@@ -11,15 +11,11 @@ module.exports = {
     name: "Hearth",
     slug: "hearth",
     scheme: "hearth",
-    // Bumped from 1.0.0 (ADR-HEARTH-106): this build adds real native modules
-    // (react-native-gesture-handler, react-native-screens, for tab navigation) for the first time
-    // since 1.0.0 shipped — per ADR-HEARTH-084's own runtimeVersion policy ("appVersion"), any
-    // build sharing the same `version` shares the same OTA update channel. Leaving this at 1.0.0
-    // would let a future JS-only OTA push that assumes these native modules exist reach Sean's
-    // still-installed 1.0.0 binary (no gesture-handler/screens compiled in) and crash it on
-    // launch. A distinct version keeps old and new binaries on separate, non-overlapping update
-    // channels.
-    version: "1.1.0",
+    // Bumped from 1.0.0 (ADR-HEARTH-106): 1.1.0 added react-native-gesture-handler/screens.
+    // Bumped again to 1.2.0 (ADR-HEARTH-110): adds react-native-jsi-udp, another new native
+    // module (a real experiment in direct-from-phone Wake-on-LAN) — same runtimeVersion-isolation
+    // reasoning as the 1.1.0 bump applies again here.
+    version: "1.2.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
