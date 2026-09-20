@@ -133,3 +133,43 @@ Two findings from Sean's actual live test attempt:
 No Hearth-side code changed for this fix — it lives entirely in Family Command Center's
 `ps5-client.ts`. Still pending: an actual successful capture against Sean's real PS5 via Remote
 Play, now that both the app-identity confusion and the server-side bug are resolved.
+
+## Addendum (2026-09-19, later): the entire mechanism was PS4-only — rebuilt on real PSN OAuth
+
+Live-tested with Remote Play open and the 502 fixed: still zero packets ever reached the fake
+console, across multiple attempts and 90+ seconds each. Root-caused by cross-referencing real PS5
+owners in the Home Assistant community: **"the ps5 doesn't support the 2nd screen app the way the
+ps4 did, which is what HA used to leverage."** Confirmed independently — Home Assistant's own
+`ps4` integration (which still uses the exact mechanism this driver was built on) has an open,
+unfulfilled community feature request for PS5 support, for the same reason. This was never going
+to work against a real PS5, regardless of app or wait time.
+
+**The real, current, working tool is `playactor`** (github.com/dhleong/playactor, same author as
+the PS4-era `ps4-waker`). Its actual mechanism: a real PSN OAuth login (the household member signs
+into their own Sony account on Sony's own domain — never seen by Hearth or Family Command Center),
+then the console's own Settings → System → Remote Play → Link Device screen shows an 8-digit PIN,
+which registers with the console over a real, device-versioned, cryptographically signed Remote
+Play handshake. The final wake packet also uses different values entirely from this driver's
+original PS4-era assumptions: **port 9302** (not 987) and **protocol version `00030010`** (not
+`00020020`).
+
+**Decision**: rather than reimplement that registration crypto by hand (a real risk this project's
+own security rules specifically warn against — "prefer well-established libraries... for
+cryptography"), Family Command Center now drives the real `playactor` CLI as a managed process
+(full detail in that project's own `adr/0174` addendum). Hearth's side changed to match:
+`Ps5Client.ts` now exposes the multi-step flow this real pairing needs (`startLogin`,
+`submitRedirectUrl`, `submitPin`, `getLoginStatus`) instead of a single credential-capture call,
+`Ps5Driver.ts` no longer needs a `credentials` object at all (Family Command Center resolves its
+own stored credential by the console's MAC on every wake — the driver only ever needs an IP now,
+matching every other simple driver's config shape), and `AddPs5DeviceScreen.tsx` became a real
+3-stage interactive screen (open a real Sony login link → paste the resulting redirect URL → enter
+the console's own PIN) instead of a single "Pair" button.
+
+**Verified live, end to end, against the real household PS5**: OAuth login succeeded, PIN
+registration succeeded, and a wake sent through the real `/poweron` HTTP route (not just the bare
+CLI) completed successfully. This is the first fully real-hardware-confirmed outcome across all
+four new drivers built this session.
+
+Verified: `npx jest src/drivers/gaming/ps5 --silent` and full `npx jest --silent` → 457/457
+passing. `npx tsc --noEmit` clean. Still fully OTA-shippable on Hearth's side — no native
+dependency added or removed here, just a different HTTP relay shape.

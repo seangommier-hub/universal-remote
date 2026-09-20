@@ -1,56 +1,23 @@
-// Thin client for the PS4/PS5 "Device Discovery Protocol" (DDP) wake mechanism — relayed through
-// Family Command Center (see that project's src/lib/network/ps5-client.ts for the actual DDP wire
-// protocol and its own doc comment for the two reference implementations it was verified against).
+// Thin client for Family Command Center's PS5 pairing/wake relay — see that project's
+// src/lib/network/ps5-client.ts for the actual mechanism (a real PSN OAuth login plus the
+// console's own Remote Play "Link Device" PIN registration, driven through the real `playactor`
+// CLI) and its own doc comment for why this needs a household member's real PSN login rather than
+// the credential-free approach originally attempted here.
 //
-// Real-device finding (2026-09-19): this used to talk UDP directly from the phone via
-// react-native-udp, the same library SsdpDiscoveryProvider.ts uses. Live on Sean's iPhone, that
-// crashed immediately ("cannot read createSocket of null") — react-native-udp (dormant since
-// January 2023) never added support for React Native's "New Architecture", which Expo SDK 57
-// makes mandatory with no opt-out. Rather than chase an unverified New-Architecture-compatible UDP
-// library (the one candidate found, react-native-udp-turbo, is explicitly Android-only right
-// now), the whole DDP mechanism moved server-side — same reasoning that already put Xbox's own
-// power-on packet through Family Command Center (XboxDriver.ts). A second, independent reason this
-// specifically suits the pairing step: capturing credentials needs Sean to background Hearth to
-// open the real PlayStation App, and iOS does not reliably keep a backgrounded app's own socket
-// (or even a single in-flight fetch) alive for however long that takes — a real always-on server
-// process has no such concern at all, so pairing is poll-based (start a session, then poll its
-// status every couple seconds) rather than one long-held phone-side request.
+// Real-hardware finding (2026-09-19): the original design (impersonate a standby console, capture
+// a broadcast credential) never worked against a real PS5 — confirmed by real PS5 owners that the
+// PS5 doesn't support the old broadcast-discovery mechanism the PS4 did at all. The real, working
+// flow needs three separate steps a Hearth screen has to walk the user through interactively:
+// open a real PSN login link, paste back the post-login redirect URL, then enter an 8-digit PIN
+// from the console's own screen — hence the multi-call shape below instead of one "pair" call.
 
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 
-export interface Ps5Credentials {
-  clientType: string;
-  authType: string;
-  userCredential: string;
-}
+export type Ps5LoginStatus = "awaiting_redirect" | "awaiting_pin" | "success" | "error";
 
-type Ps5PairingStatus = "pending" | "found" | "timeout" | "error";
-
-interface Ps5PairingStatusResponse {
-  status: Ps5PairingStatus;
-  credentials?: Ps5Credentials;
+export interface Ps5LoginStatusResponse {
+  status: Ps5LoginStatus;
   errorMessage?: string;
-}
-
-const POLL_INTERVAL_MS = 2000;
-// A bit past Family Command Center's own 120s capture timeout, so its own "timeout" status is
-// what actually ends the wait, not this client giving up first.
-const POLL_MAX_ATTEMPTS = 65;
-
-export class Ps5PairingTimeoutError extends Error {}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true }
-    );
-  });
 }
 
 async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -68,45 +35,41 @@ async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-/** Talks to Family Command Center's PS5 DDP relay. */
+/** Talks to Family Command Center's PS5 pairing/wake relay. */
 export class Ps5Client {
-  /**
-   * Starts a capture session on Family Command Center and polls its status until a real
-   * credential arrives, the session times out, or `signal` is aborted. `onListening` fires once
-   * the session has genuinely started (the server socket is bound), so the UI can tell the user
-   * it's safe to switch to the PlayStation App now.
-   */
-  async captureCredentials(deviceName: string, onListening: () => void, signal?: AbortSignal): Promise<Ps5Credentials> {
-    const { sessionId } = await fccRequest<{ sessionId: string }>("/api/integrations/hearth/ps5/pair/start", {
+  /** Starts a real PSN login flow on Family Command Center; resolves with a real Sony login URL to open. */
+  async startLogin(ipAddress: string): Promise<{ sessionId: string; loginUrl: string }> {
+    return fccRequest("/api/integrations/hearth/ps5/login/start", {
       method: "POST",
-      body: JSON.stringify({ deviceName }),
+      body: JSON.stringify({ ipAddress }),
     });
-    onListening();
-
-    for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-      await sleep(POLL_INTERVAL_MS, signal);
-      if (signal?.aborted) throw new Error("Cancelled");
-
-      const status = await fccRequest<Ps5PairingStatusResponse>(`/api/integrations/hearth/ps5/pair/status?sessionId=${encodeURIComponent(sessionId)}`);
-      if (status.status === "found" && status.credentials) return status.credentials;
-      if (status.status === "timeout") {
-        throw new Ps5PairingTimeoutError("Timed out waiting for the PlayStation App to send credentials — open it and tap the device that appeared, then try again");
-      }
-      if (status.status === "error") {
-        throw new Error(status.errorMessage || "Pairing failed on Family Command Center");
-      }
-      // "pending" — keep polling.
-    }
-    throw new Ps5PairingTimeoutError("Timed out waiting for the PlayStation App to send credentials — open it and tap the device that appeared, then try again");
   }
 
-  /** Sends one real wake request via Family Command Center — no reply exists in this protocol, so
-   * "the packet was sent" is the most honest claim available, same treatment as XboxDriver's own
-   * power-on. */
-  async sendWake(ipAddress: string, credentials: Ps5Credentials): Promise<void> {
+  /** Feeds back the URL the household member copied from their browser after completing the real PSN login. */
+  async submitRedirectUrl(sessionId: string, redirectUrl: string): Promise<void> {
+    await fccRequest("/api/integrations/hearth/ps5/login/redirect", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, redirectUrl }),
+    });
+  }
+
+  /** Feeds back the 8-digit PIN from the console's own Settings > System > Remote Play > Link Device screen. */
+  async submitPin(sessionId: string, pin: string): Promise<void> {
+    await fccRequest("/api/integrations/hearth/ps5/login/pin", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, pin }),
+    });
+  }
+
+  async getLoginStatus(sessionId: string): Promise<Ps5LoginStatusResponse> {
+    return fccRequest(`/api/integrations/hearth/ps5/login/status?sessionId=${encodeURIComponent(sessionId)}`);
+  }
+
+  /** Sends a real wake command — Family Command Center resolves the console's already-registered credential on its own, so this only ever needs the IP. */
+  async sendWake(ipAddress: string): Promise<void> {
     await fccRequest("/api/integrations/hearth/ps5/poweron", {
       method: "POST",
-      body: JSON.stringify({ ipAddress, credentials }),
+      body: JSON.stringify({ ipAddress }),
     });
   }
 }

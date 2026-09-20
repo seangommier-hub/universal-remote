@@ -13,7 +13,7 @@ const device: Device = {
   manufacturer: "Sony",
   driverId: "ps5-ddp",
   capabilities: [],
-  config: { ipAddress: "192.168.1.220", credentials: { clientType: "a", authType: "R", userCredential: "abc123" } },
+  config: { ipAddress: "192.168.1.214" },
 };
 
 describe("Ps5Driver", () => {
@@ -35,16 +35,16 @@ describe("Ps5Driver", () => {
     expect(state.connection).toBe("connected");
   });
 
-  test("connect() throws for a device missing captured credentials, without touching the network", async () => {
-    const unconfigured: Device = { ...device, config: { ipAddress: "192.168.1.220" } };
+  test("connect() throws for a device missing an IP address, without touching the network", async () => {
+    const unconfigured: Device = { ...device, config: {} };
     await expect(driver.connect(unconfigured)).rejects.toThrow(/PS5 config/);
     expect(mockSendWake).not.toHaveBeenCalled();
   });
 
-  test("powerOn sends the exact captured credentials to the console's own saved IP", async () => {
+  test("powerOn sends the wake with just the console's IP — no credentials object needed", async () => {
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "powerOn" });
 
-    expect(mockSendWake).toHaveBeenCalledWith("192.168.1.220", { clientType: "a", authType: "R", userCredential: "abc123" });
+    expect(mockSendWake).toHaveBeenCalledWith("192.168.1.214");
     expect(result.success).toBe(true);
     expect(result.state?.lastAction).toBe("powerOn");
   });
