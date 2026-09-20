@@ -11,11 +11,12 @@ module.exports = {
     name: "Hearth",
     slug: "hearth",
     scheme: "hearth",
-    // Bumped from 1.0.0 (ADR-HEARTH-106): 1.1.0 added react-native-gesture-handler/screens.
-    // Bumped again to 1.2.0 (ADR-HEARTH-110): adds react-native-jsi-udp, another new native
-    // module (a real experiment in direct-from-phone Wake-on-LAN) — same runtimeVersion-isolation
-    // reasoning as the 1.1.0 bump applies again here.
-    version: "1.2.0",
+    // Bumped from 1.0.0 (ADR-HEARTH-106): 1.1.0 added react-native-gesture-handler/screens. A
+    // 1.2.0 bump for react-native-jsi-udp (a direct-from-phone Wake-on-LAN experiment) was tried
+    // and reverted the same day (ADR-HEARTH-110) — the library proved incompatible with this
+    // project's React Native version. No native change survives from that experiment, so this
+    // stays at 1.1.0, matching the binary already installed.
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
