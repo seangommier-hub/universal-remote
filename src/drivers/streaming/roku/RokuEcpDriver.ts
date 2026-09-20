@@ -4,9 +4,10 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { RokuEcpClient, RokuEcpConfig } from "./RokuEcpClient";
+import { RokuEcpClient, RokuEcpConfig, RokuDeviceInfo } from "./RokuEcpClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { sendCharacterSequence } from "../../../core/util/sendCharacterSequence";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "RokuEcpDriver";
 export const ROKU_ECP_DRIVER_ID = "roku-ecp";
@@ -134,12 +135,52 @@ export class RokuEcpDriver implements DeviceDriver {
     }
   }
 
+  /**
+   * Real gap found live (2026-09-20): a Roku/Roku TV that moves to a different network (e.g. the
+   * Hisense TV in this project's own household, moved off an isolated Guest/IoT segment onto the
+   * Pi's own hosted kids AP) kept a stale saved IP forever — this driver had none of
+   * LgWebOsDriver.ts's/SamsungTizenDriver.ts's identical self-healing, so `scheduleReconnect` just
+   * retried the same dead address on an ever-growing backoff, never re-discovering where the
+   * device actually went. Same fix, same reasoning: on ANY connect failure (not just a specific
+   * error type — a stale-but-now-reused IP can produce a normal connection-refused/timeout just
+   * as easily as a clean "nothing there" failure), check whether Family Command Center currently
+   * sees this device's MAC at a different address, retry once at whatever it finds. Safe to try
+   * unconditionally — if the device genuinely is still at the same IP and genuinely is down,
+   * nothing changes and the original failure still propagates.
+   */
+  private async connectClient(device: Device, config: RokuEcpConfig): Promise<{ client: RokuEcpClient; info: RokuDeviceInfo }> {
+    const client = new RokuEcpClient(config);
+    try {
+      const info = await client.getDeviceInfo();
+      return { client, info };
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
+      // See LgWebOsDriver.ts's identical comment: a device discovered/added before hwaddr-saving
+      // existed has no MAC on file at all — falls back to a hostname match on this device's own
+      // `name`, the same "safe to try, harmless if nothing matches" contract.
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      if (!freshIp || freshIp === config.ipAddress) throw err; // nothing better found — surface the original failure
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp; // persisted by App.tsx after a successful connect(), same as every other self-healing driver
+      // Backfills a missing MAC so the *next* move is caught by the faster, more precise
+      // findCurrentIpByMac instead of needing this name-fallback again.
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
+      const retryClient = new RokuEcpClient({ ...config, ipAddress: freshIp });
+      const info = await retryClient.getDeviceInfo();
+      return { client: retryClient, info };
+    }
+  }
+
   private async doConnect(device: Device): Promise<void> {
     const generation = this.generations.get(device.id) ?? 0;
     this.clearReconnectTimer(device.id);
     try {
-      const client = new RokuEcpClient(requireConfig(device));
-      const info = await client.getDeviceInfo();
+      const config = requireConfig(device);
+      const { client, info } = await this.connectClient(device, config);
       if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected while this was in flight
       this.setState(device.id, {
         connection: "connected",

@@ -1,5 +1,11 @@
 import { RokuEcpDriver, ROKU_ECP_DRIVER_ID } from "./RokuEcpDriver";
 import { Device } from "../../../core/types/Device";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
+  loadFamilyCommandCenterConfig: jest.fn(),
+}));
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 function deviceInfoResponse(powerMode: string, modelName = "Roku Ultra") {
   return {
@@ -69,6 +75,7 @@ describe("RokuEcpDriver", () => {
   beforeEach(() => {
     driver = new RokuEcpDriver();
     global.fetch = jest.fn();
+    mockLoadConfig.mockReset(); // defaults to unconfigured — matches every existing test's "no relay/self-heal lookup" world unless a test opts in
   });
 
   test("declares inputSelection (ECP has real input keys) and playPause but not power/setVolume/menu", () => {
@@ -89,6 +96,75 @@ describe("RokuEcpDriver", () => {
     expect(state.values.power).toBe("on");
     expect(state.values.model).toBe("Roku Ultra");
     expect(state.values.playbackState).toBe("playing");
+  });
+
+  // Real gap found live (2026-09-20): unlike LgWebOsDriver/SamsungTizenDriver, this driver had no
+  // self-healing at all — a device that moved networks (the project's own Hisense TV, moved off
+  // an isolated Guest/IoT segment onto a different network entirely) kept retrying a dead IP
+  // forever instead of re-locating itself through Family Command Center.
+  describe("re-discovery after a network change", () => {
+    // Fresh object per test -- the driver mutates device.config in place (the same way
+    // LG/Samsung's identical self-healing does), so a shared const would leak one test's
+    // corrected address into the next test's "still hasn't been located" expectations.
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: "10.20.30.40", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      // RokuEcpClient itself goes through requestWithRelayFallback, so the failed first attempt
+      // also tries a relay leg -- returning null here for that first loadFamilyCommandCenterConfig
+      // call short-circuits it to "not configured" without spending a fetch mock on it, then the
+      // second call (from findCurrentIpByMac's own lookup) gets a real config.
+      mockLoadConfig.mockResolvedValueOnce(null).mockResolvedValueOnce({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // stale IP -- never answers
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.218" }] }) }) // FCC lookup
+        .mockResolvedValueOnce(deviceInfoResponse("PowerOn")) // retry at the new address succeeds
+        .mockResolvedValueOnce(mediaPlayerResponse("play"))
+        .mockResolvedValueOnce(appsResponse());
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218"); // persisted onto the device object, same as LG/Samsung
+      const state = await driver.getState(deviceWithMac);
+      expect(state.connection).toBe("connected");
+    });
+
+    test("a genuinely dead device (no better address found) still surfaces a real failure, not a silent hang", async () => {
+      mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- no relay fallback and no self-heal lookup possible
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+      const deviceWithMac = freshDeviceWithMac();
+      // See httpRelayFallback.test.ts's identical case for why this is the message once relay
+      // fallback is also unavailable -- the direct leg's own error is intentionally superseded.
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow(/isn't configured for relay fallback/);
+      expect(deviceWithMac.config?.ipAddress).toBe("10.20.30.40"); // untouched -- nothing better was found
+    });
+
+    // Real-hardware finding already established for LG/Samsung: a device added before hwaddr
+    // saving existed has no MAC to look up by at all -- falls back to a hostname match instead.
+    // The backfill afterward (findMacByIp) is its own separate lookup, hence the extra config/
+    // fetch pair below beyond what the MAC-already-known test above needed.
+    test("a device with no saved hwaddr falls back to a name-based lookup, re-locates itself, and backfills its MAC", async () => {
+      const deviceWithNoMac: Device = { ...device, name: "RokuTV.lan", config: { ipAddress: "10.20.30.40" } };
+      mockLoadConfig
+        .mockResolvedValueOnce(null) // relay leg of the failed first attempt -- short-circuited, no extra fetch
+        .mockResolvedValueOnce({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" }) // findCurrentIpByName
+        .mockResolvedValueOnce({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" }); // findMacByIp backfill
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.218", name: "RokuTV.lan" }] }) }) // findCurrentIpByName
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: "192.168.1.218", name: "RokuTV.lan" }] }) }) // findMacByIp
+        .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+        .mockResolvedValueOnce(mediaPlayerResponse("play"))
+        .mockResolvedValueOnce(appsResponse());
+
+      await driver.connect(deviceWithNoMac);
+
+      expect(deviceWithNoMac.config?.ipAddress).toBe("192.168.1.218");
+      expect(deviceWithNoMac.config?.hwaddr).toBe("11:22:33:44:55:66"); // backfilled for next time
+    });
   });
 
   // ADR-HEARTH-085: the Roku's own real name is already fetched as part of the same device-info
