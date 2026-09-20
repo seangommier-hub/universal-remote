@@ -7,13 +7,16 @@ import { logger } from "../../../core/logging/logger";
 import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 const LOG_SCOPE = "LgWebOsDriver";
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
 
-// Only "powerOff" is declared, not "power" — LG's WebSocket protocol has no documented way to
-// turn a TV ON (only ssap://system/turnOff exists; waking one requires Wake-on-LAN, which is a
-// separate, unimplemented mechanism). See ADR-HEARTH-006.
+// "powerOff" is real SSAP (ssap://system/turnOff), sent over the live socket like every other
+// command. "powerOn" (ADR-HEARTH-102, 2026-09-19) is NOT SSAP at all — SSAP has no documented way
+// to turn a TV on, only to turn it off — it's Wake-on-LAN, handled entirely in executeCommand
+// below without ever touching LgWebOsClient, since a fully-off TV has no socket to send SSAP over
+// in the first place. See ADR-HEARTH-006 for the original gap this closes.
 //
 // inputSelection is now implemented (real-hardware ask, 2026-09-10: "there also needs to be an
 // input button") via ssap://tv/getExternalInputList + ssap://tv/switchInput, both confirmed
@@ -25,6 +28,7 @@ export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
 // and `devices[].appId`) — refreshInputList checks both rather than assuming one.
 const LG_CAPABILITIES: CapabilityId[] = [
   "powerOff",
+  "powerOn",
   "volumeUp",
   "volumeDown",
   "setVolume",
@@ -384,6 +388,13 @@ export class LgWebOsDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
+    // Real gap this closes (ADR-HEARTH-102): a fully-off TV has no live SSAP socket at all, so
+    // this MUST run before the "not connected" check below rather than inside applyCommand —
+    // powerOn is the one capability that has to work with no client present.
+    if (command.capability === "powerOn") {
+      return this.executeWakeOnLan(device);
+    }
+
     const client = this.clients.get(device.id);
     if (!client) {
       throw new Error(`Device ${device.id} is not connected — call connect() before sending commands`);
@@ -396,6 +407,36 @@ export class LgWebOsDriver implements DeviceDriver {
       success: true,
       deviceId: device.id,
       capability: command.capability,
+      timestamp: Date.now(),
+      state: state.values,
+    };
+  }
+
+  /** See SamsungTizenDriver/SonyBraviaDriver's identical helper — resolves the TV's MAC from
+   * whatever discovery already saved (`hwaddr`), falling back to a fresh Family Command Center
+   * lookup by IP for a device paired before hwaddr-saving existed, then broadcasts a real
+   * Wake-on-LAN packet. No acknowledgment exists in this protocol — "the packet was sent" is the
+   * most honest claim available; the TV's real state is only confirmed once a normal connect()
+   * succeeds afterward. */
+  private async executeWakeOnLan(device: Device): Promise<CommandResult> {
+    const hwaddr = device.config?.hwaddr;
+    const ipAddress = device.config?.ipAddress;
+    const mac = typeof hwaddr === "string" ? hwaddr : typeof ipAddress === "string" ? await findMacByIp(ipAddress) : undefined;
+    if (!mac) {
+      throw new Error(`Cannot power on ${device.name} — no known MAC address for Wake-on-LAN yet (it needs to have been seen on the network at least once)`);
+    }
+    if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
+    await sendWakeOnLan(mac);
+    const state: DeviceState = {
+      connection: this.states.get(device.id)?.connection ?? "disconnected",
+      values: { ...this.states.get(device.id)?.values, lastAction: "powerOn" },
+      lastUpdated: Date.now(),
+    };
+    this.setState(device.id, state);
+    return {
+      success: true,
+      deviceId: device.id,
+      capability: "powerOn",
       timestamp: Date.now(),
       state: state.values,
     };

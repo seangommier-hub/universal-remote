@@ -2,9 +2,12 @@ import { SamsungTizenDriver, SAMSUNG_TIZEN_DRIVER_ID } from "./SamsungTizenDrive
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
+jest.mock("../../../core/network/wakeOnLan");
 const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 const device: Device = {
   id: "samsung-1",
@@ -32,6 +35,7 @@ describe("SamsungTizenDriver", () => {
     installMockWebSocket();
     driver = new SamsungTizenDriver();
     mockLoadConfig.mockReset();
+    mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
     global.fetch = jest.fn();
   });
 
@@ -84,7 +88,30 @@ describe("SamsungTizenDriver", () => {
   });
 
   test("executeCommand throws if the device was never connected", async () => {
-    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/not connected/);
+    // "power" is deliberately excluded here (see the Wake-on-LAN tests below) — every other
+    // capability still requires a live connection exactly as before.
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" })).rejects.toThrow(/not connected/);
+  });
+
+  // ADR-HEARTH-102: KEY_POWER can only reach the TV over the same WebSocket every other command
+  // uses — no client means no socket, which for this protocol means the TV is genuinely off, not
+  // just slow to answer. "power" is the one capability that has to work in exactly that state.
+  test("power without a live connection falls back to a real Wake-on-LAN packet using the device's saved MAC", async () => {
+    const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.60", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+
+    const result = await driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "power" });
+
+    expect(mockSendWakeOnLan).toHaveBeenCalledWith("AA:BB:CC:DD:EE:FF");
+    expect(result.success).toBe(true);
+    expect(result.state?.lastAction).toBe("power");
+  });
+
+  test("power without a live connection and no known MAC fails clearly rather than silently no-opping", async () => {
+    const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.60" } };
+    mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- findMacByIp can't fall back either
+
+    await expect(driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "power" })).rejects.toThrow(/no known MAC address/);
+    expect(mockSendWakeOnLan).not.toHaveBeenCalled();
   });
 
   test("power command sends KEY_POWER and optimistically flips the cached power state", async () => {

@@ -1,5 +1,9 @@
 import { SonyBraviaDriver } from "./SonyBraviaDriver";
 import { Device } from "../../../core/types/Device";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+
+jest.mock("../../../core/network/wakeOnLan");
+const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body } as Response;
@@ -28,6 +32,7 @@ describe("SonyBraviaDriver", () => {
   beforeEach(() => {
     driver = new SonyBraviaDriver();
     global.fetch = jest.fn();
+    mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
   });
 
   test("declares REST-API capabilities plus IRCC-IP nav/select/back/home (ADR-HEARTH-071) — but not menu or textEntry, which neither protocol supports", () => {
@@ -116,6 +121,36 @@ describe("SonyBraviaDriver", () => {
     expect(result.state?.power).toBe("on");
     const setPowerCall = (global.fetch as jest.Mock).mock.calls[1];
     expect(JSON.parse(setPowerCall[1].body)).toMatchObject({ method: "setPowerStatus", params: [{ status: true }] });
+  });
+
+  // ADR-HEARTH-102: unlike LG/Samsung, Sony has no persistent connection to check for absence —
+  // every call is a fresh REST request, so "the TV is genuinely off" surfaces here as
+  // getPowerStatus itself throwing (both the direct call and the Family Command Center relay
+  // fallback failing, since nothing is configured/reachable). Wake-on-LAN is the only thing that
+  // can still reach it from that state.
+  test("power falls back to a real Wake-on-LAN packet when the TV's REST API is entirely unreachable", async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error("network unreachable"));
+    const offDevice: Device = { ...device, config: { ...device.config, hwaddr: "11:22:33:44:55:66" } };
+
+    const result = await driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "power" });
+
+    expect(mockSendWakeOnLan).toHaveBeenCalledWith("11:22:33:44:55:66");
+    expect(result.success).toBe(true);
+    expect(result.state?.lastAction).toBe("power");
+  });
+
+  test("power falls back and fails clearly when the TV is unreachable AND no MAC address is known", async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error("network unreachable"));
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/no known MAC address/);
+    expect(mockSendWakeOnLan).not.toHaveBeenCalled();
+  });
+
+  test("a real API error while the TV IS reachable (e.g. a rejected PSK) still surfaces normally, not as a Wake-on-LAN fallback", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}) } as Response);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/HTTP 403/);
+    expect(mockSendWakeOnLan).not.toHaveBeenCalled();
   });
 
   test("volumeUp sends a relative +2 and reports the actual resulting volume, not an assumed one", async () => {

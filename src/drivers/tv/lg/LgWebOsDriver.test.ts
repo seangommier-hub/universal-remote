@@ -2,9 +2,12 @@ import { LgWebOsDriver, LG_WEBOS_DRIVER_ID } from "./LgWebOsDriver";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
+jest.mock("../../../core/network/wakeOnLan");
 const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 const device: Device = {
   id: "lg-1",
@@ -55,15 +58,34 @@ describe("LgWebOsDriver", () => {
     installMockWebSocket();
     driver = new LgWebOsDriver();
     mockLoadConfig.mockReset(); // defaults to undefined — matches every existing test's "no relay configured" world unless a test opts in
+    mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
     global.fetch = jest.fn();
   });
 
-  test("declares powerOff and inputSelection but not power/powerOn (honest about what SSAP can/can't do)", () => {
+  test("declares powerOff, powerOn (via Wake-on-LAN, ADR-HEARTH-102), and inputSelection but not the single-toggle 'power' (honest about what SSAP can/can't do)", () => {
     const caps = driver.getCapabilities();
     expect(caps).toContain("powerOff");
+    expect(caps).toContain("powerOn");
     expect(caps).not.toContain("power");
-    expect(caps).not.toContain("powerOn");
     expect(caps).toContain("inputSelection");
+  });
+
+  test("powerOn sends a real Wake-on-LAN packet using the device's saved MAC, with no live connection required", async () => {
+    const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.70", hwaddr: "F8:B9:5A:43:7E:3E" } };
+
+    const result = await driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "powerOn" });
+
+    expect(mockSendWakeOnLan).toHaveBeenCalledWith("F8:B9:5A:43:7E:3E");
+    expect(result.success).toBe(true);
+    expect(result.state?.lastAction).toBe("powerOn");
+  });
+
+  test("powerOn without any known MAC address fails clearly rather than silently no-opping", async () => {
+    const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.70" } };
+    mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- findMacByIp can't fall back either
+
+    await expect(driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "powerOn" })).rejects.toThrow(/no known MAC address/);
+    expect(mockSendWakeOnLan).not.toHaveBeenCalled();
   });
 
   test("connect() pairs and reads back initial volume state and the real input list (real-hardware ask, 2026-09-10: \"there also needs to be an input button\")", async () => {

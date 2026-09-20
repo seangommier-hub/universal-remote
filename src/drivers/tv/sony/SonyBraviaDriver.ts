@@ -4,8 +4,10 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
+import { SonyBraviaApiError, SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
 import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
+import { findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 const LOG_SCOPE = "SonyBraviaDriver";
 const VOLUME_STEP = 2;
@@ -89,6 +91,21 @@ function requireConfig(device: Device): SonyBraviaConfig {
     throw new Error(`Device ${device.id} is missing Sony BRAVIA config (config.ipAddress and config.psk) — pair it first`);
   }
   return { ipAddress, psk };
+}
+
+// ADR-HEARTH-102: only a genuine reachability failure should fall back to Wake-on-LAN — a real
+// response that just rejects the request (wrong PSK, TV-side error) means the TV IS on and
+// reachable, and silently swallowing that into "sent a WoL packet, success:true" would hide a
+// real configuration problem behind a misleading success. SonyBraviaApiError (a parsed JSON-RPC
+// error body) and the "returned HTTP <status>" error (client.call's own non-2xx-response guard)
+// both mean *something* answered; everything else — a fetch that threw outright, or
+// httpRelayFallback's own "Could not reach ... and Family Command Center isn't configured/didn't
+// respond" errors — means nothing answered at all, which is this driver's only real signal for
+// "the TV is genuinely off."
+function isReachabilityFailure(err: unknown): boolean {
+  if (err instanceof SonyBraviaApiError) return false;
+  if (err instanceof Error && /returned HTTP \d+$/.test(err.message)) return false;
+  return true;
 }
 
 function parseHdmiInput(input: string): string {
@@ -231,12 +248,51 @@ export class SonyBraviaDriver implements DeviceDriver {
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new SonyBraviaClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
+    try {
+      await this.applyCommand(client, device, command);
+    } catch (err) {
+      if (command.capability !== "power" || !isReachabilityFailure(err)) throw err;
+      // Real gap this closes (ADR-HEARTH-102): "power"'s own getPowerStatus REST call (in
+      // applyCommand above) throwing with nothing having answered at all means the TV's REST API
+      // is genuinely unreachable — most likely fully off. No persistent connection to fall back on
+      // here, unlike LG/Samsung's WebSocket drivers, but the same underlying cause and the same
+      // fix (Wake-on-LAN) apply.
+      return this.executeWakeOnLan(device);
+    }
     const state = await this.refreshState(device);
     return {
       success: true,
       deviceId: device.id,
       capability: command.capability,
+      timestamp: Date.now(),
+      state: state.values,
+    };
+  }
+
+  /** See LgWebOsDriver.ts/SamsungTizenDriver.ts's identical helper (ADR-HEARTH-102) — resolves the
+   * TV's MAC from discovery's saved `hwaddr`, falling back to a fresh Family Command Center lookup
+   * by IP, then broadcasts a real Wake-on-LAN packet. No acknowledgment exists in this protocol —
+   * "the packet was sent" is the most honest claim available; real state is only confirmed once a
+   * normal refreshState() succeeds afterward. */
+  private async executeWakeOnLan(device: Device): Promise<CommandResult> {
+    const hwaddr = device.config?.hwaddr;
+    const ipAddress = device.config?.ipAddress;
+    const mac = typeof hwaddr === "string" ? hwaddr : typeof ipAddress === "string" ? await findMacByIp(ipAddress) : undefined;
+    if (!mac) {
+      throw new Error(`Cannot power on ${device.name} — no known MAC address for Wake-on-LAN yet (it needs to have been seen on the network at least once)`);
+    }
+    if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
+    await sendWakeOnLan(mac);
+    const state: DeviceState = {
+      connection: this.states.get(device.id)?.connection ?? "disconnected",
+      values: { ...this.states.get(device.id)?.values, lastAction: "power" },
+      lastUpdated: Date.now(),
+    };
+    this.setState(device.id, state);
+    return {
+      success: true,
+      deviceId: device.id,
+      capability: "power",
       timestamp: Date.now(),
       state: state.values,
     };

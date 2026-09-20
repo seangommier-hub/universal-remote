@@ -7,6 +7,7 @@ import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -314,6 +315,14 @@ export class SamsungTizenDriver implements DeviceDriver {
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = this.clients.get(device.id);
     if (!client) {
+      // Real gap this closes (ADR-HEARTH-102): no client means the TV's WebSocket never accepted
+      // a connection — most likely genuinely powered off, not just a transient network hiccup.
+      // KEY_POWER only works over that same socket, so it can never reach a TV in this state;
+      // Wake-on-LAN is the only thing that can. Every other capability still requires a live
+      // connection exactly as before — this is the one exception.
+      if (command.capability === "power") {
+        return this.executeWakeOnLan(device);
+      }
       throw new Error(`Device ${device.id} is not connected — call connect() before sending commands`);
     }
     const current = this.states.get(device.id)?.values ?? {};
@@ -350,6 +359,35 @@ export class SamsungTizenDriver implements DeviceDriver {
     set.add(listener);
     this.listeners.set(device.id, set);
     return () => set.delete(listener);
+  }
+
+  /** See LgWebOsDriver.ts's identical helper (ADR-HEARTH-102) — resolves the TV's MAC from
+   * discovery's saved `hwaddr`, falling back to a fresh Family Command Center lookup by IP, then
+   * broadcasts a real Wake-on-LAN packet. No acknowledgment exists in this protocol — "the packet
+   * was sent" is the most honest claim available; real state is only confirmed once a normal
+   * connect() succeeds afterward. */
+  private async executeWakeOnLan(device: Device): Promise<CommandResult> {
+    const hwaddr = device.config?.hwaddr;
+    const ipAddress = device.config?.ipAddress;
+    const mac = typeof hwaddr === "string" ? hwaddr : typeof ipAddress === "string" ? await findMacByIp(ipAddress) : undefined;
+    if (!mac) {
+      throw new Error(`Cannot power on ${device.name} — no known MAC address for Wake-on-LAN yet (it needs to have been seen on the network at least once)`);
+    }
+    if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
+    await sendWakeOnLan(mac);
+    const state: DeviceState = {
+      connection: this.states.get(device.id)?.connection ?? "disconnected",
+      values: { ...this.states.get(device.id)?.values, lastAction: "power" },
+      lastUpdated: Date.now(),
+    };
+    this.setState(device.id, state);
+    return {
+      success: true,
+      deviceId: device.id,
+      capability: "power",
+      timestamp: Date.now(),
+      state: state.values,
+    };
   }
 
   private setState(deviceId: string, state: DeviceState): void {
