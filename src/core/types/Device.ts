@@ -11,6 +11,10 @@ export type DeviceCategory =
   | "vacuum"
   | "lock"
   | "gaming"
+  // ADR-HEARTH-104: doesn't fit the remote-control metaphor any other category here implies (no
+  // directional nav, no volume/power toggle) — surfaced in its own "Feeder" tab, not the Devices
+  // list.
+  | "feeder"
   | "other";
 
 /** A device the user has paired into their household, independent of which manufacturer or protocol actually controls it. */

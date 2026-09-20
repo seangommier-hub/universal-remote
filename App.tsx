@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, AppStateStatus, StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { NavigationContainer } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as Network from "expo-network";
 import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPolicy";
@@ -11,49 +15,14 @@ import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/scene
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
 import { findMacByIp } from "./src/discovery/familyCommandCenterDeviceLookup";
 import { applyDownloadedUpdateAsync, checkAndDownloadUpdateAsync } from "./src/runtime/appUpdates";
-import { UpdateBanner } from "./src/ui/UpdateBanner";
 import { Device } from "./src/core/types/Device";
 import { Scene } from "./src/core/types/Scene";
 import { logger } from "./src/core/logging/logger";
-import { DeviceListScreen, AddableBrand } from "./src/ui/DeviceListScreen";
-import { UniversalTvRemote } from "./src/ui/UniversalTvRemote";
-import { LightControlScreen } from "./src/ui/LightControlScreen";
-import { AddSonyDeviceScreen } from "./src/ui/AddSonyDeviceScreen";
-import { AddSamsungDeviceScreen } from "./src/ui/AddSamsungDeviceScreen";
-import { AddLgDeviceScreen } from "./src/ui/AddLgDeviceScreen";
-import { AddRokuDeviceScreen } from "./src/ui/AddRokuDeviceScreen";
-import { AddYamahaDeviceScreen } from "./src/ui/AddYamahaDeviceScreen";
-import { AddSonosDeviceScreen } from "./src/ui/AddSonosDeviceScreen";
-import { AddPs5DeviceScreen } from "./src/ui/AddPs5DeviceScreen";
-import { AddDenonDeviceScreen } from "./src/ui/AddDenonDeviceScreen";
-import { AddChromecastDeviceScreen } from "./src/ui/AddChromecastDeviceScreen";
-import { AddBroadlinkHubScreen } from "./src/ui/AddBroadlinkHubScreen";
-import { TeachBroadlinkCommandScreen } from "./src/ui/TeachBroadlinkCommandScreen";
-import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
-import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
-import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
-import { AddKasaDeviceScreen } from "./src/ui/AddKasaDeviceScreen";
-import { DiscoverDevicesScreen } from "./src/ui/DiscoverDevicesScreen";
-import { FamilyCommandCenterSettingsScreen } from "./src/ui/FamilyCommandCenterSettingsScreen";
-import { ScanFamilyCommandCenterQrScreen } from "./src/ui/ScanFamilyCommandCenterQrScreen";
-import { CommandCenterRemoteScreen } from "./src/ui/CommandCenterRemoteScreen";
-import { EditDeviceAddressScreen } from "./src/ui/EditDeviceAddressScreen";
-import { RenameDeviceScreen } from "./src/ui/RenameDeviceScreen";
-import { CreateSceneScreen } from "./src/ui/CreateSceneScreen";
+import { DevicesTabScreen } from "./src/ui/DevicesTabScreen";
+import { FeederTabScreen } from "./src/ui/FeederTabScreen";
 import { theme } from "./src/ui/theme";
 
-type Screen =
-  | { name: "list" }
-  | { name: "remote"; device: Device }
-  | { name: "add"; brand: AddableBrand; initialIpAddress?: string }
-  | { name: "discover" }
-  | { name: "fcc-scan" }
-  | { name: "fcc-settings" }
-  | { name: "fcc-remote" }
-  | { name: "edit-address"; device: Device }
-  | { name: "rename-device"; device: Device }
-  | { name: "teach-broadlink"; device: Device }
-  | { name: "create-scene"; editingScene?: Scene };
+const Tab = createBottomTabNavigator();
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
 async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
@@ -88,7 +57,6 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
-  const [screen, setScreen] = useState<Screen>({ name: "list" });
   // ADR-HEARTH-084/086: "checking"/"error" only ever come from a manual check (DeviceListScreen's
   // header button) — the automatic launch/foreground check below stays silent unless it actually
   // finds something, so opening the app doesn't flash a banner nearly every time for nothing.
@@ -269,7 +237,11 @@ export default function App() {
   // connection info refreshes, rather than creating a duplicate. A device with no hwaddr (every
   // manually-added device without a backfilled one yet) can't be checked this way and is added
   // as-is, same as before — no regression for that case, just no new protection either.
-  function handleDeviceAdded(device: Device) {
+  //
+  // ADR-HEARTH-104: returns the stored device rather than navigating anywhere itself — screen
+  // navigation after an add is each tab's own concern (DevicesTabScreen opens the remote screen;
+  // FeederTabScreen has nothing to navigate to, it just re-renders once the feeder device exists).
+  function handleDeviceAdded(device: Device): Device {
     const hwaddr = typeof device.config?.hwaddr === "string" ? device.config.hwaddr : undefined;
     const duplicate = hwaddr
       ? runtime.deviceRegistry
@@ -285,8 +257,8 @@ export default function App() {
       attachStateBridge(toStore);
     }
     setDevices(runtime.deviceRegistry.list());
-    setScreen({ name: "remote", device: toStore });
     saveDeviceQuietly(toStore);
+    return toStore;
   }
 
   // Real-device feedback (2026-09-10): "the name should be able to be edited" — previously fixed
@@ -300,7 +272,11 @@ export default function App() {
   // silently break that fallback forever, with nothing telling the user why reconnect stopped
   // working later. Backfilling `hwaddr` here (same lookup EditDeviceAddressScreen already uses)
   // neutralizes it going forward, the same "fix it by hand once, self-heal after" pattern.
-  async function handleRenameDevice(device: Device, newName: string): Promise<void> {
+  //
+  // ADR-HEARTH-104: returns the updated device instead of touching screen state itself — the
+  // Devices tab (the only caller that needs to keep an open remote screen's header in sync) does
+  // that with the returned value; the Feeder tab has no equivalent screen to sync.
+  async function handleRenameDevice(device: Device, newName: string): Promise<Device> {
     const updated: Device = { ...device, name: newName };
     if (typeof updated.config?.hwaddr !== "string" && typeof updated.config?.ipAddress === "string") {
       const hwaddr = await findMacByIp(updated.config.ipAddress);
@@ -309,30 +285,29 @@ export default function App() {
     runtime.deviceRegistry.add(updated);
     rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
-    setScreen((current) => (current.name === "remote" && current.device.id === device.id ? { name: "remote", device: updated } : current));
     saveDeviceQuietly(updated);
+    return updated;
   }
 
   // Real-hardware need (2026-09-10): a device's saved IP going stale (moved to a different WiFi
   // network) shouldn't require unpairing and re-pairing from scratch — EditDeviceAddressScreen
   // already verified the new address connects before calling this. Same update-in-place pattern
-  // as handleRenameDevice.
+  // as handleRenameDevice. Navigating back to "list" afterward is the Devices tab's own concern
+  // (ADR-HEARTH-104) — this only device-only-address editing is only reachable from that tab.
   function handleAddressUpdated(updated: Device) {
     runtime.deviceRegistry.add(updated);
     rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
-    setScreen({ name: "list" });
     saveDeviceQuietly(updated);
   }
 
-  // Same persistence as handleAddressUpdated, but stays on the current screen instead of
-  // navigating to "list" — TeachBroadlinkCommandScreen teaches several buttons in one sitting, and
-  // bouncing back to the device list after every single learned code would make that unusable.
+  // Same persistence as handleAddressUpdated. Staying on the current screen instead of navigating
+  // to "list" (TeachBroadlinkCommandScreen teaches several buttons in one sitting) is the Devices
+  // tab's own concern (ADR-HEARTH-104) — the only tab this screen is reachable from.
   function handleDeviceUpdatedInPlace(updated: Device): void {
     runtime.deviceRegistry.add(updated);
     rebindStateBridge(updated);
     setDevices(runtime.deviceRegistry.list());
-    setScreen((current) => (current.name === "teach-broadlink" && current.device.id === updated.id ? { name: "teach-broadlink", device: updated } : current));
     saveDeviceQuietly(updated);
   }
 
@@ -364,9 +339,10 @@ export default function App() {
   // ADR-HEARTH-056/058. Same in-memory-first, persist-in-background pattern as handleDeviceAdded.
   // Upserts by id — covers both a brand-new scene and CreateSceneScreen's edit mode saving back
   // over an existing one, the same "add or overwrite" shape scenePersistence.saveScene already uses.
+  // Navigating back to "list" afterward is the Devices tab's own concern (ADR-HEARTH-104) — scenes
+  // are only reachable from that tab.
   function handleSceneSaved(scene: Scene) {
     setScenes((current) => [...current.filter((s) => s.id !== scene.id), scene]);
-    setScreen({ name: "list" });
     saveScene(scene).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn("App", `Could not persist scene ${scene.name}`, { message });
@@ -422,157 +398,66 @@ export default function App() {
     );
   }
 
-  const addScreenProps = {
-    driverRegistry: runtime.driverRegistry,
-    onCancel: () => setScreen({ name: "list" }),
-    onAdded: handleDeviceAdded,
-  };
+  // ADR-HEARTH-104: the feeder doesn't fit the remote-control device-list/remote-screen metaphor
+  // (UniversalTvRemote has nothing meaningful to render for it) — it lives in its own "Feeder" tab
+  // instead, so it's excluded here rather than appearing twice.
+  const devicesTabDevices = devices.filter((device) => device.category !== "feeder");
 
   return (
-    <SafeAreaProvider>
-    <View style={styles.container}>
-      {screen.name === "remote" && screen.device.category === "lighting" && (
-        <LightControlScreen
-          device={screen.device}
-          commandEngine={runtime.commandEngine}
-          stateStore={runtime.stateStore}
-          onReconnect={() => handleReconnect(screen.device)}
-          onRename={handleRenameDevice}
-          onBack={() => setScreen({ name: "list" })}
-        />
-      )}
-      {screen.name === "remote" && screen.device.category !== "lighting" && (
-        <UniversalTvRemote
-          device={screen.device}
-          commandEngine={runtime.commandEngine}
-          stateStore={runtime.stateStore}
-          onReconnect={() => handleReconnect(screen.device)}
-          onRename={handleRenameDevice}
-          onBack={() => setScreen({ name: "list" })}
-        />
-      )}
-      {screen.name === "add" && screen.brand === "sony" && (
-        <AddSonyDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "samsung" && (
-        <AddSamsungDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />}
-      {screen.name === "add" && screen.brand === "roku" && (
-        <AddRokuDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "yamaha" && (
-        <AddYamahaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "xbox" && (
-        <AddXboxDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "kasa" && (
-        <AddKasaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "sonos" && (
-        <AddSonosDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "ps5" && (
-        <AddPs5DeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "denon" && (
-        <AddDenonDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "chromecast" && (
-        <AddChromecastDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "broadlink" && (
-        <AddBroadlinkHubScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "teach-broadlink" && (
-        <TeachBroadlinkCommandScreen
-          device={screen.device}
-          onDone={() => setScreen({ name: "list" })}
-          onCapabilityTaught={handleDeviceUpdatedInPlace}
-        />
-      )}
-      {screen.name === "discover" && (
-        <DiscoverDevicesScreen
-          driverRegistry={runtime.driverRegistry}
-          stateStore={runtime.stateStore}
-          onCancel={() => setScreen({ name: "list" })}
-          onAdded={handleDeviceAdded}
-          onOpenSettings={() => setScreen({ name: "fcc-scan" })}
-          onAddManually={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
-        />
-      )}
-      {screen.name === "fcc-scan" && (
-        <ScanFamilyCommandCenterQrScreen
-          onCancel={() => setScreen({ name: "list" })}
-          onSaved={() => setScreen({ name: "discover" })}
-          onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
-        />
-      )}
-      {screen.name === "fcc-settings" && (
-        <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "discover" })} />
-      )}
-      {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
-      {screen.name === "create-scene" && (
-        <CreateSceneScreen
-          devices={devices}
-          stateStore={runtime.stateStore}
-          editingScene={screen.editingScene}
-          onCancel={() => setScreen({ name: "list" })}
-          onSaved={handleSceneSaved}
-        />
-      )}
-      {screen.name === "edit-address" && (
-        <EditDeviceAddressScreen
-          device={screen.device}
-          driverRegistry={runtime.driverRegistry}
-          onCancel={() => setScreen({ name: "list" })}
-          onSaved={handleAddressUpdated}
-        />
-      )}
-      {screen.name === "rename-device" && (
-        <RenameDeviceScreen
-          device={screen.device}
-          onCancel={() => setScreen({ name: "list" })}
-          onSaved={(newName) => {
-            handleRenameDevice(screen.device, newName);
-            setScreen({ name: "list" });
-          }}
-        />
-      )}
-      {screen.name === "list" && (
-        <DeviceListScreen
-          devices={devices}
-          stateStore={runtime.stateStore}
-          driverRegistry={runtime.driverRegistry}
-          commandEngine={runtime.commandEngine}
-          onSelect={(device) => setScreen({ name: "remote", device })}
-          onAddDevice={(brand) => setScreen({ name: "add", brand })}
-          onAddDeviceWithIp={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
-          onQuickAdd={handleDeviceAdded}
-          onDiscover={() => setScreen({ name: "discover" })}
-          onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
-          onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
-          onCheckForUpdates={() => runUpdateCheck(true)}
-          updateBanner={updateBanner}
-          onApplyUpdate={() => applyDownloadedUpdateAsync()}
-          onDismissUpdateBanner={() => setUpdateBanner(null)}
-          onRemove={handleRemoveDevice}
-          onEditAddress={(device) => setScreen({ name: "edit-address", device })}
-          onRename={(device) => setScreen({ name: "rename-device", device })}
-          onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}
-          scenes={scenes}
-          onRunScene={handleRunScene}
-          onCreateScene={() => setScreen({ name: "create-scene" })}
-          onEditScene={(scene) => setScreen({ name: "create-scene", editingScene: scene })}
-          onRemoveScene={handleRemoveScene}
-        />
-      )}
-      <StatusBar style="light" />
-    </View>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <Tab.Navigator
+            screenOptions={{
+              headerShown: false,
+              tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
+              tabBarActiveTintColor: theme.accentEnd,
+              tabBarInactiveTintColor: theme.textTertiary,
+            }}
+          >
+            <Tab.Screen
+              name="Devices"
+              options={{ tabBarIcon: ({ color, size }) => <Ionicons name="tv-outline" size={size} color={color} /> }}
+            >
+              {() => (
+                <DevicesTabScreen
+                  runtime={runtime}
+                  devices={devicesTabDevices}
+                  scenes={scenes}
+                  updateBanner={updateBanner}
+                  onCheckForUpdates={() => runUpdateCheck(true)}
+                  onApplyUpdate={() => applyDownloadedUpdateAsync()}
+                  onDismissUpdateBanner={() => setUpdateBanner(null)}
+                  onDeviceAdded={handleDeviceAdded}
+                  onReconnect={handleReconnect}
+                  onRenameDevice={handleRenameDevice}
+                  onAddressUpdated={handleAddressUpdated}
+                  onDeviceUpdatedInPlace={handleDeviceUpdatedInPlace}
+                  onRemoveDevice={handleRemoveDevice}
+                  onRunScene={handleRunScene}
+                  onSceneSaved={handleSceneSaved}
+                  onRemoveScene={handleRemoveScene}
+                />
+              )}
+            </Tab.Screen>
+            <Tab.Screen name="Feeder" options={{ tabBarIcon: ({ color, size }) => <Ionicons name="paw-outline" size={size} color={color} /> }}>
+              {() => (
+                <FeederTabScreen
+                  devices={devices}
+                  driverRegistry={runtime.driverRegistry}
+                  stateStore={runtime.stateStore}
+                  commandEngine={runtime.commandEngine}
+                  onAdded={handleDeviceAdded}
+                  onReconnect={handleReconnect}
+                  onRemove={handleRemoveDevice}
+                />
+              )}
+            </Tab.Screen>
+          </Tab.Navigator>
+        </NavigationContainer>
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

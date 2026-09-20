@@ -16,6 +16,7 @@ import { Ps5Driver } from "../drivers/gaming/ps5/Ps5Driver";
 import { DenonDriver } from "../drivers/tv/denon/DenonDriver";
 import { ChromecastDriver } from "../drivers/streaming/chromecast/ChromecastDriver";
 import { BroadlinkIrDriver } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
+import { SquirrelFeederDriver } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { AppleTvDriver } from "../drivers/tv/appletv/AppleTvDriver";
 
 export interface HearthRuntime {
@@ -50,6 +51,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new DenonDriver());
   driverRegistry.register(new ChromecastDriver());
   driverRegistry.register(new BroadlinkIrDriver());
+  driverRegistry.register(new SquirrelFeederDriver());
   driverRegistry.register(new AppleTvDriver());
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);

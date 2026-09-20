@@ -102,7 +102,13 @@ export type CapabilityId =
   //    ADR-HEARTH-071) only ever sends discrete named remote-button codes (Up/Down/Confirm/
   //    Num0-9/etc.) -- no literal-character or string-insertion code exists in either primary
   //    source this project's IRCC-IP codes were verified against.
-  | "textEntry";
+  | "textEntry"
+  // Squirrel feeder integration (2026-09-20, ADR-HEARTH-104): a single fire-and-forget manual
+  // dispense request, sourced from that project's own real ESP32 HTTP API — POST /dispense (see
+  // squirrel-feeder/src/network.cpp's handleDispense) either queues a dispense or returns HTTP
+  // 429 "feeder busy" when the gate isn't idle. No args, and unlike every other capability here,
+  // no persistent on/off value this toggles — SquirrelFeederDriver.ts.
+  | "dispense";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";
