@@ -1,6 +1,7 @@
 import { RokuEcpDriver, ROKU_ECP_DRIVER_ID } from "./RokuEcpDriver";
 import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
   loadFamilyCommandCenterConfig: jest.fn(),
@@ -76,6 +77,7 @@ describe("RokuEcpDriver", () => {
     driver = new RokuEcpDriver();
     global.fetch = jest.fn();
     mockLoadConfig.mockReset(); // defaults to unconfigured — matches every existing test's "no relay/self-heal lookup" world unless a test opts in
+    resetRelayNecessityCacheForTests();
   });
 
   test("declares inputSelection (ECP has real input keys) and playPause but not power/setVolume/menu", () => {

@@ -1,6 +1,7 @@
 import { SonyBraviaDriver } from "./SonyBraviaDriver";
 import { Device } from "../../../core/types/Device";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 
 jest.mock("../../../core/network/wakeOnLan");
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
@@ -33,6 +34,7 @@ describe("SonyBraviaDriver", () => {
     driver = new SonyBraviaDriver();
     global.fetch = jest.fn();
     mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
+    resetRelayNecessityCacheForTests();
   });
 
   test("declares REST-API capabilities plus IRCC-IP nav/select/back/home (ADR-HEARTH-071) — but not menu or textEntry, which neither protocol supports", () => {

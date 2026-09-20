@@ -1,6 +1,7 @@
 import { HueLightDriver, HUE_LIGHT_DRIVER_ID } from "./HueLightDriver";
 import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
 const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
@@ -30,6 +31,7 @@ describe("HueLightDriver", () => {
     driver = new HueLightDriver();
     global.fetch = jest.fn();
     mockLoadConfig.mockReset();
+    resetRelayNecessityCacheForTests();
   });
 
   test("declares power, setBrightness, and setColor — no TV-shaped capabilities", () => {

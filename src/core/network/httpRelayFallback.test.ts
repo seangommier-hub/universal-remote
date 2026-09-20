@@ -1,4 +1,4 @@
-import { requestWithRelayFallback } from "./httpRelayFallback";
+import { requestWithRelayFallback, resetRelayNecessityCacheForTests } from "./httpRelayFallback";
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 
 // Same explicit-factory reasoning as FamilyCommandCenterDiscoveryProvider.test.ts: automocking
@@ -16,6 +16,7 @@ describe("requestWithRelayFallback", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
     (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+    resetRelayNecessityCacheForTests(); // several tests below reuse the same ip -- don't let one test's "direct failed" memory skip another's direct attempt
   });
 
   test("uses the direct response when the device answers directly, without ever calling the relay", async () => {

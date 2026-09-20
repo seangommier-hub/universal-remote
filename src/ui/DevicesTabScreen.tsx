@@ -127,6 +127,7 @@ export function DevicesTabScreen({
     <View style={styles.container}>
       {screen.name === "remote" && screen.device.category === "lighting" && (
         <LightControlScreen
+          key={screen.device.id}
           device={screen.device}
           commandEngine={runtime.commandEngine}
           stateStore={runtime.stateStore}
@@ -137,6 +138,16 @@ export function DevicesTabScreen({
       )}
       {screen.name === "remote" && screen.device.category !== "lighting" && (
         <UniversalTvRemote
+          // Real gap found live (2026-09-20): with no key, switching from one device's remote
+          // screen to a different device's (e.g. Roku -> LG) re-rendered the SAME component
+          // instance with new props instead of mounting a fresh one, relying entirely on every
+          // internal effect having a correct and complete [device.id] dependency array to reset
+          // state -- a real, easy-to-get-wrong pattern, and the more likely explanation for
+          // Sean's live report ("the lg is getting random commands") than an actual command
+          // misroute (CommandEngine/send() both resolve strictly by device.id on every call,
+          // audited directly, not assumed). A key forces React to unmount/remount cleanly on any
+          // device change, the same guarantee a list of items keyed by id already gets for free.
+          key={screen.device.id}
           device={screen.device}
           commandEngine={runtime.commandEngine}
           stateStore={runtime.stateStore}
