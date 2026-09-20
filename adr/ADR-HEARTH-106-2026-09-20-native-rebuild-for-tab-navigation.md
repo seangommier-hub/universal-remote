@@ -52,12 +52,17 @@ today, consuming real build resources and ending in a required reinstall).
   Wake-on-LAN TV power-on, the Broadlink IR/RF hub driver, the Apple TV driver, and the squirrel
   feeder + tab navigation — into one combined native binary, submitted to App Store Connect and
   processing for TestFlight as of this writing (Apple's own 5–10 minute turnaround).
-- This is a real, disclosed process gap worth fixing before the *next* time a native rebuild is
-  needed: the ASC API key file exists only in Sean's Downloads folder, not saved anywhere durable
-  or referenced by a stable path in project tooling. Recorded here per ADR-GLOBAL-008 (use
-  established access before asking Sean to do it manually) — worth moving it to a stable,
-  gitignored location (e.g. alongside the existing `ios-credentials/` folder at the repo root) so
-  a future submit doesn't need to re-ask Sean where it is.
+- **Closed the same day**: Sean provided the `.p8` from his Downloads folder; it's now copied into
+  `ios-credentials/` at the repo root (the same gitignored folder ADR-HEARTH-081 already uses for
+  the distribution cert/key/profile — confirmed via `git check-ignore` before placing it there,
+  never tracked). Both env-var naming conventions this project's tooling actually reads —
+  `EXPO_ASC_API_KEY_PATH`/`EXPO_ASC_KEY_ID`/`EXPO_ASC_ISSUER_ID` (`eas submit`, per `eas.json`) and
+  `EAS_ASC_KEY_PATH`/`EAS_ASC_KEY_ID`/`EAS_ASC_ISSUER_ID` (the `scripts/ios-credentials/*.js`
+  helpers from ADR-HEARTH-082) — are now set as persistent Windows *User*-scope environment
+  variables pointing at that same file, verified by reading each one back. Per ADR-GLOBAL-008: a
+  future `eas submit` (this session's or any other's) needs no re-asking, no Downloads-folder
+  hunting, and no inline env vars passed by hand — it just works, the same way the build
+  credentials already did.
 - Every future JS-only change can resume going out via plain `eas update` once this build is
   installed — this ADR's process (bump version, `eas build`, `eas submit`) is specifically for
   native-dependency changes, not the default path.
