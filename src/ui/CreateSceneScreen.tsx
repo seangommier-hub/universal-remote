@@ -45,7 +45,7 @@ const NO_ARG_CAPABILITIES: ReadonlySet<CapabilityId> = new Set([
   "playPause",
 ]);
 
-const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
+export const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   power: "Power",
   powerOn: "Power On",
   powerOff: "Power Off",

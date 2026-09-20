@@ -27,6 +27,8 @@ import { AddSonosDeviceScreen } from "./src/ui/AddSonosDeviceScreen";
 import { AddPs5DeviceScreen } from "./src/ui/AddPs5DeviceScreen";
 import { AddDenonDeviceScreen } from "./src/ui/AddDenonDeviceScreen";
 import { AddChromecastDeviceScreen } from "./src/ui/AddChromecastDeviceScreen";
+import { AddBroadlinkHubScreen } from "./src/ui/AddBroadlinkHubScreen";
+import { TeachBroadlinkCommandScreen } from "./src/ui/TeachBroadlinkCommandScreen";
 import { AddXboxDeviceScreen } from "./src/ui/AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./src/ui/AddHueDeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./src/ui/AddSmartThingsOutletsScreen";
@@ -50,6 +52,7 @@ type Screen =
   | { name: "fcc-remote" }
   | { name: "edit-address"; device: Device }
   | { name: "rename-device"; device: Device }
+  | { name: "teach-broadlink"; device: Device }
   | { name: "create-scene"; editingScene?: Scene };
 
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
@@ -314,6 +317,17 @@ export default function App() {
     saveDeviceQuietly(updated);
   }
 
+  // Same persistence as handleAddressUpdated, but stays on the current screen instead of
+  // navigating to "list" — TeachBroadlinkCommandScreen teaches several buttons in one sitting, and
+  // bouncing back to the device list after every single learned code would make that unusable.
+  function handleDeviceUpdatedInPlace(updated: Device): void {
+    runtime.deviceRegistry.add(updated);
+    rebindStateBridge(updated);
+    setDevices(runtime.deviceRegistry.list());
+    setScreen((current) => (current.name === "teach-broadlink" && current.device.id === updated.id ? { name: "teach-broadlink", device: updated } : current));
+    saveDeviceQuietly(updated);
+  }
+
   // Found in review (2026-09-10): persistence.ts's removeDevice() and DeviceRegistry.remove()
   // were both fully implemented but never called from anywhere — there was no way to actually
   // remove a paired device short of clearing the whole app's storage, e.g. after mistyping an IP.
@@ -462,6 +476,16 @@ export default function App() {
       {screen.name === "add" && screen.brand === "chromecast" && (
         <AddChromecastDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
       )}
+      {screen.name === "add" && screen.brand === "broadlink" && (
+        <AddBroadlinkHubScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
+      )}
+      {screen.name === "teach-broadlink" && (
+        <TeachBroadlinkCommandScreen
+          device={screen.device}
+          onDone={() => setScreen({ name: "list" })}
+          onCapabilityTaught={handleDeviceUpdatedInPlace}
+        />
+      )}
       {screen.name === "discover" && (
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}
@@ -530,6 +554,7 @@ export default function App() {
           onRemove={handleRemoveDevice}
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
           onRename={(device) => setScreen({ name: "rename-device", device })}
+          onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}
           scenes={scenes}
           onRunScene={handleRunScene}
           onCreateScene={() => setScreen({ name: "create-scene" })}

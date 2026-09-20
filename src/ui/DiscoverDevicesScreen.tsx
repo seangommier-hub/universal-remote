@@ -41,6 +41,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "sonos", label: "Sonos Speaker" },
   { brand: "denon", label: "Denon / Marantz" },
   { brand: "chromecast", label: "Chromecast" },
+  { brand: "broadlink", label: "IR/RF Hub (Broadlink)" },
 ];
 
 type ConnectState = "idle" | "connecting" | "error";

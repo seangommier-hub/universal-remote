@@ -8,6 +8,7 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
+import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
 import { scanAllProviders } from "../discovery/scanAllProviders";
@@ -17,7 +18,7 @@ import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon" | "chromecast";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon" | "chromecast" | "broadlink";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -35,6 +36,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "ps5", label: "PS5", icon: "game-controller-outline" },
   { brand: "denon", label: "Denon / Marantz", icon: "musical-notes-outline" },
   { brand: "chromecast", label: "Chromecast", icon: "tv-outline" },
+  { brand: "broadlink", label: "IR/RF Hub (Broadlink)", icon: "radio-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -45,11 +47,12 @@ const CATEGORY_ICON: Record<string, IconName> = {
   audio: "musical-notes-outline",
 };
 
-// Mirrors DiscoverDevicesScreen.tsx's identical list — the 7 brands with a real "manufacturer +
+// Mirrors DiscoverDevicesScreen.tsx's identical list — the brands with a real "manufacturer +
 // IP, no other credential" manual-add shape (Hue needs a separate bridge-IP device, SmartThings
 // is cloud-linked with no IP-based add, neither fits this "pick a brand for this one IP" flow;
 // PS5 is excluded too — its own credential comes from the PlayStation-App capture dance, not from
 // an IP alone, so pre-filling just the IP from a discovered-but-unrecognized row wouldn't help).
+// Broadlink fits cleanly — IP only, no pairing step at all (see AddBroadlinkHubScreen.tsx).
 const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "sony", label: "Sony TV" },
   { brand: "samsung", label: "Samsung TV" },
@@ -60,6 +63,7 @@ const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
   { brand: "sonos", label: "Sonos Speaker" },
   { brand: "denon", label: "Denon / Marantz" },
   { brand: "chromecast", label: "Chromecast" },
+  { brand: "broadlink", label: "IR/RF Hub (Broadlink)" },
 ];
 
 // ADR-HEARTH-094: which of the Family Command Center dashboard's own DEVICE_CATEGORIES
@@ -99,6 +103,8 @@ interface DeviceListScreenProps {
   onEditAddress: (device: Device) => void;
   /** Opens a small form to rename a device — the action already existed (tap a device's own name inside its remote screen), but that's not discoverable from here, so it's offered from the same long-press menu as Edit address/Remove (ADR-HEARTH-085). */
   onRename: (device: Device) => void;
+  /** Opens the "teach a button" flow for a Broadlink IR/RF hub device (see TeachBroadlinkCommandScreen.tsx) — offered from the same long-press menu, but only for that one driver, since every other device's capabilities come from a fixed protocol rather than something taught after the fact. */
+  onTeachCommands: (device: Device) => void;
   /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056) — a horizontal row of chips
    * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
    * for vertical space on the home screen, the same "one screen" pressure every other layout
@@ -150,6 +156,7 @@ export function DeviceListScreen({
   onRemove,
   onEditAddress,
   onRename,
+  onTeachCommands,
   scenes,
   onRunScene,
   onCreateScene,
@@ -541,6 +548,18 @@ export function DeviceListScreen({
                     }}
                   >
                     <Text style={styles.modalOptionLabel}>Edit address</Text>
+                  </Pressable>
+                )}
+                {actionsTarget.driverId === BROADLINK_IR_DRIVER_ID && (
+                  <Pressable
+                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                    onPress={() => {
+                      const device = actionsTarget;
+                      setActionsTarget(null);
+                      onTeachCommands(device);
+                    }}
+                  >
+                    <Text style={styles.modalOptionLabel}>Teach commands</Text>
                   </Pressable>
                 )}
                 <Pressable
