@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native-jsi-udp/react-native-jsi-udp.podspec b/node_modules/react-native-jsi-udp/react-native-jsi-udp.podspec
+index cb13c40..e8c00b8 100644
+--- a/node_modules/react-native-jsi-udp/react-native-jsi-udp.podspec
++++ b/node_modules/react-native-jsi-udp/react-native-jsi-udp.podspec
+@@ -20,16 +20,21 @@ Pod::Spec.new do |s|
+ 
+   # Don't install the dependencies when we run `pod install` in the old architecture.
+   if ENV['RCT_NEW_ARCH_ENABLED'] == '1' then
+-    s.compiler_flags = folly_compiler_flags + " -DRCT_NEW_ARCH_ENABLED=1"
++    # Patched (Hearth project, 2026-09-20): the real .mm/.cpp source in this package never
++    # references Folly, RCTRequired, RCTTypeSafety, or React-Codegen at all (confirmed directly --
++    # its only React-side imports are RCTBridge/RCTUtils/RCTTurboModule) -- these were stale
++    # boilerplate from an old TurboModule codegen podspec template. React Native 0.86.3 no longer
++    # vends RCT-Folly as an installable pod at all (Folly's own functionality is now folded into
++    # the consolidated ReactNativeDependencies pod), so this dependency line broke `pod install`
++    # outright with "Unable to find a specification for RCT-Folly" -- confirmed as a genuine
++    # ecosystem-wide compatibility gap (react-native-firebase, aws-amplify, and others hit the
++    # identical error against recent React Native versions), not something specific to this app.
++    # ReactCommon/turbomodule/core is kept -- getTurboModule: and ObjCTurboModule are real,
++    # actually-used APIs from that pod.
++    s.compiler_flags = "-DRCT_NEW_ARCH_ENABLED=1"
+     s.pod_target_xcconfig    = {
+-        "HEADER_SEARCH_PATHS" => "\"$(PODS_ROOT)/boost\"",
+-        "OTHER_CPLUSPLUSFLAGS" => "-DFOLLY_NO_CONFIG -DFOLLY_MOBILE=1 -DFOLLY_USE_LIBCPP=1",
+         "CLANG_CXX_LANGUAGE_STANDARD" => "c++17"
+     }
+-    s.dependency "React-Codegen"
+-    s.dependency "RCT-Folly"
+-    s.dependency "RCTRequired"
+-    s.dependency "RCTTypeSafety"
+     s.dependency "ReactCommon/turbomodule/core"
+   else
+     s.pod_target_xcconfig = {
