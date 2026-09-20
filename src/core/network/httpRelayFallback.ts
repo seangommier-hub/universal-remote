@@ -52,6 +52,25 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+// Real bug found live (2026-09-20): a device on a segment the phone can't reach directly (e.g. an
+// isolated Guest/IoT/kids-AP network, see this file's own top comment) means the *direct* leg
+// reliably times out on every single command, so a household member driving the on-screen remote
+// (no physical remote available) ends up tapping several buttons in quick succession while each
+// one is still working through that direct-timeout-then-relay-fallback delay. Under that load,
+// iOS's own native networking layer can cancel an in-flight relay request out from under this
+// code -- and that cancellation does NOT always surface as `err.name === "AbortError"` the way our
+// own deliberate `controller.abort()` timeout does; on iOS/Expo it can come back as a raw,
+// unreadable native exception (seen live: "fetch request has been canceled" from
+// Expo/NativeResponse.swift) that isn't caught by the name check below and was re-thrown as-is,
+// reaching the UI as that same ugly native string. Any message containing "cancel" is now treated
+// the same as a real AbortError -- one retry-able, human-readable message regardless of which
+// native shape the cancellation actually took.
+function isCancellation(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError") return true;
+  return /cancel/i.test(err.message);
+}
+
 async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) {
@@ -79,8 +98,8 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
       RELAY_TIMEOUT_MS
     );
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port}`);
+    if (isCancellation(err)) {
+      throw new Error(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port} — try again`);
     }
     throw err;
   }

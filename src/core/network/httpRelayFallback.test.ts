@@ -72,6 +72,20 @@ describe("requestWithRelayFallback", () => {
     12000
   );
 
+  test(
+    "an iOS-native cancellation on the relay leg (not named AbortError) still surfaces the clean, retry-able message, not the raw native string (real bug, 2026-09-20)",
+    async () => {
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // direct leg fails fast
+        .mockRejectedValueOnce(new Error("fetch request has been canceled (at Expo/NativeResponse.swift:63)"));
+
+      await expect(requestWithRelayFallback({ ip: "10.20.30.40", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow(
+        /didn't respond within/
+      );
+    },
+    12000
+  );
+
   test("throws a clear error when the direct request fails and Family Command Center isn't configured for relay", async () => {
     (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
     (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
