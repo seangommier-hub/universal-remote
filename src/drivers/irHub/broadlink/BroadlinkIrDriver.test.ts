@@ -28,6 +28,10 @@ describe("BroadlinkIrDriver", () => {
     expect(driver.getCapabilities()).toEqual(BROADLINK_TEACHABLE_CAPABILITIES);
   });
 
+  test("declares hasDynamicCapabilities so App.tsx's refreshCapabilities never overwrites a device's taught-so-far list", () => {
+    expect(driver.hasDynamicCapabilities).toBe(true);
+  });
+
   test("connect() sends no network request — nothing to verify without a real side effect (same reasoning as Xbox/PS5)", async () => {
     await driver.connect(device);
     expect(mockSendCode).not.toHaveBeenCalled();

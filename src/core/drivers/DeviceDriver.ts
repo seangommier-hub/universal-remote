@@ -18,6 +18,15 @@ export interface DeviceDriver {
   /** Capabilities this driver can ever support, across all device models it drives. A specific Device may support a subset. */
   getCapabilities(): CapabilityId[];
 
+  /** True for a driver whose per-Device `capabilities` are taught/learned rather than a fixed
+   * function of the driver alone (BroadlinkIrDriver, ADR-HEARTH-103) — a Device's own `capabilities`
+   * field is the source of truth for what's actually been taught, and must never be overwritten
+   * with `getCapabilities()`'s full teachable superset. Callers that otherwise resync a persisted
+   * device's capabilities against its driver (App.tsx's refreshCapabilities) must skip that for
+   * any driver where this is true. Omitted/undefined is treated as false — every existing driver's
+   * behavior is unchanged by this field's addition. */
+  hasDynamicCapabilities?: boolean;
+
   connect(device: Device): Promise<void>;
   disconnect(device: Device): Promise<void>;
 

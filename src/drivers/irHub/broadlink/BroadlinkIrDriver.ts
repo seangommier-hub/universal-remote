@@ -66,6 +66,7 @@ function requireConfig(device: Device): BroadlinkIrConfig {
 export class BroadlinkIrDriver implements DeviceDriver {
   id = BROADLINK_IR_DRIVER_ID;
   displayName = "Broadlink IR/RF Hub";
+  hasDynamicCapabilities = true;
 
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();

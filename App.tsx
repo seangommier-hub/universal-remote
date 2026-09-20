@@ -136,9 +136,17 @@ export default function App() {
   // gained new capabilities after a device was paired left that device permanently unaware of
   // them. Capabilities are a pure function of the driver, not the live connection — refreshed
   // synchronously here, independent of whether connect() itself succeeds.
+  // Real bug found while wiring the Broadlink IR/RF hub driver (2026-09-20): this used to
+  // unconditionally overwrite `capabilities` for every device — correct for every driver whose
+  // capabilities are a pure function of the driver itself, but BroadlinkIrDriver's are taught per
+  // device (grows one button at a time, see ADR-HEARTH-103) and starts empty at add-time. Syncing
+  // it against `getCapabilities()`'s full teachable superset on every app launch would silently
+  // "unteach" nothing but *show* every untaught button as if it worked, defeating the whole
+  // "only show what's actually been learned" UX. `hasDynamicCapabilities` (DeviceDriver.ts) is the
+  // explicit, driver-declared escape hatch — skipped here rather than resynced.
   function refreshCapabilities(device: Device) {
     const driver = runtime.driverRegistry.get(device.driverId);
-    if (driver) device.capabilities = driver.getCapabilities();
+    if (driver && !driver.hasDynamicCapabilities) device.capabilities = driver.getCapabilities();
   }
 
   // Sean, directly (2026-09-09): "make sure that nothing ever gets unconnected like a device on
