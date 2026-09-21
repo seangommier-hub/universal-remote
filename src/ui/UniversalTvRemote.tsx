@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
@@ -10,6 +10,7 @@ import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { loadRecentApps, recordAppLaunch } from "../runtime/recentAppsPersistence";
+import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
 import { theme } from "./theme";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -170,6 +171,7 @@ const KEYPAD_ROWS = [
   ["7", "8", "9"],
 ];
 const MAX_CHANNEL_DIGITS = 4; // no real-world channel number needs more than this; guards against a runaway digit sequence being sent to the device
+const SLEEP_TIMER_DURATIONS_MINUTES = [15, 30, 45, 60]; // matches the presets Samsung's own native sleepTimer cycles through — familiar even for devices using the universal fallback
 
 /**
  * One remote screen that works for any TV driver. Every control shown here is gated on the
@@ -202,6 +204,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const [nameInput, setNameInput] = useState(device.name);
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
+  // Sean, directly (2026-09-20): "there should be a method for a sleep function on any tv to be
+  // easily activated." sleepTimerManager.ts is the plain in-memory countdown; this screen only
+  // tracks its current expiry (for the button's active/label state) and the picker modal's
+  // visibility. Resynced below whenever `device.id` changes, same pattern as commandError/
+  // editingName above, so switching devices never shows a stale timer from the last one.
+  const [sleepExpiresAt, setSleepExpiresAt] = useState<number | undefined>(() => getSleepTimerExpiration(device.id));
+  const [showSleepPicker, setShowSleepPicker] = useState(false);
   // Real gap found in review (2026-09-09): `send()` fired commandEngine.execute() without
   // awaiting it, so a failed command (device dropped mid-press, TV rejected the request) vanished
   // silently — CommandEngine.execute() never throws, it resolves a CommandResult either way, so
@@ -300,6 +309,14 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setNameInput(device.name);
   }, [device.id, device.name]);
 
+  useEffect(() => {
+    // Same reasoning again: navigating to a different device shouldn't carry over the previous
+    // device's picker or a stale expiry read before this effect resubscribes.
+    setShowSleepPicker(false);
+    setSleepExpiresAt(getSleepTimerExpiration(device.id));
+    return subscribeSleepTimer(device.id, (timerState) => setSleepExpiresAt(timerState?.expiresAt));
+  }, [device.id]);
+
   function commitNameEdit() {
     setEditingName(false);
     const trimmed = nameInput.trim();
@@ -355,6 +372,33 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setKeyboardInput("");
   }
 
+  // Universal sleep timer's own power-off — used instead of `send("sleepTimer")` (Samsung's real
+  // KEY_SLEEP, untouched) for every other device. Prefers the dedicated powerOff capability
+  // (LG/Roku) and falls back to the single toggle "power" capability (Sony/Samsung) otherwise —
+  // mirrors the same preference order the power button itself already renders.
+  function sendUniversalSleepPowerOff() {
+    if (has(device, "powerOff")) {
+      send("powerOff");
+    } else if (has(device, "power")) {
+      send("power");
+    }
+  }
+
+  function startUniversalSleep(minutes: number) {
+    startSleepTimer(device.id, minutes, sendUniversalSleepPowerOff);
+    setShowSleepPicker(false);
+  }
+
+  function cancelUniversalSleep() {
+    cancelSleepTimer(device.id);
+    setShowSleepPicker(false);
+  }
+
+  function formatSleepRemaining(expiresAt: number): string {
+    const minutes = Math.max(1, Math.ceil((expiresAt - Date.now()) / 60_000));
+    return minutes === 1 ? "1 min" : `${minutes} min`;
+  }
+
   // Real-hardware finding (2026-09-14, spotted while building XboxDriver.ts): this used to default
   // to "off" whenever state.values.power was simply undefined — honest for a device this screen
   // has real readback for (every driver that declares "power", plus Roku's read-only power state),
@@ -364,6 +408,22 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // undefined here means exactly that: unknown, not "assume off" — the pill below now hides itself
   // rather than state a fact this app doesn't have.
   const knownPower = state.values.power === "on" || state.values.power === "off" ? state.values.power : undefined;
+  // Real bug found live (2026-09-20): LgWebOsDriver is the first driver to declare BOTH powerOn
+  // (Wake-on-LAN, ADR-HEARTH-102) and powerOff (SSAP) as separate capabilities — every earlier
+  // driver had at most one of the two (Xbox/PS5: powerOn only; Roku: powerOff only), so this
+  // screen's original "one button per declared capability" rendering never had to consider both
+  // appearing on the same device together, and simply showed two power buttons side by side.
+  // Collapsed into the same single toggle-feeling button "power"-capable devices (Sony/Samsung)
+  // already get — the household shouldn't need to know which of two buttons is the "right" one
+  // for a TV that's currently on vs. off, the same "one button, real remotes don't make you
+  // choose" reasoning already documented below for why Power lives in the header at all.
+  const hasSeparatePowerOnOff = has(device, "powerOn") && has(device, "powerOff");
+  // Sean, directly (2026-09-20): "there should be a method for a sleep function on any tv to be
+  // easily activated." Samsung's real native sleepTimer (KEY_SLEEP) stays exactly as it is; every
+  // other device that has SOME power-off mechanism gets this client-side countdown fallback
+  // instead (see sleepTimerManager.ts's own doc comment for the full reasoning).
+  const hasNativeSleepTimer = has(device, "sleepTimer");
+  const canUniversalSleep = !hasNativeSleepTimer && (has(device, "power") || has(device, "powerOff"));
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
   const muted = state.values.muted === true;
@@ -494,7 +554,22 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
             disabled={controlsDisabled}
           />
         )}
-        {has(device, "powerOn") && (
+        {hasSeparatePowerOnOff && (
+          // A device with real, separate powerOn/powerOff mechanisms (LG: Wake-on-LAN + SSAP) —
+          // one button, same as every other TV's "power" toggle above. Defaults to powerOn when
+          // state isn't known yet (a TV is more often reached for while off than on), otherwise
+          // sends whichever command is the real opposite of the last known state.
+          <CapabilityButton
+            shape="circle"
+            scale={scale}
+            icon={knownPower === "on" ? "power" : "power-outline"}
+            label="Power"
+            variant={knownPower === "on" ? "accent" : "ghost"}
+            onPress={() => send(knownPower === "on" ? "powerOff" : "powerOn")}
+            disabled={controlsDisabled}
+          />
+        )}
+        {!hasSeparatePowerOnOff && has(device, "powerOn") && (
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -505,7 +580,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
             disabled={controlsDisabled}
           />
         )}
-        {has(device, "powerOff") && (
+        {!hasSeparatePowerOnOff && has(device, "powerOff") && (
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -919,7 +994,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         has(device, "home") ||
         has(device, "menu") ||
         has(device, "settings") ||
-        has(device, "sleepTimer") ||
+        hasNativeSleepTimer ||
+        canUniversalSleep ||
         has(device, "openSourceList")) && (
         <View style={[styles.card, styles.utilityCard]}>
           {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
@@ -943,7 +1019,17 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 because their own public APIs genuinely have no equivalent — not omitted by
                 oversight. */}
             {has(device, "settings") && <UtilityAction scale={scale} icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
-            {has(device, "sleepTimer") && <UtilityAction scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
+            {hasNativeSleepTimer && <UtilityAction scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
+            {canUniversalSleep && (
+              <UtilityAction
+                scale={scale}
+                icon={sleepExpiresAt ? "moon" : "moon-outline"}
+                label="Sleep"
+                active={sleepExpiresAt !== undefined}
+                onPress={() => setShowSleepPicker(true)}
+                disabled={controlsDisabled}
+              />
+            )}
             {/* Real-hardware research (2026-09-10): Samsung's KEY_SOURCE opens the TV's own
                 on-screen source picker rather than jumping to a named input directly — a
                 genuinely different mechanism from inputSelection, not the same feature under a
@@ -1029,6 +1115,33 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         </View>
       )}
     </ScrollView>
+
+      <Modal visible={showSleepPicker} transparent animationType="fade" onRequestClose={() => setShowSleepPicker(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowSleepPicker(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            {sleepExpiresAt !== undefined ? (
+              <>
+                <Text style={styles.modalTitle}>Sleep Timer</Text>
+                <Pressable style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]} onPress={cancelUniversalSleep}>
+                  <Text style={styles.modalOptionLabel}>Cancel sleep ({formatSleepRemaining(sleepExpiresAt)} left)</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Sleep after…</Text>
+                {SLEEP_TIMER_DURATIONS_MINUTES.map((minutes) => (
+                  <Pressable key={minutes} style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]} onPress={() => startUniversalSleep(minutes)}>
+                    <Text style={styles.modalOptionLabel}>{minutes} minutes</Text>
+                  </Pressable>
+                ))}
+              </>
+            )}
+            <Pressable style={styles.modalCancel} onPress={() => setShowSleepPicker(false)}>
+              <Text style={styles.modalCancelLabel}>Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1345,4 +1458,22 @@ const styles = StyleSheet.create({
   // escape hatch (built for a non-default background), applied here instead
   // of adding a new variant since this is the only call site that needs it.
   dpadArrow: { backgroundColor: "transparent", borderWidth: 0 },
+  // Same modal styling pattern as DeviceListScreen.tsx's own picker modals — reused here for the
+  // universal sleep timer's duration picker so it reads as the same kind of control, not a
+  // one-off design.
+  modalBackdrop: { flex: 1, backgroundColor: "#00000099", alignItems: "center", justifyContent: "center", padding: theme.spacing.xl },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: theme.surfaceRaised,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  modalTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", marginBottom: theme.spacing.xs },
+  modalOption: { paddingVertical: theme.spacing.md, borderRadius: theme.radius.sm },
+  modalOptionPressed: { backgroundColor: theme.surfaceRaised },
+  modalOptionLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "600" },
+  modalCancel: { paddingVertical: theme.spacing.md, marginTop: theme.spacing.xs, borderTopWidth: 1, borderTopColor: theme.border },
+  modalCancelLabel: { color: theme.textSecondary, fontSize: theme.type.body, fontWeight: "600", textAlign: "center" },
 });
