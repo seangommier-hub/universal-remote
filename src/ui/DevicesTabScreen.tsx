@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { HearthRuntime } from "../runtime/bootstrap";
+import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
 import { DeviceListScreen, AddableBrand } from "./DeviceListScreen";
@@ -91,6 +92,20 @@ export function DevicesTabScreen({
   onRemoveScene,
 }: DevicesTabScreenProps) {
   const [screen, setScreen] = useState<Screen>({ name: "list" });
+  // Real gap found live (2026-09-21): the header's "Connect Family Command Center" button always
+  // opened the QR-scan screen, meant for *first-time* pairing (a camera view + a "manual entry"
+  // text link buried inside it) -- the only way this app ever exposed the settings screen at all.
+  // Once Family Command Center is already configured (the common case after initial setup), a
+  // household member looking for "settings" to add the new public/away URL (ADR-HEARTH-123) had
+  // no direct path there and correctly reported "there is no settings" — camera-scanning to reach
+  // settings you already have isn't a settings screen a user would ever find on their own. Checked
+  // once on mount and re-checked after fcc-settings saves, so the button's destination (and label)
+  // reflect whether this is still a first-time setup or an already-configured household.
+  const [fccConfigured, setFccConfigured] = useState(false);
+
+  useEffect(() => {
+    loadFamilyCommandCenterConfig().then((config) => setFccConfigured(config !== null));
+  }, [screen.name]);
 
   // Screen navigation after an add/rename/edit/save is this tab's own concern (ADR-HEARTH-104) —
   // App.tsx's handlers now only do registry/persistence work and hand back the updated device.
@@ -234,7 +249,13 @@ export function DevicesTabScreen({
         />
       )}
       {screen.name === "fcc-settings" && (
-        <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "discover" })} />
+        // Real gap found live (2026-09-21): always advancing to "discover" after saving made sense
+        // for this screen's original only-entry-point (first-time setup via the QR-scan flow's
+        // manual-entry link), but this screen is now also reached directly from the header to edit
+        // an already-configured household's settings (e.g. adding the public/away URL,
+        // ADR-HEARTH-123) — dropping straight into a device-discovery scan afterward would be a
+        // surprising detour for that case. Back to the device list, same as Cancel, matches both.
+        <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "list" })} />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "create-scene" && (
@@ -275,7 +296,8 @@ export function DevicesTabScreen({
           onAddDeviceWithIp={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
           onQuickAdd={handleAdded}
           onDiscover={() => setScreen({ name: "discover" })}
-          onConnectFamilyCommandCenter={() => setScreen({ name: "fcc-scan" })}
+          onConnectFamilyCommandCenter={() => setScreen(fccConfigured ? { name: "fcc-settings" } : { name: "fcc-scan" })}
+          fccConfigured={fccConfigured}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onCheckForUpdates={onCheckForUpdates}
           updateBanner={updateBanner}

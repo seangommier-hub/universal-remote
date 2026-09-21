@@ -93,8 +93,17 @@ interface DeviceListScreenProps {
   /** A quick-add from the inline "Suggested from your network" section (ADR-HEARTH-092) — routed through the same handler as every other add path (App.tsx's handleDeviceAdded), so duplicate prevention and persistence work identically regardless of which screen the add started from. */
   onQuickAdd: (device: Device) => void;
   onDiscover: () => void;
-  /** Opens Family Command Center pairing directly from the home screen — previously only reachable by first triggering "Discover devices" and hitting its not-configured error state, three taps deep for what's meant to be a one-time setup step. */
+  /** Opens Family Command Center pairing (first-time setup) or its settings (already configured)
+   * directly from the home screen — previously only reachable by first triggering "Discover
+   * devices" and hitting its not-configured error state, three taps deep for what's meant to be a
+   * one-time setup step. Real gap found live (2026-09-21): once already configured, this used to
+   * still open the QR-scan pairing screen every time — camera-scanning to reach settings you
+   * already have isn't something a user would ever find on their own ("there is no settings
+   * there"). `fccConfigured` (below) lets the caller route straight to settings instead once
+   * there's something to edit. */
   onConnectFamilyCommandCenter: () => void;
+  /** Whether Family Command Center is already configured — see `onConnectFamilyCommandCenter`'s own comment for why this changes the header button's destination, icon, and label. */
+  fccConfigured: boolean;
   /** Opens the phone-as-trackpad-and-keyboard screen for the Family Command Center itself (ADR-HEARTH-033) — a different thing from pairing/discovering *devices*, so its own header button rather than folding into onConnectFamilyCommandCenter. */
   onOpenCommandCenterRemote: () => void;
   /** Manually triggers an EAS Update check (ADR-HEARTH-084/086) — Sean's "a true update button" ask, rather than only ever waiting for the silent automatic check on launch/foreground. */
@@ -153,6 +162,7 @@ export function DeviceListScreen({
   onQuickAdd,
   onDiscover,
   onConnectFamilyCommandCenter,
+  fccConfigured,
   onOpenCommandCenterRemote,
   onCheckForUpdates,
   updateBanner,
@@ -312,9 +322,9 @@ export function DeviceListScreen({
           style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
           onPress={onConnectFamilyCommandCenter}
           accessibilityRole="button"
-          accessibilityLabel="Connect Family Command Center"
+          accessibilityLabel={fccConfigured ? "Family Command Center settings" : "Connect Family Command Center"}
         >
-          <Ionicons name="link-outline" size={20} color={theme.accentEnd} />
+          <Ionicons name={fccConfigured ? "settings-outline" : "link-outline"} size={20} color={theme.accentEnd} />
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
