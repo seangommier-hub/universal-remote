@@ -95,4 +95,49 @@ describe("requestWithRelayFallback", () => {
       /isn't configured for relay fallback/
     );
   });
+
+  // Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used even
+  // when off network." Away from the home WiFi, the LAN baseUrl can't be reached at all -- these
+  // confirm the public-tunnel fallback only fires for that case, never for a real rejection.
+  describe("public URL fallback (away from home)", () => {
+    beforeEach(() => {
+      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({
+        baseUrl: "http://192.168.1.172:3210",
+        token: "secret-token",
+        publicBaseUrl: "https://hearth-relay.carddna.app",
+      });
+    });
+
+    test("falls back to the public URL when both the direct AND the LAN relay are unreachable", async () => {
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // direct leg -- no route to the device's LAN IP at all
+        .mockRejectedValueOnce(new Error("Network request failed")) // LAN relay -- no route to the Pi either
+        .mockResolvedValueOnce(jsonResponse({ status: 200, headers: {}, body: '{"ok":true}' })); // public tunnel succeeds
+
+      const result = await requestWithRelayFallback({ ip: "192.168.1.50", port: 8060, path: "/query/device-info", method: "GET" });
+
+      expect(result.ok).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(global.fetch).toHaveBeenNthCalledWith(3, "https://hearth-relay.carddna.app/api/integrations/hearth/relay/http", expect.objectContaining({ method: "POST" }));
+    });
+
+    test("does NOT try the public URL when the LAN relay was reached but rejected the request (a real error, not an unreachability)", async () => {
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // direct leg fails
+        .mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}), text: async () => "" } as Response); // LAN relay reached, explicitly rejected
+
+      await expect(requestWithRelayFallback({ ip: "192.168.1.50", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow(
+        /rejected the relay request: HTTP 403/
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(2); // never attempted the public URL
+    });
+
+    test("no publicBaseUrl configured -- the LAN-unreachable error still surfaces normally, exactly as before this feature existed", async () => {
+      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed")).mockRejectedValueOnce(new Error("Network request failed"));
+
+      await expect(requestWithRelayFallback({ ip: "192.168.1.50", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+  });
 });

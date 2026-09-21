@@ -92,21 +92,22 @@ function isCancellation(err: unknown): boolean {
   return /cancel/i.test(err.message);
 }
 
-async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
-  const config = await loadFamilyCommandCenterConfig();
-  if (!config) {
-    throw new Error(
-      `Could not reach ${request.ip} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`
-    );
-  }
+// Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used even
+// when off network." Distinguishes "couldn't reach Family Command Center at all" (worth retrying
+// against the public tunnel, if one's configured) from "Family Command Center was reached and
+// explicitly rejected the request" (a real error — wrong token, malformed request, a device it
+// doesn't recognize — retrying elsewhere would only mask it, not fix it). Only the former ever
+// triggers the public-URL fallback below.
+class FccUnreachableError extends Error {}
 
+async function callRelayAt(baseUrl: string, token: string, request: RelayableRequest): Promise<RelayableResponse> {
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      `${config.baseUrl}${RELAY_PATH}`,
+      `${baseUrl}${RELAY_PATH}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           targetIp: request.ip,
           targetPort: request.port,
@@ -120,9 +121,9 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
     );
   } catch (err) {
     if (isCancellation(err)) {
-      throw new Error(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port} — try again`);
+      throw new FccUnreachableError(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port} — try again`);
     }
-    throw err;
+    throw new FccUnreachableError(err instanceof Error ? err.message : String(err));
   }
 
   if (!response.ok) {
@@ -136,6 +137,26 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
     json: async () => JSON.parse(result.body),
     text: async () => result.body,
   };
+}
+
+async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
+  const config = await loadFamilyCommandCenterConfig();
+  if (!config) {
+    throw new Error(
+      `Could not reach ${request.ip} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`
+    );
+  }
+
+  try {
+    return await callRelayAt(config.baseUrl, config.token, request);
+  } catch (err) {
+    // Only a genuine "couldn't reach it at all" failure falls through to the public tunnel — and
+    // only when one's actually configured (Settings screen, optional). Away from the home WiFi,
+    // the LAN baseUrl fails fast (nothing there to answer), so this adds one real network attempt,
+    // not a silent hang.
+    if (!(err instanceof FccUnreachableError) || !config.publicBaseUrl) throw err;
+    return await callRelayAt(config.publicBaseUrl, config.token, request);
+  }
 }
 
 /** Tries a direct HTTP request first; falls back to relaying through Family Command Center if that fails. Skips the direct attempt entirely once this address has already proven direct-unreachable this session (see knownRelayOnly above). */

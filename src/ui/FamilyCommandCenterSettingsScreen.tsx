@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig, verifyAndSavePublicUrl } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -23,6 +23,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("http://192.168.1.172:3210");
   const [token, setToken] = useState("");
+  const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -31,6 +32,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
       if (existing) {
         setBaseUrl(existing.baseUrl);
         setToken(existing.token);
+        setPublicBaseUrl(existing.publicBaseUrl ?? "");
       }
     });
   }, []);
@@ -40,6 +42,10 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
     setErrorMessage("");
     try {
       await verifyAndSaveFamilyCommandCenterConfig(baseUrl, token);
+      // Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used
+      // even when off network." Optional, separate verification — an empty field here just clears
+      // a previously-saved public URL rather than failing the whole save.
+      await verifyAndSavePublicUrl(publicBaseUrl);
       onSaved();
     } catch (err) {
       setStatus("error");
@@ -85,6 +91,23 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
         placeholderTextColor={theme.textTertiary}
         autoCapitalize="none"
         secureTextEntry
+      />
+
+      <Text style={styles.label}>Public address (optional)</Text>
+      <View style={styles.hintCard}>
+        <Text style={styles.hint}>
+          Lets Hearth reach your devices even when your phone isn't on the home WiFi — leave this blank if you only
+          ever use Hearth at home. Same token as above.
+        </Text>
+      </View>
+      <TextInput
+        style={styles.input}
+        value={publicBaseUrl}
+        onChangeText={setPublicBaseUrl}
+        placeholder="https://hearth-relay.carddna.app"
+        placeholderTextColor={theme.textTertiary}
+        autoCapitalize="none"
+        keyboardType="url"
       />
 
       {status === "error" && (
