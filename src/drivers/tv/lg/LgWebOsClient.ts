@@ -15,6 +15,20 @@ import { logger } from "../../../core/logging/logger";
 
 const LOG_SCOPE = "LgWebOsClient";
 const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
+// Real gap found live (2026-09-21): unlike connect()'s own register handshake, `call()` never had
+// a timeout at all — confirmed via Family Command Center's own relay logs showing a real,
+// successful register handshake with no further activity for 20+ minutes afterward, while Sean's
+// app stayed stuck showing "Reconnecting...". Root cause: doConnect() awaits refreshVolumeState/
+// refreshInputList/refreshApps sequentially, each calling `call()` — if this TV's firmware ever
+// silently drops a response to one specific request instead of sending an explicit error (rather
+// than a clean reject), that promise hung forever, doConnect() never resolved OR rejected, and the
+// stuck promise sat in the driver's `inFlightConnects` map permanently — every later reconnect
+// attempt (the button, app-foreground, opening the remote screen) just re-awaited that same dead
+// promise instead of ever trying the network again, which is exactly why the relay's own logs
+// showed no new connection attempts at all despite the app appearing to "loop." A normal SSAP
+// request answers in well under a second on real hardware; 8s is generous headroom before treating
+// it as genuinely hung, not a real request taking a while.
+const CALL_TIMEOUT_MS = 8000;
 const PORT = 3001;
 const SCHEME = "wss";
 
@@ -249,14 +263,31 @@ export class LgWebOsClient {
     });
   }
 
-  /** Sends an SSAP request and resolves with its response payload. */
+  /** Sends an SSAP request and resolves with its response payload. Rejects if this TV never
+   * responds at all within CALL_TIMEOUT_MS (see that constant's own comment) — every caller
+   * already treats a rejection as a real failure (either its own try/catch, per-field best-effort
+   * handling, or executeCommand's normal error surface), so this never needed special handling
+   * beyond just making sure the promise actually settles. */
   call(uri: string, payload: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     if (!this.socket || this.socket.readyState !== this.socket.OPEN) {
       throw new Error("LG webOS socket is not connected — call connect() first");
     }
     const id = String(this.nextId++);
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`LG webOS request to ${uri} timed out waiting for a response`));
+      }, CALL_TIMEOUT_MS);
+      this.pending.set(id, {
+        resolve: (payload) => {
+          clearTimeout(timeout);
+          resolve(payload);
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
       this.socket!.send(JSON.stringify({ type: "request", id, uri, payload }));
     });
   }

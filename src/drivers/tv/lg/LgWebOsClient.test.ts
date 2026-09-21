@@ -129,6 +129,63 @@ describe("LgWebOsClient", () => {
     await expect(callPromise).rejects.toThrow("no tuner");
   });
 
+  // Real gap found live (2026-09-21): call() never had a timeout at all — a TV that silently drops
+  // a response to one specific request (rather than sending an explicit error) hung this promise
+  // forever, which hung doConnect() (it awaits refreshVolumeState/refreshInputList/refreshApps in
+  // sequence, each calling call()) forever too — with nothing ever rejecting, the stuck connect()
+  // promise sat in the driver's inFlightConnects map permanently, and every later reconnect attempt
+  // just re-awaited the same dead promise instead of trying the network again. Confirmed live via
+  // Family Command Center's own relay logs: a real successful register handshake, then zero further
+  // activity for 20+ minutes while the app stayed stuck on "Reconnecting...".
+  describe("call() timeout (real gap found live, 2026-09-21)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test("rejects with a clear message if the TV never responds at all", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+
+      const callPromise = client.call("ssap://com.webos.applicationManager/listLaunchPoints");
+      jest.advanceTimersByTime(8000);
+
+      await expect(callPromise).rejects.toThrow(/timed out waiting for a response/);
+    });
+
+    test("a late response after the timeout has already fired is silently ignored, not a crash", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+
+      const callPromise = client.call("ssap://audio/getVolume");
+      const socket = MockWebSocket.latest();
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      jest.advanceTimersByTime(8000);
+      await expect(callPromise).rejects.toThrow(/timed out/);
+
+      // The TV finally answers, long after this driver gave up on it -- handleMessage looks up an
+      // id no longer in `pending` (deleted by the timeout) and finds nothing, exactly like any
+      // other unrecognized message.
+      expect(() => socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true, volume: 12 } })).not.toThrow();
+    });
+
+    test("a real response just under the timeout still resolves normally", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      await connectClient(client);
+
+      const callPromise = client.call("ssap://audio/getVolume");
+      const socket = MockWebSocket.latest();
+      const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      jest.advanceTimersByTime(7000);
+      socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true, volume: 12 } });
+
+      await expect(callPromise).resolves.toEqual({ returnValue: true, volume: 12 });
+    });
+  });
+
   test("sendButton opens a separate pointer-input socket and writes the key:value wire format", async () => {
     const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
     await connectClient(client);
