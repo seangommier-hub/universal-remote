@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "15.0.2",
+    "@noble/hashes": "2.4.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.19.2",
     "@react-navigation/native": "^7.4.1",
@@ -53,6 +54,11 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/.expo/"
+    ],
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@noble))",
+      "/node_modules/react-native-reanimated/plugin/",
+      "/node_modules/@react-native/babel-preset/"
     ]
   }
 }

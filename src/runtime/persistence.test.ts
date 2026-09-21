@@ -60,6 +60,19 @@ describe("persistence", () => {
     expect(JSON.parse(samsungStoredJson)[0].config.token).toBeUndefined();
   });
 
+  // ADR-HEARTH-118 (2026-09-21): SwitchBotVacuumDriver's HMAC signing key, added to
+  // SENSITIVE_CONFIG_KEYS proactively rather than after a fresh audit finds it missing.
+  test("saveDevice stores SwitchBot's secret in SecureStore too", async () => {
+    const vacuumDevice: Device = { ...sonyDevice, id: "vacuum-1", config: { token: "sb-token", secret: "sb-secret", deviceId: "sb-device-1" } };
+    await saveDevice(vacuumDevice);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.device.vacuum-1.secret", "sb-secret");
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.device.vacuum-1.token", "sb-token");
+    const [, storedJson] = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
+    expect(JSON.parse(storedJson)[0].config.secret).toBeUndefined();
+    expect(JSON.parse(storedJson)[0].config.token).toBeUndefined();
+    expect(JSON.parse(storedJson)[0].config.deviceId).toBe("sb-device-1"); // non-sensitive, stays inline
+  });
+
   test("loadDevices rehydrates the psk from SecureStore back onto the device config", async () => {
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
       JSON.stringify([{ ...sonyDevice, config: { ipAddress: "192.168.1.50" } }])

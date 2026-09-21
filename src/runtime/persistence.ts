@@ -10,7 +10,9 @@ const DEVICES_STORAGE_KEY = "hearth.devices";
 // ADR-HEARTH-008 already documented the standing rule that a new driver's real credential field
 // must be added here. Both are real pairing secrets, the same class as Sony's `psk` already
 // covered — landed in plain AsyncStorage until now.
-const SENSITIVE_CONFIG_KEYS = ["psk", "clientKey", "token"];
+// `secret` added 2026-09-21 (ADR-HEARTH-118) for SwitchBotVacuumDriver's HMAC signing key —
+// applying that same standing rule proactively this time, not after a fresh audit finds it missing.
+const SENSITIVE_CONFIG_KEYS = ["psk", "clientKey", "token", "secret"];
 
 // Real-hardware finding (2026-09-09): SecureStore keys may only contain alphanumerics, ".",
 // "-", and "_" -- a device id built from a MAC address (FamilyCommandCenterDiscoveryProvider's

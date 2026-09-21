@@ -140,7 +140,19 @@ export type CapabilityId =
   // squirrel-feeder/src/network.cpp's handleDispense) either queues a dispense or returns HTTP
   // 429 "feeder busy" when the gate isn't idle. No args, and unlike every other capability here,
   // no persistent on/off value this toggles — SquirrelFeederDriver.ts.
-  | "dispense";
+  | "dispense"
+  // Robot vacuum, Phase 6 of ROADMAP.md (2026-09-21, ADR-HEARTH-118): SwitchBot's official
+  // OpenAPI (github.com/OpenWonderLabs/SwitchBotAPI, v1.1), verified per-model before adding —
+  // Robot Vacuum Cleaner S1/S1 Plus and Mini Robot Vacuum K10+/K10+ Pro/K11+ all document the
+  // identical four-command set (`start`, `stop`, `dock`, `PowLevel`); the newer mop-capable
+  // Floor Cleaning Robot S10/S20 and K10+ Pro Combo/K20+ Pro use a different, richer
+  // `startClean`/`changeParam` command shape not implemented here — SwitchBotVacuumDriver.ts
+  // only declares support for the models whose command set it actually implements, the same
+  // "declare only what's confirmed real" standard every other driver in this project follows.
+  | "vacuumStart"
+  | "vacuumStop"
+  | "vacuumDock"
+  | "setSuctionPower";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

@@ -18,7 +18,7 @@ import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon" | "chromecast" | "broadlink" | "appletv";
+export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon" | "chromecast" | "broadlink" | "appletv" | "switchbot";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -38,6 +38,7 @@ const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }
   { brand: "chromecast", label: "Chromecast", icon: "tv-outline" },
   { brand: "broadlink", label: "IR/RF Hub (Broadlink)", icon: "radio-outline" },
   { brand: "appletv", label: "Apple TV", icon: "tv-outline" },
+  { brand: "switchbot", label: "SwitchBot Robot Vacuum", icon: "hardware-chip-outline" },
 ];
 
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -46,6 +47,7 @@ const CATEGORY_ICON: Record<string, IconName> = {
   lighting: "bulb-outline",
   gaming: "game-controller-outline",
   audio: "musical-notes-outline",
+  vacuum: "hardware-chip-outline",
 };
 
 // Mirrors DiscoverDevicesScreen.tsx's identical list — the brands with a real "manufacturer +

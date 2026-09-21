@@ -264,8 +264,10 @@ implemented" from an earlier session, blocked on the same missing credential.
 
 ## Phase 6 — Robot vacuum
 
-- [ ] SwitchBot per feasibility doc's recommendation (the one vacuum ecosystem with a genuinely official public API)
-- [ ] `SwitchBotVacuumDriver`, new vacuum capabilities added only as implemented
+- [x] SwitchBot per feasibility doc's recommendation (the one vacuum ecosystem with a genuinely official public API) — real OpenAPI v1.1, HMAC-signed token+secret auth, no account password ever. See ADR-HEARTH-118.
+- [x] `SwitchBotVacuumDriver` — `vacuumStart`/`vacuumStop`/`vacuumDock`/`setSuctionPower`, scoped to the five models (S1/S1 Plus/K10+/K10+ Pro/K11+) confirmed to share the same command set. `AddSwitchBotVacuumScreen.tsx` + `VacuumControlScreen.tsx`. 17 new tests, `tsc` clean, 928/928 project-wide.
+- [ ] **Sean: generate a token/secret in the SwitchBot app ("+ Add" → SwitchBot Robot Vacuum) and confirm a real vacuum connects and responds** — first real-hardware checkpoint, not yet done.
+- [ ] The newer mop-capable S10/S20/K10+ Pro Combo/K20+ Pro models (`startClean`/`changeParam`, a richer command shape) — deliberately not implemented this pass, a clean scoped follow-up.
 - [ ] Second vacuum brand once one is confirmed to have a workable API (everything else researched needs reverse-engineering — treat as R&D, not a scheduled task, until one is validated)
 
 ## Phase 7 — Rooms

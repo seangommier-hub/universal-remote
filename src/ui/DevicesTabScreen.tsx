@@ -6,6 +6,7 @@ import { Scene } from "../core/types/Scene";
 import { DeviceListScreen, AddableBrand } from "./DeviceListScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
 import { LightControlScreen } from "./LightControlScreen";
+import { VacuumControlScreen } from "./VacuumControlScreen";
 import { AddSonyDeviceScreen } from "./AddSonyDeviceScreen";
 import { AddSamsungDeviceScreen } from "./AddSamsungDeviceScreen";
 import { AddLgDeviceScreen } from "./AddLgDeviceScreen";
@@ -20,6 +21,7 @@ import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
 import { AddAppleTvDeviceScreen } from "./AddAppleTvDeviceScreen";
 import { AddXboxDeviceScreen } from "./AddXboxDeviceScreen";
 import { AddHueDeviceScreen } from "./AddHueDeviceScreen";
+import { AddSwitchBotVacuumScreen } from "./AddSwitchBotVacuumScreen";
 import { AddSmartThingsOutletsScreen } from "./AddSmartThingsOutletsScreen";
 import { AddKasaDeviceScreen } from "./AddKasaDeviceScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
@@ -136,7 +138,18 @@ export function DevicesTabScreen({
           onBack={() => setScreen({ name: "list" })}
         />
       )}
-      {screen.name === "remote" && screen.device.category !== "lighting" && (
+      {screen.name === "remote" && screen.device.category === "vacuum" && (
+        <VacuumControlScreen
+          key={screen.device.id}
+          device={screen.device}
+          commandEngine={runtime.commandEngine}
+          stateStore={runtime.stateStore}
+          onReconnect={() => onReconnect(screen.device)}
+          onRename={handleRename}
+          onBack={() => setScreen({ name: "list" })}
+        />
+      )}
+      {screen.name === "remote" && screen.device.category !== "lighting" && screen.device.category !== "vacuum" && (
         <UniversalTvRemote
           // Real gap found live (2026-09-20): with no key, switching from one device's remote
           // screen to a different device's (e.g. Roku -> LG) re-rendered the SAME component
@@ -170,6 +183,7 @@ export function DevicesTabScreen({
         <AddYamahaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
       )}
       {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
+      {screen.name === "add" && screen.brand === "switchbot" && <AddSwitchBotVacuumScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
       {screen.name === "add" && screen.brand === "xbox" && (
         <AddXboxDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
