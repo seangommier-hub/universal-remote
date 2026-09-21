@@ -23,3 +23,20 @@ export function buildVncRelayUrl(config: FamilyCommandCenterConfig): string {
   const relayHost = new URL(config.baseUrl).hostname;
   return `${RELAY_SCHEME}://${relayHost}:${VNC_RELAY_PORT}/?token=${encodeURIComponent(config.token)}`;
 }
+
+/**
+ * Real ask (2026-09-21, ADR-HEARTH-125): "this should be something that can still be used even
+ * when off network" — extends the same public-tunnel fallback the TV relays already have
+ * (ADR-HEARTH-123) to this screen. `hearth-vnc.<domain>` is provisioned as part of the same
+ * matched hostname set as `hearth-relay.`/`hearth-ws.` (adr/0182 on the Family Command Center
+ * side), so it's derived from `publicBaseUrl` by the identical naming convention
+ * wsRelayFallback.ts already established — no separate Settings field needed. `wss://`, no
+ * explicit port: Cloudflare terminates TLS on 443 and forwards to the LAN relay's real port
+ * internally. Returns undefined when no public URL is configured, so callers know there's nothing
+ * left to try.
+ */
+export function buildPublicVncRelayUrl(config: FamilyCommandCenterConfig): string | undefined {
+  if (!config.publicBaseUrl) return undefined;
+  const host = new URL(config.publicBaseUrl).hostname.replace(/^hearth-relay\./, "hearth-vnc.");
+  return `wss://${host}/?token=${encodeURIComponent(config.token)}`;
+}

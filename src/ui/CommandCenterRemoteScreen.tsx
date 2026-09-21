@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
-import { buildVncRelayUrl } from "../discovery/familyCommandCenterVncRelay";
+import { buildPublicVncRelayUrl, buildVncRelayUrl } from "../discovery/familyCommandCenterVncRelay";
 import { RfbButton, RfbClient, RfbServerInfo } from "../drivers/inputRelay/vnc/RfbClient";
 import { charToKeysym, Keysym } from "../drivers/inputRelay/vnc/keysym";
 import { CapabilityButton } from "./CapabilityButton";
@@ -65,7 +65,36 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
         return;
       }
 
-      const client = new RfbClient(buildVncRelayUrl(config));
+      // Real ask (2026-09-21, ADR-HEARTH-125): "this should be something that can still be used
+      // even when off network." Tries the LAN relay first (fast, works with zero public
+      // dependency); only falls back to the public tunnel if that fails outright AND one's
+      // configured — mirrors httpRelayFallback.ts/wsRelayFallback.ts's identical direct-then-relay
+      // shape for the TV drivers, just with one fewer leg (this screen never attempts a "direct"
+      // connection to the Pi's display server at all — see this file's own class doc comment).
+      let client = new RfbClient(buildVncRelayUrl(config));
+      try {
+        const info = await client.connect();
+        if (cancelled) {
+          client.disconnect();
+          return;
+        }
+        clientRef.current = client;
+        cursorRef.current = { x: Math.floor(info.width / 2), y: Math.floor(info.height / 2) };
+        setServerInfo(info);
+        setStatus("connected");
+        return;
+      } catch (lanErr) {
+        const publicUrl = buildPublicVncRelayUrl(config);
+        if (!publicUrl) {
+          if (!cancelled) {
+            setStatus("error");
+            setErrorMessage(lanErr instanceof Error ? lanErr.message : String(lanErr));
+          }
+          return;
+        }
+        client = new RfbClient(publicUrl);
+      }
+
       try {
         const info = await client.connect();
         if (cancelled) {
