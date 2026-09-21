@@ -3,9 +3,18 @@ import { CapabilityId, NavigationDirection, StreamingService } from "../../../co
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
+import { logger } from "../../../core/logging/logger";
 import { AppleTvClient } from "./AppleTvClient";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
+const LOG_SCOPE = "AppleTvDriver";
 export const APPLE_TV_DRIVER_ID = "appletv-atvremote";
+// Real gap found live (2026-09-21, ADR-HEARTH-126): unlike every other per-request driver in this
+// project (Sony, Denon, Yamaha, Chromecast, Sonos), this one never had the "once connected it
+// should never lose connection" backoff loop (ADR-HEARTH-017) at all — a failed connect() or
+// executeCommand() just threw, with nothing ever scheduling a retry.
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 // Verified directly against pyatv's own `atvremote commands` output (2026-09-20), not assumed:
 // turn_on/turn_off/power_state, up/down/left/right/select/home, volume_up/volume_down/set_volume,
@@ -85,23 +94,113 @@ export class AppleTvDriver implements DeviceDriver {
 
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
+  private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private generations = new Map<string, number>();
+  private inFlightConnects = new Map<string, Promise<void>>();
 
   getCapabilities(): CapabilityId[] {
     return APPLE_TV_CAPABILITIES;
   }
 
   async connect(device: Device): Promise<void> {
-    const { ipAddress } = requireConfig(device);
+    const existing = this.inFlightConnects.get(device.id);
+    if (existing) return existing;
+    const attempt = this.doConnect(device);
+    this.inFlightConnects.set(device.id, attempt);
     try {
-      const raw = await new AppleTvClient().sendCommand(ipAddress, "power_state");
-      this.setState(device.id, { connection: "connected", values: { power: parsePowerState(raw) }, lastUpdated: Date.now() });
+      await attempt;
+    } finally {
+      if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);
+    }
+  }
+
+  private async doConnect(device: Device): Promise<void> {
+    this.clearReconnectTimer(device.id);
+    await this.refreshState(device);
+  }
+
+  /** Raw, unhandled power_state read — no self-healing, no retry. Split out purely so
+   * `fetchLiveStateWithSelfHeal` below can attempt it twice (original IP, then a rediscovered
+   * one) without recursing into `refreshState`'s own disconnect/backoff bookkeeping. */
+  private async fetchLiveState(device: Device): Promise<string> {
+    const { ipAddress } = requireConfig(device);
+    return new AppleTvClient().sendCommand(ipAddress, "power_state");
+  }
+
+  /**
+   * Real gap found live (2026-09-21, ADR-HEARTH-126): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+   * SonyBraviaDriver.ts's identical self-healing (ADR-HEARTH-017/109/119) — an Apple TV that moves
+   * to a different network kept failing outright forever, with no way to know its saved IP had
+   * gone stale. On any reachability failure, check whether Family Command Center currently sees
+   * this device's MAC at a different address, retry once at whatever it finds.
+   */
+  private async fetchLiveStateWithSelfHeal(device: Device): Promise<string> {
+    try {
+      return await this.fetchLiveState(device);
     } catch (err) {
-      this.setState(device.id, { connection: "disconnected", values: {}, lastUpdated: Date.now() });
+      const hwaddr = device.config?.hwaddr;
+      const currentIp = device.config?.ipAddress;
+      if (typeof currentIp !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      if (!freshIp || freshIp === currentIp) throw err;
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp;
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
+      return await this.fetchLiveState(device);
+    }
+  }
+
+  /** Re-reads real power state and updates cached state. Never trusts a command's own result as proof of success — always reads the state back. */
+  private async refreshState(device: Device): Promise<DeviceState> {
+    const generation = this.generations.get(device.id) ?? 0;
+    try {
+      const raw = await this.fetchLiveStateWithSelfHeal(device);
+      const state: DeviceState = { connection: "connected", values: { power: parsePowerState(raw) }, lastUpdated: Date.now() };
+      if (generation !== (this.generations.get(device.id) ?? 0)) return state;
+      this.clearReconnectTimer(device.id);
+      this.setState(device.id, state);
+      return state;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(LOG_SCOPE, `Failed to reach ${device.name} at ${device.config?.ipAddress}`, { message });
+      if (generation !== (this.generations.get(device.id) ?? 0)) throw err;
+      const state: DeviceState = { connection: "disconnected", values: this.states.get(device.id)?.values ?? {}, lastUpdated: Date.now() };
+      this.setState(device.id, state);
+      this.scheduleReconnect(device);
       throw err;
     }
   }
 
+  private scheduleReconnect(device: Device, attempt = 1): void {
+    if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
+    const timer = setTimeout(async () => {
+      try {
+        await this.refreshState(device);
+        logger.info(LOG_SCOPE, `${device.name} reachable again after ${attempt} attempt(s)`);
+      } catch {
+        this.scheduleReconnect(device, attempt + 1);
+      }
+    }, delay);
+    this.reconnectTimers.set(device.id, timer);
+  }
+
+  private clearReconnectTimer(deviceId: string): void {
+    const timer = this.reconnectTimers.get(deviceId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(deviceId);
+    }
+  }
+
   async disconnect(device: Device): Promise<void> {
+    this.generations.set(device.id, (this.generations.get(device.id) ?? 0) + 1);
+    this.clearReconnectTimer(device.id);
     const current = this.states.get(device.id);
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
   }
@@ -113,7 +212,19 @@ export class AppleTvDriver implements DeviceDriver {
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const { ipAddress } = requireConfig(device);
     const client = new AppleTvClient();
-    const values = await this.applyCommand(client, ipAddress, device.id, command);
+    let values: DeviceState["values"];
+    try {
+      values = await this.applyCommand(client, ipAddress, device.id, command);
+    } catch (err) {
+      // Real gap found live (2026-09-21, ADR-HEARTH-126): a failed command used to just throw,
+      // leaving a stale "connected" status pill and no automatic recovery — every other driver in
+      // this project marks itself disconnected and starts the backoff loop on a real failure
+      // (ADR-HEARTH-017); this one now does too.
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.scheduleReconnect(device);
+      throw err;
+    }
     const state: DeviceState = { connection: "connected", values, lastUpdated: Date.now() };
     this.setState(device.id, state);
     return {

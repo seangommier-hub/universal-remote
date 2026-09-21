@@ -1,10 +1,20 @@
 import { AppleTvDriver, APPLE_TV_DRIVER_ID } from "./AppleTvDriver";
 import { Device } from "../../../core/types/Device";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const mockSendCommand = jest.fn();
 jest.mock("./AppleTvClient", () => ({
   AppleTvClient: jest.fn().mockImplementation(() => ({ sendCommand: mockSendCommand })),
 }));
+
+jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({
+  findCurrentIpByMac: jest.fn(),
+  findCurrentIpByName: jest.fn(),
+  findMacByIp: jest.fn(),
+}));
+const mockFindCurrentIpByMac = findCurrentIpByMac as jest.MockedFunction<typeof findCurrentIpByMac>;
+const mockFindCurrentIpByName = findCurrentIpByName as jest.MockedFunction<typeof findCurrentIpByName>;
+const mockFindMacByIp = findMacByIp as jest.MockedFunction<typeof findMacByIp>;
 
 const device: Device = {
   id: "appletv-1",
@@ -22,6 +32,18 @@ describe("AppleTvDriver", () => {
   beforeEach(() => {
     driver = new AppleTvDriver();
     mockSendCommand.mockReset();
+    mockFindCurrentIpByMac.mockReset();
+    mockFindCurrentIpByName.mockReset();
+    mockFindMacByIp.mockReset();
+  });
+
+  // Any test whose connect()/executeCommand() fails now also schedules a real-timer reconnect
+  // (ADR-HEARTH-126). Left uncleared, that dangling setTimeout fires during a LATER test's own
+  // wait window and steals its queued mockSendCommand response — the same class of leak found
+  // live in the SwitchBot driver tests earlier this session. device.id is stable across every
+  // device variant used below, so this clears whichever timer the just-finished test left.
+  afterEach(async () => {
+    await driver.disconnect(device);
   });
 
   test("declares a real toggleable power plus nav/volume/media capabilities, but not mute/setChannel/inputSelection (no atvremote equivalent)", () => {
@@ -122,5 +144,82 @@ describe("AppleTvDriver", () => {
   test("an unsupported capability throws rather than silently no-opping", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "mute" })).rejects.toThrow(/does not implement/);
     expect(mockSendCommand).not.toHaveBeenCalled();
+  });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-126): unlike every other per-request driver in
+  // this project, AppleTvDriver never had the "once connected it should never lose connection"
+  // backoff loop (ADR-HEARTH-017) — a failed connect() or executeCommand() just threw, with
+  // nothing ever scheduling a retry.
+  describe("automatic reconnect (ADR-HEARTH-126)", () => {
+    test("connect() failing schedules an automatic retry that succeeds once the device is reachable again", async () => {
+      mockSendCommand.mockRejectedValueOnce(new Error("NoServiceError: no service available"));
+      await expect(driver.connect(device)).rejects.toThrow();
+      expect((await driver.getState(device)).connection).toBe("disconnected");
+
+      mockSendCommand.mockResolvedValueOnce("PowerState.On");
+      // Same real-timer wait this project's other drivers use for their identical backoff test
+      // (RECONNECT_BASE_DELAY_MS = 2000ms).
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+
+      expect((await driver.getState(device)).connection).toBe("connected");
+    }, 10000);
+
+    test("a command failing marks the device disconnected (not left stale as 'connected') and schedules a reconnect", async () => {
+      mockSendCommand.mockResolvedValueOnce("PowerState.On"); // connect()
+      await driver.connect(device);
+
+      mockSendCommand.mockRejectedValueOnce(new Error("timeout"));
+      await expect(driver.executeCommand(device, { deviceId: device.id, capability: "home" })).rejects.toThrow("timeout");
+      expect((await driver.getState(device)).connection).toBe("disconnected");
+
+      mockSendCommand.mockResolvedValueOnce("PowerState.On");
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+      expect((await driver.getState(device)).connection).toBe("connected");
+    }, 10000);
+  });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-126): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+  // SonyBraviaDriver.ts's identical self-healing — an Apple TV that moves to a different network
+  // kept failing outright forever instead of re-locating itself through Family Command Center.
+  describe("re-discovery after a network change (ADR-HEARTH-126)", () => {
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: "192.168.1.90", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockSendCommand.mockRejectedValueOnce(new Error("NoServiceError: no service available")); // stale IP
+      mockFindCurrentIpByMac.mockResolvedValueOnce("192.168.1.218");
+      mockSendCommand.mockResolvedValueOnce("PowerState.On"); // retry at the new address succeeds
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(mockFindCurrentIpByMac).toHaveBeenCalledWith("AA:BB:CC:DD:EE:FF");
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218"); // persisted onto the device object, same as LG/Samsung/Roku/Sony
+      expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
+    });
+
+    test("a genuinely dead device (no better address found) still surfaces a real failure, not a silent hang", async () => {
+      mockSendCommand.mockRejectedValueOnce(new Error("NoServiceError: no service available"));
+      mockFindCurrentIpByMac.mockResolvedValueOnce(undefined);
+
+      const deviceWithMac = freshDeviceWithMac();
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow(/NoServiceError/);
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.90"); // untouched -- nothing better was found
+    });
+
+    test("a device with no saved hwaddr falls back to a name-based lookup, re-locates itself, and backfills its MAC", async () => {
+      const deviceWithNoMac: Device = { ...device, name: "AppleTV.lan", config: { ipAddress: "192.168.1.90" } };
+      mockSendCommand.mockRejectedValueOnce(new Error("NoServiceError: no service available"));
+      mockFindCurrentIpByName.mockResolvedValueOnce("192.168.1.218");
+      mockFindMacByIp.mockResolvedValueOnce("11:22:33:44:55:66");
+      mockSendCommand.mockResolvedValueOnce("PowerState.On");
+
+      await driver.connect(deviceWithNoMac);
+
+      expect(mockFindCurrentIpByName).toHaveBeenCalledWith("AppleTV.lan");
+      expect(deviceWithNoMac.config?.ipAddress).toBe("192.168.1.218");
+      expect(deviceWithNoMac.config?.hwaddr).toBe("11:22:33:44:55:66"); // backfilled for next time
+    });
   });
 });
