@@ -442,7 +442,7 @@ describe("LgWebOsDriver", () => {
 
   });
 
-  describe("command-history playback approximation (real-hardware finding, 2026-09-13; folded into selectPlayPause, ADR-HEARTH-114)", () => {
+  describe("selectPlayPause no longer guesses playbackState from command history (real-hardware finding, 2026-09-20, ADR-HEARTH-117)", () => {
     /**
      * Completes a selectPlayPause/home button press. `getPointerSocket()` caches and reuses an
      * already-open pointer socket, so only the *first* press in a test actually sends a fresh
@@ -463,13 +463,40 @@ describe("LgWebOsDriver", () => {
       return resultPromise;
     }
 
-    test("selectPlayPause does nothing to playbackState when no streaming app was launched first", async () => {
+    test("selectPlayPause never touches playbackState, no matter how many times it's pressed", async () => {
       await connectDriver(driver);
-      const result = await pressButton("selectPlayPause");
-      expect(result.state?.playbackState).toBeUndefined();
+      const first = await pressButton("selectPlayPause");
+      expect(first.state?.playbackState).toBeUndefined();
+      expect(first.state?.lastAction).toBe("select");
+
+      const second = await pressButton("selectPlayPause");
+      expect(second.state?.playbackState).toBeUndefined();
+
+      const third = await pressButton("selectPlayPause");
+      expect(third.state?.playbackState).toBeUndefined();
     });
 
-    test("launchApp lands on the app's own browse screen — playbackState stays 'stopped', not 'playing'", async () => {
+    // Sean, live (2026-09-20): "it just rotates between select, play, and pause and is
+    // nonsensical" — the old press-count heuristic flipped playbackState on every press past the
+    // second regardless of what that press actually did (could just as easily be more menu
+    // navigation, e.g. picking an episode, not a real toggle). This test only exists to guard
+    // against that specific regression coming back.
+    test("does not flip playbackState between playing/paused after launching a streaming app and pressing repeatedly (the reported regression)", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
+      await launchPromise;
+
+      for (let i = 0; i < 4; i++) {
+        const result = await pressButton("selectPlayPause");
+        expect(result.state?.playbackState).toBe("stopped"); // set by launchApp itself, never overwritten by a press
+        expect(result.state?.lastAction).toBe("select");
+      }
+    });
+
+    test("launchApp lands on the app's own browse screen — playbackState is 'stopped', not a guess", async () => {
       await connectDriver(driver);
       const socket = MockWebSocket.latest();
       const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
@@ -479,86 +506,46 @@ describe("LgWebOsDriver", () => {
       expect(result.state?.playbackState).toBe("stopped");
     });
 
-    test("the FIRST press after launching a streaming app stays on Select — real-hardware finding, 2026-09-13: this is almost always a profile picker, not a title", async () => {
+    test("home sets playbackState to 'stopped', an honest claim independent of any selectPlayPause press history", async () => {
       await connectDriver(driver);
-      const socket = MockWebSocket.latest();
-      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
-      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
-      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
-      await launchPromise;
-
-      const result = await pressButton("selectPlayPause");
-      expect(result.state?.playbackState).toBe("stopped");
-    });
-
-    test("the SECOND press after launching flips the button's icon to play/pause", async () => {
-      await connectDriver(driver);
-      const socket = MockWebSocket.latest();
-      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
-      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
-      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
-      await launchPromise;
-      await pressButton("selectPlayPause"); // profile picker
-
-      const result = await pressButton("selectPlayPause"); // actual title
-      expect(result.state?.playbackState).toBe("playing");
-    });
-
-    // ADR-HEARTH-114 (2026-09-20): once the button's icon has flipped to play/pause, this is the
-    // same physical button Sean's real Magic Remote uses to actually toggle playback — every press
-    // after the second alternates, mirroring the driver's old, now-folded-in playPause toggle.
-    test("presses after the second one alternate playbackState between playing and paused, like a real toggle button", async () => {
-      await connectDriver(driver);
-      const socket = MockWebSocket.latest();
-      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
-      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
-      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
-      await launchPromise;
-      await pressButton("selectPlayPause"); // profile picker
-      const secondPress = await pressButton("selectPlayPause"); // now "playing"
-      expect(secondPress.state?.playbackState).toBe("playing");
-
-      const thirdPress = await pressButton("selectPlayPause");
-      expect(thirdPress.state?.playbackState).toBe("paused");
-
-      const fourthPress = await pressButton("selectPlayPause");
-      expect(fourthPress.state?.playbackState).toBe("playing");
-    });
-
-    test("home resets both the streaming-app assumption and playbackState back to Select", async () => {
-      await connectDriver(driver);
-      const socket = MockWebSocket.latest();
-      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
-      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
-      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
-      await launchPromise;
-      await pressButton("selectPlayPause"); // profile picker
-      await pressButton("selectPlayPause"); // now "playing"
-
       const homeResult = await pressButton("home");
       expect(homeResult.state?.playbackState).toBe("stopped");
-
-      // The streaming-app assumption AND the press count are both cleared — a single press now,
-      // with no fresh launchApp in between, should not flip back to "playing".
-      const selectResult = await pressButton("selectPlayPause");
-      expect(selectResult.state?.playbackState).toBe("stopped");
     });
 
-    test("inputSelection (e.g. switching to HDMI) resets playbackState the same way home does", async () => {
+    test("inputSelection (e.g. switching to HDMI) sets playbackState to 'stopped' the same way home does", async () => {
       await connectDriver(driver);
       const socket = MockWebSocket.latest();
-      const launchPromise = driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
-      const launchSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
-      socket.simulateMessage({ type: "response", id: launchSent.id, payload: { returnValue: true } });
-      await launchPromise;
-      await pressButton("selectPlayPause"); // profile picker
-      await pressButton("selectPlayPause"); // now "playing"
-
       const inputPromise = driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "HDMI_1" } });
       const inputSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
       socket.simulateMessage({ type: "response", id: inputSent.id, payload: { returnValue: true } });
       const inputResult = await inputPromise;
       expect(inputResult.state?.playbackState).toBe("stopped");
+    });
+  });
+
+  describe("selectPlayPause's icon reflects only the real, pushed playbackState subscription (ADR-HEARTH-117)", () => {
+    test("a real pushed 'playing' state survives a selectPlayPause press unchanged (this driver never overwrites it)", async () => {
+      await connectDriver(driver);
+      const socket = MockWebSocket.latest();
+      const subscribeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: subscribeSent.id, payload: { returnValue: true, foregroundAppInfo: [{ playState: "playing" }] } });
+      await flushMicrotasks();
+      expect((await driver.getState(device)).values.playbackState).toBe("playing");
+
+      const mainSocket = MockWebSocket.at(0);
+      const mainMessagesBefore = mainSocket.sentMessages.length;
+      const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
+      await flushMicrotasks();
+      if (mainSocket.sentMessages.length > mainMessagesBefore) {
+        const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+        mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+        await flushMicrotasks();
+        MockWebSocket.latest().simulateOpen();
+      }
+      const result = await resultPromise;
+
+      expect(result.state?.playbackState).toBe("playing"); // untouched by the press itself
+      expect(result.state?.lastAction).toBe("select");
     });
   });
 

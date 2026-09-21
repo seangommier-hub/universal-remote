@@ -182,20 +182,6 @@ export class LgWebOsDriver implements DeviceDriver {
   // can tear down the old one before it's replaced — mirrors how `clients` itself is swapped out,
   // just for a subscription instead of the whole socket.
   private playbackUnsubscribes = new Map<string, () => void>();
-  // Command-history-derived approximation of "is a video actually playing" (2026-09-13) — see the
-  // "selectPlayPause"/"launchApp"/"inputSelection" cases in applyCommand for the actual state machine.
-  // Cleared on disconnect() below — a stale assumption from a dropped connection shouldn't survive
-  // a reconnect.
-  private assumedInStreamingApp = new Map<string, boolean>();
-  // Real-hardware finding (2026-09-13, Sean directly: "often times a user needs to be selected
-  // when loading the app"): the very first Select press after launching a streaming app is
-  // overwhelmingly a profile picker ("Who's watching?"), not a title — every major app (Netflix,
-  // Hulu, Prime Video, YouTube's account switcher) puts one there. The original heuristic flipped
-  // to "playing" on that very first press, which is wrong far more often than it's right. Counts
-  // Select presses since the last launchApp and only treats the SECOND one onward as the real
-  // "started playback" signal — reset to 0 by launchApp/home/inputSelection, the same three
-  // commands that already reset assumedInStreamingApp.
-  private selectPressesSinceLaunch = new Map<string, number>();
 
   private bumpGeneration(deviceId: string): number {
     const next = (this.generations.get(deviceId) ?? 0) + 1;
@@ -344,8 +330,6 @@ export class LgWebOsDriver implements DeviceDriver {
     this.clearReconnectTimer(device.id);
     this.playbackUnsubscribes.get(device.id)?.();
     this.playbackUnsubscribes.delete(device.id);
-    this.assumedInStreamingApp.delete(device.id);
-    this.selectPressesSinceLaunch.delete(device.id);
     this.clients.get(device.id)?.close();
     this.clients.delete(device.id);
     const current = this.states.get(device.id);
@@ -488,54 +472,37 @@ export class LgWebOsDriver implements DeviceDriver {
         await client.call("ssap://tv/channelDown");
         this.patchValues(device.id, { lastAction: "channelDown" });
         return;
-      case "selectPlayPause": {
+      case "selectPlayPause":
         // Real-hardware confirmation, Sean directly (2026-09-20, ADR-HEARTH-114): his real Magic
         // Remote's OK/wheel-click button already does exactly this — one physical press, no
         // separate play/pause button. Always the same ENTER press regardless of what it turns out
         // to mean; see Capability.ts's selectPlayPause entry for why real webOS on-device focus
         // resolves the ambiguity that made this unsafe on Roku (ADR-HEARTH-068).
+        //
+        // Real-hardware finding (2026-09-20, ADR-HEARTH-117): this case used to also GUESS at
+        // playbackState from command history (a streaming-app-launch + press-count heuristic,
+        // 2026-09-13) to drive the button's icon. Sean, live: "it just rotates between select,
+        // play, and pause and is nonsensical" — every press past the second unconditionally
+        // flipped the guessed state, whether or not that press was actually toggling playback
+        // (it could just as easily be more menu navigation, e.g. picking an episode). Removed
+        // entirely rather than tuned again: this TV's firmware genuinely has no endpoint that
+        // reports true playback state (confirmed live across every plausible SSAP query), so ANY
+        // guess here is exactly the kind of "wrong more often than right" this driver's own
+        // longstanding philosophy already rejects elsewhere (see this file's top-of-file comment
+        // about the identical foreground-app-id guess). The icon now reflects ONLY the real,
+        // pushed `playbackState` from subscribeToPlaybackState below when this TV's firmware
+        // supports that subscription; otherwise it honestly stays a plain Select, matching what
+        // this driver already does for playbackState everywhere else it can't verify it.
         await client.sendButton("ENTER");
-        // Real-hardware finding (2026-09-13): this TV's firmware has no endpoint that reports
-        // true playback state — confirmed live, during Sean's own active viewing, across every
-        // plausible SSAP query. Fire TV's remote can dynamically become play/pause because Fire OS
-        // has real internal knowledge of its player; this TV genuinely doesn't expose that to any
-        // client. Deriving an approximation from OUR OWN command history instead: once a streaming
-        // app has been launched (see "launchApp" below), the SECOND press inside it — not the
-        // first, see selectPressesSinceLaunch's own comment — is the signal that this button just
-        // started playback. Pressing Home resets it. Not perfect (selecting something that isn't
-        // "play this," e.g. a show's detail page, still flips it), but far narrower and more
-        // accurate than guessing from foreground-app-id alone, which was wrong the entire time a
-        // user was just browsing an app's menus, not just at one moment.
-        if (this.assumedInStreamingApp.get(device.id)) {
-          const presses = (this.selectPressesSinceLaunch.get(device.id) ?? 0) + 1;
-          this.selectPressesSinceLaunch.set(device.id, presses);
-          if (presses === 2) {
-            this.patchValues(device.id, { playbackState: "playing" });
-          } else if (presses > 2) {
-            // 2026-09-20 (ADR-HEARTH-114): every press after the one that started playback is a
-            // real toggle on this same physical button now — same alternate-on-each-press cosmetic
-            // this driver's old, now-folded-in playPause case used, just driven by this button.
-            const currentState = this.states.get(device.id)?.values.playbackState;
-            this.patchValues(device.id, { playbackState: currentState === "playing" ? "paused" : "playing" });
-          } else {
-            this.patchValues(device.id, { lastAction: "select" });
-          }
-        } else {
-          this.patchValues(device.id, { lastAction: "select" });
-        }
+        this.patchValues(device.id, { lastAction: "select" });
         return;
-      }
       case "back":
         await client.sendButton("BACK");
         this.patchValues(device.id, { lastAction: "back" });
         return;
       case "home":
         await client.sendButton("HOME");
-        // Leaving to the launcher is an unambiguous "not watching anything, not browsing an app
-        // either" signal — reset the streaming-app assumption, its select-press count, and the
-        // center button.
-        this.assumedInStreamingApp.set(device.id, false);
-        this.selectPressesSinceLaunch.set(device.id, 0);
+        // Leaving to the launcher is an unambiguous "not watching anything" signal.
         this.patchValues(device.id, { lastAction: "home", playbackState: "stopped" });
         return;
       case "menu":
@@ -586,10 +553,7 @@ export class LgWebOsDriver implements DeviceDriver {
         // driver already cites for the button list and pairing manifest.
         await client.call("ssap://system.launcher/launch", { id: resolvedAppId });
         // Fresh app launch always lands on that app's own browse/home screen, never straight into
-        // playback — the merged button's icon stays Select until the real second-press signal (see
-        // the "selectPlayPause" case above) says the user actually started watching something.
-        this.assumedInStreamingApp.set(device.id, true);
-        this.selectPressesSinceLaunch.set(device.id, 0);
+        // playback.
         // lastLaunchedAppId lets the UI's recent-apps history (ADR-HEARTH-076/078) record this
         // launch regardless of whether 'service' or 'appId' triggered it, through one generic,
         // brand-agnostic field — same pattern RokuEcpDriver.ts already established.
@@ -603,8 +567,6 @@ export class LgWebOsDriver implements DeviceDriver {
         // ids refreshInputList() read off this specific TV, not a guessed/hardcoded value.
         await client.call("ssap://tv/switchInput", { inputId: input });
         // Switching to e.g. an HDMI input leaves whatever app was open — same reset as Home.
-        this.assumedInStreamingApp.set(device.id, false);
-        this.selectPressesSinceLaunch.set(device.id, 0);
         this.patchValues(device.id, { input, playbackState: "stopped" });
         return;
       }
