@@ -59,13 +59,12 @@ export type CapabilityId =
   //    /query/media-player returning <player state="play|pause|...">, and the "Play" remote key
   //    is documented to toggle play<->pause on its own hardware remote — no separate Pause key
   //    exists because none is needed. RokuEcpDriver.ts.
-  //  - LG webOS: real and declared. hobbyquaker/lgtv2 (this driver's existing primary reference)
-  //    documents both `ssap://media.controls/play`/`pause` and a subscribable
-  //    `ssap://com.webos.media/getForegroundAppInfo` returning a `playState` field
-  //    ("playing"/"paused"/...) pushed live over the same SSAP socket this driver already keeps
-  //    open — same "best-effort, degrade to undefined rather than crash" treatment as this
-  //    driver's other inferred fields, since that source itself notes the endpoint 404s on some
-  //    older webOS firmware. LgWebOsDriver.ts.
+  //  - LG webOS: NOT declared as a standalone toggle as of 2026-09-20 — see "selectPlayPause"
+  //    below for why LG folds this into "select" instead. `ssap://com.webos.media/getForegroundAppInfo`
+  //    (hobbyquaker/lgtv2) still supplies the live `playState` field used to drive that merged
+  //    button's icon — same "best-effort, degrade to undefined rather than crash" treatment as
+  //    this driver's other inferred fields, since that source itself notes the endpoint 404s on
+  //    some older webOS firmware. LgWebOsDriver.ts.
   //  - Samsung Tizen: NOT declared. Verified real gap, not an oversight — the unencrypted
   //    remote-control WebSocket this driver is restricted to (ADR-HEARTH-005) is pure key-press
   //    emulation with no query/subscribe mechanism of any kind for anything, playback state
@@ -81,6 +80,30 @@ export type CapabilityId =
   //    as a general documented mechanism — not a real basis for a universal capability. Sony's
   //    separate IRCC-IP protocol is unimplemented here (see SonyBraviaDriver.ts) and out of scope.
   | "playPause"
+  // Sean, directly (2026-09-20), about his own real LG TV's included Magic Remote: "the lg remote
+  // does all 3 with the scroll function button in the middle of the remote" — select, play, and
+  // pause via that one physical OK/wheel-click button. Deep research (codebase + Roku/LG SSAP
+  // docs + Apple TV/Google TV/Fire TV hardware) confirmed this is real and confirmed WHY it's
+  // real, and why it does NOT generalize to Roku (ADR-HEARTH-068 already found the opposite there,
+  // and this stays true — Roku's own developer docs treat "Select" and "Play" as genuinely
+  // separate ECP keys with no device-side disambiguation exposed to any client, corroborated by
+  // Home Assistant's mature integration hitting the identical unsolved ambiguity):
+  //  - LG's real Magic Remote has no separate physical play/pause button at all for this
+  //    interaction — the same OK/wheel-click press that LgWebOsDriver.ts's "select" case already
+  //    sends as the literal `ENTER` button code (hobbyquaker/lgtv2) is the exact press Sean's real
+  //    remote uses for play/pause too. The ambiguity that broke Roku (Netflix's PIN lock, YouTube's
+  //    Skip Ad) is resolved on real LG hardware by webOS's own on-device focus/UI state at the
+  //    instant of the press — the same mechanism Apple TV's Siri Remote clickpad and simple
+  //    Google TV remotes use (click activates whatever's focused on screen; falls through to
+  //    play/pause only when nothing is) — never by the remote or Hearth guessing from a stale
+  //    polled `playbackState` snapshot. Sending the same `ENTER` code Hearth already sends for
+  //    "select" replicates that real, working, on-device behavior directly, rather than attempting
+  //    a client-side guess of the kind ADR-HEARTH-068 already proved doesn't work.
+  //  - Every other driver (Roku, Samsung, Sony) keeps "select"/"playPause" fully separate,
+  //    unchanged — no equivalent real-hardware confirmation exists for any of them, and Roku's
+  //    case is affirmatively confirmed NOT to work this way.
+  // See ADR-HEARTH-114 for the full decision record.
+  | "selectPlayPause"
   // Real-hardware research (2026-09-16): "so the user can type usernames and passwords rather
   // than having to navigate to each letter on screen" -- verified per-brand from primary/official
   // sources before adding, not assumed:

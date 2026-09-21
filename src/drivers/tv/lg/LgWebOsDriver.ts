@@ -36,20 +36,24 @@ const LG_CAPABILITIES: CapabilityId[] = [
   "channelUp",
   "channelDown",
   "directionalNavigation",
-  "select",
   "back",
   "home",
   "menu",
   "setChannel",
   "launchApp",
   "inputSelection",
-  // Real-hardware research (2026-09-12, ADR-HEARTH-051): ssap://media.controls/play and
-  // .../pause, plus a subscribable ssap://com.webos.media/getForegroundAppInfo (live playState
-  // pushes) — both documented directly in hobbyquaker/lgtv2, this driver's existing primary
-  // reference for every other ssap:// URI it uses. See Capability.ts's playPause entry for the
-  // full citation, including the known firmware caveat (some older webOS versions 404 this
-  // subscription) — handled the same best-effort way as this driver's other inferred fields.
-  "playPause",
+  // Real-hardware confirmation, Sean directly (2026-09-20, ADR-HEARTH-114): his real LG TV's own
+  // included Magic Remote already performs select, play, AND pause via one physical OK/wheel-click
+  // button — no separate play/pause button exists on it. That's the exact same `ENTER` button code
+  // this case already sent for plain "select" (see the case below), so folding playPause into it
+  // replicates the real remote exactly rather than reintroducing ADR-HEARTH-068's guessing problem
+  // (which is real, but specific to Roku's ECP — see Capability.ts's selectPlayPause entry for the
+  // full citation of why this doesn't generalize back to Roku). Subscribable
+  // ssap://com.webos.media/getForegroundAppInfo (live playState pushes, hobbyquaker/lgtv2) still
+  // drives this button's cosmetic icon — same best-effort treatment as this driver's other
+  // inferred fields, including the known firmware caveat (some older webOS versions 404 this
+  // subscription).
+  "selectPlayPause",
   // Real-hardware research (2026-09-16, ADR-HEARTH-072): `ssap://com.webos.service.ime/insertText`
   // is documented directly in LG's own official "Connect SDK" (2014, LG Electronics), adopted
   // verbatim by the openHAB LG webOS binding's LGWebOSTVKeyboardInput.java — see Capability.ts's
@@ -179,7 +183,7 @@ export class LgWebOsDriver implements DeviceDriver {
   // just for a subscription instead of the whole socket.
   private playbackUnsubscribes = new Map<string, () => void>();
   // Command-history-derived approximation of "is a video actually playing" (2026-09-13) — see the
-  // "select"/"launchApp"/"inputSelection" cases in applyCommand for the actual state machine.
+  // "selectPlayPause"/"launchApp"/"inputSelection" cases in applyCommand for the actual state machine.
   // Cleared on disconnect() below — a stale assumption from a dropped connection shouldn't survive
   // a reconnect.
   private assumedInStreamingApp = new Map<string, boolean>();
@@ -484,25 +488,35 @@ export class LgWebOsDriver implements DeviceDriver {
         await client.call("ssap://tv/channelDown");
         this.patchValues(device.id, { lastAction: "channelDown" });
         return;
-      case "select": {
+      case "selectPlayPause": {
+        // Real-hardware confirmation, Sean directly (2026-09-20, ADR-HEARTH-114): his real Magic
+        // Remote's OK/wheel-click button already does exactly this — one physical press, no
+        // separate play/pause button. Always the same ENTER press regardless of what it turns out
+        // to mean; see Capability.ts's selectPlayPause entry for why real webOS on-device focus
+        // resolves the ambiguity that made this unsafe on Roku (ADR-HEARTH-068).
         await client.sendButton("ENTER");
         // Real-hardware finding (2026-09-13): this TV's firmware has no endpoint that reports
         // true playback state — confirmed live, during Sean's own active viewing, across every
         // plausible SSAP query. Fire TV's remote can dynamically become play/pause because Fire OS
         // has real internal knowledge of its player; this TV genuinely doesn't expose that to any
         // client. Deriving an approximation from OUR OWN command history instead: once a streaming
-        // app has been launched (see "launchApp" below), the SECOND Select press inside it — not
-        // the first, see selectPressesSinceLaunch's own comment — is the signal that flips the
-        // center button over to play/pause for whatever comes next. Pressing Home resets it. Not
-        // perfect (selecting something that isn't "play this," e.g. a show's detail page, still
-        // flips it), but far narrower and more accurate than guessing from foreground-app-id alone,
-        // which was wrong the entire time a user was just browsing an app's menus, not just at one
-        // moment.
+        // app has been launched (see "launchApp" below), the SECOND press inside it — not the
+        // first, see selectPressesSinceLaunch's own comment — is the signal that this button just
+        // started playback. Pressing Home resets it. Not perfect (selecting something that isn't
+        // "play this," e.g. a show's detail page, still flips it), but far narrower and more
+        // accurate than guessing from foreground-app-id alone, which was wrong the entire time a
+        // user was just browsing an app's menus, not just at one moment.
         if (this.assumedInStreamingApp.get(device.id)) {
           const presses = (this.selectPressesSinceLaunch.get(device.id) ?? 0) + 1;
           this.selectPressesSinceLaunch.set(device.id, presses);
-          if (presses >= 2) {
+          if (presses === 2) {
             this.patchValues(device.id, { playbackState: "playing" });
+          } else if (presses > 2) {
+            // 2026-09-20 (ADR-HEARTH-114): every press after the one that started playback is a
+            // real toggle on this same physical button now — same alternate-on-each-press cosmetic
+            // this driver's old, now-folded-in playPause case used, just driven by this button.
+            const currentState = this.states.get(device.id)?.values.playbackState;
+            this.patchValues(device.id, { playbackState: currentState === "playing" ? "paused" : "playing" });
           } else {
             this.patchValues(device.id, { lastAction: "select" });
           }
@@ -572,8 +586,8 @@ export class LgWebOsDriver implements DeviceDriver {
         // driver already cites for the button list and pairing manifest.
         await client.call("ssap://system.launcher/launch", { id: resolvedAppId });
         // Fresh app launch always lands on that app's own browse/home screen, never straight into
-        // playback — Select stays the center button until the real second-Select signal (see the
-        // "select" case above) says the user actually started watching something.
+        // playback — the merged button's icon stays Select until the real second-press signal (see
+        // the "selectPlayPause" case above) says the user actually started watching something.
         this.assumedInStreamingApp.set(device.id, true);
         this.selectPressesSinceLaunch.set(device.id, 0);
         // lastLaunchedAppId lets the UI's recent-apps history (ADR-HEARTH-076/078) record this
@@ -594,22 +608,6 @@ export class LgWebOsDriver implements DeviceDriver {
         this.patchValues(device.id, { input, playbackState: "stopped" });
         return;
       }
-      case "playPause": {
-        // Unlike Roku's single toggle key, LG's media.controls exposes separate play/pause
-        // endpoints (hobbyquaker/lgtv2, same reference as every other ssap:// URI here) — choose
-        // based on the last-known real state so the button does the opposite of what's playing
-        // now. Defaults to "play" when state isn't known yet (unsubscribed firmware, or nothing
-        // pushed yet) — the safer default when genuinely unsure.
-        const currentState = this.states.get(device.id)?.values.playbackState;
-        const uri = currentState === "playing" ? "ssap://media.controls/pause" : "ssap://media.controls/play";
-        await client.call(uri);
-        // Optimistic flip for instant UI feedback — the live subscription (where this TV's
-        // firmware supports it) corrects this with the TV's own real value moments later
-        // regardless, the same "don't block the UI on a read-back" reasoning already used
-        // elsewhere (e.g. Samsung's optimisticValuesAfter).
-        this.patchValues(device.id, { playbackState: currentState === "playing" ? "paused" : "playing" });
-        return;
-      }
       default:
         throw new Error(`LgWebOsDriver does not implement capability: ${command.capability}`);
     }
@@ -619,8 +617,9 @@ export class LgWebOsDriver implements DeviceDriver {
    * Opens the live playback-state subscription (ADR-HEARTH-051) right after connect, over the
    * same SSAP socket already used for everything else. Best-effort exactly like
    * refreshVolumeState/refreshInputList below: some older webOS firmware 404s this specific
-   * subscription (see LG_CAPABILITIES' playPause comment) — a failure here leaves playbackState
-   * unset (the UI falls back to the plain Select/checkmark button) rather than failing connect().
+   * subscription (see LG_CAPABILITIES' selectPlayPause comment) — a failure here leaves
+   * playbackState unset (the merged button's icon falls back to the plain Select/checkmark) rather
+   * than failing connect().
    */
   private subscribeToPlaybackState(device: Device, client: LgWebOsClient): void {
     try {
