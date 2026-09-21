@@ -777,9 +777,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               declaration for why hiding this behind a state guess broke on real hardware twice
               in opposite directions (Netflix's PIN lock, YouTube's Skip Ad). Icon/label reflect
               real known state when available; otherwise a neutral, non-committal label rather
-              than asserting a guess. Roku is the only remaining driver that declares "playPause" —
-              LG folded it into the merged "selectPlayPause" center d-pad button above
-              (ADR-HEARTH-114), so this row no longer renders for LG at all. */}
+              than asserting a guess. LG and Roku have both folded "playPause" into the merged
+              "selectPlayPause" center d-pad button above (ADR-HEARTH-114, ADR-HEARTH-116), so this
+              row no longer renders for either — it still applies to any other driver (e.g. Apple
+              TV, Sonos) that declares "playPause" as its own separate capability. */}
           {has(device, "playPause") && (
             <View style={styles.playPauseRow}>
               <CapabilityButton

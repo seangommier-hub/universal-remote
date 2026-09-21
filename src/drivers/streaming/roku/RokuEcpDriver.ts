@@ -30,16 +30,18 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   "channelUp",
   "channelDown",
   "directionalNavigation",
-  "select",
   "back",
   "home",
   "inputSelection",
   "setChannel",
   "launchApp",
-  // Real-hardware research (2026-09-12, ADR-HEARTH-051): GET /query/media-player and the "Play"
-  // remote key are both documented directly by Roku itself — see Capability.ts's playPause entry
-  // for the full citation. Real, not assumed.
-  "playPause",
+  // Sean, directly (2026-09-20, ADR-HEARTH-116), after being shown the real, confirmed regression
+  // this reintroduces (Netflix's PIN lock, YouTube's Skip Ad — see ADR-HEARTH-068): explicitly
+  // chose uniform one-button behavior across every driver over keeping Roku's two buttons split.
+  // GET /query/media-player and the "Play" remote key are both documented directly by Roku itself
+  // (see Capability.ts's selectPlayPause entry for the full citation) — "Play" IS the toggle, no
+  // separate Pause key exists, unlike LG.
+  "selectPlayPause",
   // Real-hardware research (2026-09-16, ADR-HEARTH-072): "Lit_<char>" (documented by Roku's own
   // ECP docs) sends one literal printable character to whichever on-screen field currently has
   // focus — see Capability.ts's textEntry entry for the full citation.
@@ -292,9 +294,21 @@ export class RokuEcpDriver implements DeviceDriver {
         await client.keypress("ChannelDown");
         this.patchValues(device.id, { lastAction: "channelDown" });
         return;
-      case "select":
-        await client.keypress("Select");
-        this.patchValues(device.id, { lastAction: "select" });
+      case "selectPlayPause":
+        // ADR-HEARTH-116 (2026-09-20): reliable-looking playback state wins — toggle. Otherwise
+        // default to Select so navigation stays functional. This is a knowing, informed regression
+        // for the exact two cases ADR-HEARTH-068 found and fixed (Netflix's PIN lock leaves
+        // playbackState ambiguous rather than "stopped," so it still falls to the Select branch
+        // here — that part is unaffected; YouTube's Skip Ad IS newly unreachable via this button
+        // while a video plays, since "playing" now sends Play instead of Select — accepted
+        // explicitly by Sean in favor of one consistent button across every driver).
+        if (this.states.get(device.id)?.values.playbackState === "playing" || this.states.get(device.id)?.values.playbackState === "paused") {
+          await client.keypress("Play");
+          await this.refreshPlaybackState(device, client);
+        } else {
+          await client.keypress("Select");
+          this.patchValues(device.id, { lastAction: "select" });
+        }
         return;
       case "back":
         await client.keypress("Back");
@@ -348,12 +362,6 @@ export class RokuEcpDriver implements DeviceDriver {
         this.patchValues(device.id, { lastAction: `launch:${appId ?? service}`, lastLaunchedAppId: channelId });
         return;
       }
-      case "playPause":
-        // Roku's own "Play" key IS the toggle (see Capability.ts's citation) — there is no
-        // separate Pause key to choose between, unlike LG.
-        await client.keypress("Play");
-        await this.refreshPlaybackState(device, client);
-        return;
       case "textEntry": {
         const text = command.args?.text;
         if (typeof text !== "string" || text.length === 0) {
@@ -382,12 +390,15 @@ export class RokuEcpDriver implements DeviceDriver {
     }
   }
 
-  /** Re-reads real playback state after a playPause press. Best-effort: a failed read-back just
-   * leaves the last-known value in place rather than failing the whole command — same treatment
-   * refreshPowerState already gives power state after powerOff. No periodic/background polling
-   * exists for this (or any other) field on this driver — playbackState is refreshed only at
-   * connect() and after a playPause press, deliberately matching every other Roku field's
-   * existing update cadence rather than introducing a new polling mechanism (see ADR-HEARTH-051).
+  /** Re-reads real playback state after a selectPlayPause press that toggled playback. Best-effort:
+   * a failed read-back just leaves the last-known value in place rather than failing the whole
+   * command — same treatment refreshPowerState already gives power state after powerOff. No
+   * periodic/background polling exists for this (or any other) field on this driver — playbackState
+   * is refreshed only at connect() and after a toggling press, deliberately matching every other
+   * Roku field's existing update cadence rather than introducing a new polling mechanism (see
+   * ADR-HEARTH-051). This read-back is now load-bearing for selectPlayPause's own next press
+   * (ADR-HEARTH-116) — its result decides whether that next press sends Select or Play — not just
+   * a cosmetic icon update the way it was under the old, separate playPause capability.
    *
    * Real-hardware research (2026-09-15, ADR-HEARTH-068): a null (neither play nor pause) read
    * used to be committed straight to "stopped" — but Netflix's PIN-protected profile lock (and

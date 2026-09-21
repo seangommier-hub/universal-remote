@@ -80,10 +80,12 @@ describe("RokuEcpDriver", () => {
     resetRelayNecessityCacheForTests();
   });
 
-  test("declares inputSelection (ECP has real input keys) and playPause but not power/setVolume/menu", () => {
+  test("declares inputSelection (ECP has real input keys) and selectPlayPause but not power/setVolume/menu/separate select or playPause", () => {
     const caps = driver.getCapabilities();
     expect(caps).toContain("inputSelection");
-    expect(caps).toContain("playPause");
+    expect(caps).toContain("selectPlayPause");
+    expect(caps).not.toContain("select");
+    expect(caps).not.toContain("playPause");
     expect(caps).not.toContain("power");
     expect(caps).not.toContain("powerOn");
     expect(caps).not.toContain("setVolume");
@@ -259,7 +261,7 @@ describe("RokuEcpDriver", () => {
       .mockResolvedValueOnce(okResponse())
       .mockResolvedValueOnce(mediaPlayerResponse("close"))
       .mockResolvedValueOnce(activeAppResponse("Netflix"));
-    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
 
     expect(result.state?.playbackState).toBe("playing");
   });
@@ -268,7 +270,7 @@ describe("RokuEcpDriver", () => {
     await connectRoku(driver, "PowerOn", "play");
 
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("close")).mockRejectedValueOnce(new Error("timeout"));
-    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
 
     expect(result.state?.playbackState).toBe("playing");
   });
@@ -322,11 +324,11 @@ describe("RokuEcpDriver", () => {
     expect(result.state?.power).toBe("off");
   });
 
-  test("playPause sends the documented 'Play' toggle key then re-reads real playback state", async () => {
+  test("selectPlayPause sends the documented 'Play' toggle key (not Select) once playback state is confidently known — ADR-HEARTH-116", async () => {
     await connectRoku(driver); // starts playing (irrelevant to this test — just avoids the active-app corroboration path)
 
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("play"));
-    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
 
     const keypressCall = (global.fetch as jest.Mock).mock.calls[3];
     expect(keypressCall[0]).toBe("http://192.168.1.80:8060/keypress/Play");
@@ -334,23 +336,50 @@ describe("RokuEcpDriver", () => {
     expect(result.state?.playbackState).toBe("playing");
   });
 
-  test("playPause reflects a real pause too, not just play (same 'Play' toggle key both directions)", async () => {
+  test("selectPlayPause reflects a real pause too, not just play (same 'Play' toggle key both directions)", async () => {
     await connectRoku(driver, "PowerOn", "play");
 
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(mediaPlayerResponse("pause"));
-    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
 
     expect(result.state?.playbackState).toBe("paused");
   });
 
-  test("playPause falls back to leaving playbackState as last-known if the post-command read-back fails", async () => {
+  test("selectPlayPause falls back to leaving playbackState as last-known if the post-command read-back fails", async () => {
     await connectRoku(driver, "PowerOn", "play");
 
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockRejectedValueOnce(new Error("timeout"));
-    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
 
     expect(result.success).toBe(true);
     expect(result.state?.playbackState).toBe("playing"); // unchanged from connect(), not clobbered to undefined
+  });
+
+  // ADR-HEARTH-116 (2026-09-20): Sean's explicit, informed decision to accept this exact class of
+  // regression for uniform one-button behavior across devices — see this file's own comment above
+  // the "selectPlayPause" case for the full context. This test only confirms the OTHER half still
+  // works: navigation stays functional (falls to Select) whenever playback state isn't confidently
+  // known, so the button is never silently useless.
+  test("selectPlayPause sends Select (not Play) when playback state is not confidently known, so navigation stays functional", async () => {
+    // Confirmed-idle connect (ambiguous media-player + a homescreen active-app read) rather than a
+    // REJECTED fetch — a rejected call would mark this ip:port "relay-only" in the
+    // knownRelayOnly cache (httpRelayFallback.ts) for the rest of this test, which would make the
+    // later executeCommand call below skip its own direct attempt and fail on unconfigured relay
+    // instead of testing what this test actually cares about.
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(deviceInfoResponse("PowerOn"))
+      .mockResolvedValueOnce(mediaPlayerResponse("close"))
+      .mockResolvedValueOnce(activeAppResponse("Roku", { hasId: false }))
+      .mockResolvedValueOnce(appsResponse());
+    await driver.connect(device);
+    expect((await driver.getState(device)).values.playbackState).toBe("stopped");
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "selectPlayPause" });
+
+    const keypressCall = (global.fetch as jest.Mock).mock.calls[4];
+    expect(keypressCall[0]).toBe("http://192.168.1.80:8060/keypress/Select");
+    expect(result.state?.lastAction).toBe("select");
   });
 
   test("inputSelection maps 'hdmi2' to the documented InputHDMI2 key", async () => {

@@ -55,9 +55,11 @@ export type CapabilityId =
   // Real-hardware research (2026-09-12, ADR-HEARTH-051): live media-playback state (playing vs.
   // paused) and a play/pause toggle command, verified per-brand rather than assumed for all four
   // driver categories:
-  //  - Roku: real and declared. Official ECP docs (developer.roku.com) document GET
-  //    /query/media-player returning <player state="play|pause|...">, and the "Play" remote key
-  //    is documented to toggle play<->pause on its own hardware remote — no separate Pause key
+  //  - Roku: NOT declared as a standalone toggle as of 2026-09-20 (ADR-HEARTH-116) — folded into
+  //    "selectPlayPause" below, per Sean's explicit, informed decision to accept that ADR-HEARTH-
+  //    068's Netflix-PIN/YouTube-Skip-Ad regression. Official ECP docs (developer.roku.com) still
+  //    document GET /query/media-player returning <player state="play|pause|...">, and the "Play"
+  //    remote key still toggles play<->pause on its own hardware remote — no separate Pause key
   //    exists because none is needed. RokuEcpDriver.ts.
   //  - LG webOS: NOT declared as a standalone toggle as of 2026-09-20 — see "selectPlayPause"
   //    below for why LG folds this into "select" instead. `ssap://com.webos.media/getForegroundAppInfo`
@@ -83,26 +85,33 @@ export type CapabilityId =
   // Sean, directly (2026-09-20), about his own real LG TV's included Magic Remote: "the lg remote
   // does all 3 with the scroll function button in the middle of the remote" — select, play, and
   // pause via that one physical OK/wheel-click button. Deep research (codebase + Roku/LG SSAP
-  // docs + Apple TV/Google TV/Fire TV hardware) confirmed this is real and confirmed WHY it's
-  // real, and why it does NOT generalize to Roku (ADR-HEARTH-068 already found the opposite there,
-  // and this stays true — Roku's own developer docs treat "Select" and "Play" as genuinely
-  // separate ECP keys with no device-side disambiguation exposed to any client, corroborated by
-  // Home Assistant's mature integration hitting the identical unsolved ambiguity):
+  // docs + Apple TV/Google TV/Fire TV hardware) confirmed this is real for LG specifically:
   //  - LG's real Magic Remote has no separate physical play/pause button at all for this
   //    interaction — the same OK/wheel-click press that LgWebOsDriver.ts's "select" case already
   //    sends as the literal `ENTER` button code (hobbyquaker/lgtv2) is the exact press Sean's real
   //    remote uses for play/pause too. The ambiguity that broke Roku (Netflix's PIN lock, YouTube's
-  //    Skip Ad) is resolved on real LG hardware by webOS's own on-device focus/UI state at the
-  //    instant of the press — the same mechanism Apple TV's Siri Remote clickpad and simple
+  //    Skip Ad — see below) is resolved on real LG hardware by webOS's own on-device focus/UI state
+  //    at the instant of the press — the same mechanism Apple TV's Siri Remote clickpad and simple
   //    Google TV remotes use (click activates whatever's focused on screen; falls through to
   //    play/pause only when nothing is) — never by the remote or Hearth guessing from a stale
   //    polled `playbackState` snapshot. Sending the same `ENTER` code Hearth already sends for
-  //    "select" replicates that real, working, on-device behavior directly, rather than attempting
-  //    a client-side guess of the kind ADR-HEARTH-068 already proved doesn't work.
-  //  - Every other driver (Roku, Samsung, Sony) keeps "select"/"playPause" fully separate,
-  //    unchanged — no equivalent real-hardware confirmation exists for any of them, and Roku's
-  //    case is affirmatively confirmed NOT to work this way.
-  // See ADR-HEARTH-114 for the full decision record.
+  //    "select" replicates that real, working, on-device behavior directly. See ADR-HEARTH-114.
+  //  - Roku (ADR-HEARTH-116, 2026-09-20): unlike LG, no such on-device disambiguation exists —
+  //    Roku's own developer docs treat "Select" and "Play" as genuinely separate ECP keys with no
+  //    device-side focus signal exposed to any client, and ADR-HEARTH-068's research (three
+  //    parallel agents, corroborated by Home Assistant's mature Roku integration hitting the
+  //    identical unsolved ambiguity) confirmed this is a real, unsolved industry-wide gap, not an
+  //    oversight in this driver. Shown a real Samsung remote confirming the same physical-button
+  //    split exists there too, and shown the specific reintroduced regression this would cause
+  //    (Netflix's PIN lock, YouTube's Skip Ad both broke the last time this was tried), Sean
+  //    explicitly chose uniform one-button behavior across every driver over avoiding those two
+  //    edge cases: "2" — merge everywhere, accept the Roku regression. `RokuEcpDriver.ts`'s merged
+  //    case sends `Play` (the real toggle key) whenever `playbackState` reads confidently
+  //    playing/paused, else falls back to `Select` — the original, pre-ADR-HEARTH-068 design,
+  //    reinstated knowingly rather than by accident.
+  //  - Samsung, Sony: unaffected — neither declares `playPause` at all (existing, unrelated gap;
+  //    see this file's own `playPause` entry above), so there's nothing to merge yet.
+  // See ADR-HEARTH-114 (LG) and ADR-HEARTH-116 (Roku) for the full decision records.
   | "selectPlayPause"
   // Real-hardware research (2026-09-16): "so the user can type usernames and passwords rather
   // than having to navigate to each letter on screen" -- verified per-brand from primary/official
