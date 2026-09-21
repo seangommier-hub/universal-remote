@@ -2,9 +2,15 @@ import { SonyBraviaDriver } from "./SonyBraviaDriver";
 import { Device } from "../../../core/types/Device";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../core/network/wakeOnLan");
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
+
+jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
+  loadFamilyCommandCenterConfig: jest.fn(),
+}));
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body } as Response;
@@ -34,6 +40,7 @@ describe("SonyBraviaDriver", () => {
     driver = new SonyBraviaDriver();
     global.fetch = jest.fn();
     mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
+    mockLoadConfig.mockReset(); // defaults to unconfigured — matches every existing test's "no relay/self-heal lookup" world unless a test opts in
     resetRelayNecessityCacheForTests();
   });
 
@@ -153,6 +160,83 @@ describe("SonyBraviaDriver", () => {
 
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/HTTP 403/);
     expect(mockSendWakeOnLan).not.toHaveBeenCalled();
+  });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-119): Sony was the first TV driver built (Phase
+  // 1) and never got the MAC-based self-healing LG/Samsung/Roku already have — a Sony TV that
+  // moves to a different network kept retrying the same dead IP forever.
+  //
+  // URL-based fetch routing (not sequential mockResolvedValueOnce chaining, unlike this driver's
+  // other tests) is used here because refreshState's power+volume reads fire in parallel
+  // (Promise.all), so the exact order the resulting fetch calls land in isn't the deterministic
+  // single-call sequence RokuEcpDriver.test.ts's equivalent tests can rely on.
+  describe("re-discovery after a network change", () => {
+    const OLD_IP = "192.168.1.50";
+    const NEW_IP = "192.168.1.218";
+
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: OLD_IP, psk: "secret-psk", hwaddr: "11:22:33:44:55:66" } };
+    }
+
+    function mockFetchRoutedByUrl(handler: (url: string) => Response | Promise<Response> | undefined): void {
+      (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+        const response = await handler(url);
+        if (response) return response;
+        throw new Error(`unexpected fetch in test: ${url}`);
+      });
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      mockFetchRoutedByUrl((url) => {
+        if (url.includes(OLD_IP)) throw new Error("Network request failed"); // stale IP -- never answers, direct or relayed
+        if (url.includes("/relay/http")) return { ok: false, status: 502, json: async () => ({}), text: async () => "" } as Response;
+        if (url.includes("/api/integrations/hearth/devices")) {
+          return { ok: true, status: 200, json: async () => ({ devices: [{ hwaddr: "11:22:33:44:55:66", ip: NEW_IP, name: null }] }) } as Response;
+        }
+        if (url.includes(NEW_IP) && url.includes("/sony/system")) return powerStatusResponse("active");
+        if (url.includes(NEW_IP) && url.includes("/sony/audio")) return volumeInfoResponse(15, false);
+        return undefined;
+      });
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(deviceWithMac.config?.ipAddress).toBe(NEW_IP); // persisted onto the device object, same as LG/Samsung/Roku
+      const state = await driver.getState(deviceWithMac);
+      expect(state.connection).toBe("connected");
+      expect(state.values.power).toBe("on");
+    });
+
+    test("a genuinely dead device (no better address found) still surfaces a real failure, not a silent hang", async () => {
+      mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- no relay fallback and no self-heal lookup possible
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network request failed"));
+
+      const deviceWithMac = freshDeviceWithMac();
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow();
+      expect(deviceWithMac.config?.ipAddress).toBe(OLD_IP); // untouched -- nothing better was found
+      expect((await driver.getState(deviceWithMac)).connection).toBe("disconnected");
+    });
+
+    test("a device with no saved hwaddr falls back to a name-based lookup and re-locates itself", async () => {
+      const deviceWithNoMac: Device = { ...device, name: "SonyTV.lan", config: { ipAddress: OLD_IP, psk: "secret-psk" } };
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      mockFetchRoutedByUrl((url) => {
+        if (url.includes(OLD_IP)) throw new Error("Network request failed");
+        if (url.includes("/relay/http")) return { ok: false, status: 502, json: async () => ({}), text: async () => "" } as Response;
+        if (url.includes("/api/integrations/hearth/devices")) {
+          return { ok: true, status: 200, json: async () => ({ devices: [{ hwaddr: "aa:bb:cc:dd:ee:ff", ip: NEW_IP, name: "SonyTV.lan" }] }) } as Response;
+        }
+        if (url.includes(NEW_IP) && url.includes("/sony/system")) return powerStatusResponse("active");
+        if (url.includes(NEW_IP) && url.includes("/sony/audio")) return volumeInfoResponse(15, false);
+        return undefined;
+      });
+
+      await driver.connect(deviceWithNoMac);
+
+      expect(deviceWithNoMac.config?.ipAddress).toBe(NEW_IP);
+      expect(deviceWithNoMac.config?.hwaddr).toBe("aa:bb:cc:dd:ee:ff"); // backfilled for next time
+    });
   });
 
   test("volumeUp sends a relative +2 and reports the actual resulting volume, not an assumed one", async () => {

@@ -6,7 +6,7 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { SonyBraviaApiError, SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
 import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
-import { findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 const LOG_SCOPE = "SonyBraviaDriver";
@@ -357,15 +357,60 @@ export class SonyBraviaDriver implements DeviceDriver {
     }
   }
 
+  /** Raw, unhandled read of power + volume — no self-healing, no retry, no state-machine side
+   * effects. Split out purely so `fetchLiveStateWithSelfHeal` below can attempt it twice (original
+   * IP, then a rediscovered one) without recursing into `refreshState`'s own disconnect/backoff
+   * bookkeeping. */
+  private async fetchLiveState(device: Device): Promise<{ power: PowerStatus; volumeInfo: VolumeInfo }> {
+    const client = new SonyBraviaClient(requireConfig(device));
+    const [[power], [volumeInfo]] = await Promise.all([
+      client.call<PowerStatus[]>("system", "getPowerStatus"),
+      client.call<VolumeInfo[]>("audio", "getVolumeInformation"),
+    ]);
+    return { power, volumeInfo };
+  }
+
+  /**
+   * Real gap found live (2026-09-21, ADR-HEARTH-119): Sony was the very first TV driver built
+   * (Phase 1) and is Sean's own real, tested hardware, yet never got the MAC-based self-healing
+   * LgWebOsDriver.ts/SamsungTizenDriver.ts/RokuEcpDriver.ts all already have (ADR-HEARTH-017/109)
+   * — a Sony TV that moves to a different network (the same real scenario that hit this
+   * household's Hisense/Roku and one of its two LG TVs) just kept retrying the same dead IP
+   * forever. Same fix, same reasoning: on any reachability failure, check whether Family Command
+   * Center currently sees this device's MAC at a different address, retry once at whatever it
+   * finds. Safe to try unconditionally — if the device genuinely is still at the same IP and
+   * genuinely is down, nothing changes and the original failure still propagates.
+   */
+  private async fetchLiveStateWithSelfHeal(device: Device): Promise<{ power: PowerStatus; volumeInfo: VolumeInfo }> {
+    try {
+      return await this.fetchLiveState(device);
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      const currentIp = device.config?.ipAddress;
+      if (typeof currentIp !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
+      // See LgWebOsDriver.ts's identical comment: a device discovered/added before hwaddr-saving
+      // existed has no MAC on file at all — falls back to a hostname match on this device's own
+      // `name`, the same "safe to try, harmless if nothing matches" contract.
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      if (!freshIp || freshIp === currentIp) throw err; // nothing better found — surface the original failure
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp; // persisted by App.tsx after a successful connect(), same as every other self-healing driver
+      // Backfills a missing MAC so the *next* move is caught by the faster, more precise
+      // findCurrentIpByMac instead of needing this name-fallback again.
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
+      return await this.fetchLiveState(device);
+    }
+  }
+
   /** Re-reads power + volume from the TV and updates cached state. Never trusts a command's own result as proof of success — always reads the state back. */
   private async refreshState(device: Device): Promise<DeviceState> {
     const generation = this.generations.get(device.id) ?? 0;
-    const client = new SonyBraviaClient(requireConfig(device));
     try {
-      const [[power], [volumeInfo]] = await Promise.all([
-        client.call<PowerStatus[]>("system", "getPowerStatus"),
-        client.call<VolumeInfo[]>("audio", "getVolumeInformation"),
-      ]);
+      const { power, volumeInfo } = await this.fetchLiveStateWithSelfHeal(device);
       // Real bug found alongside the input-list addition, 2026-09-10: this used to build `values`
       // from scratch every call — fine when the only fields were power/volume/muted (all
       // refreshed here anyway), but refreshInputList's `inputs` field isn't one of them, and
