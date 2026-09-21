@@ -25,7 +25,8 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_PERSONAL_HARDWARE_ENABLED": "false"
       }
     }
   },

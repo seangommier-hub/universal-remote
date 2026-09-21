@@ -24,6 +24,17 @@ import { theme } from "./src/ui/theme";
 
 const Tab = createBottomTabNavigator();
 
+// Sean, directly: "the squirrel feeder is only on my build, not everyone else's, if i upload this
+// to the various app stores." The Feeder tab is real, working code, but it's tied to one specific
+// piece of household hardware (an ESP32 project of Sean's own) — not something a household member
+// who downloads Hearth from a public app store should ever see. Reuses the same APP_VARIANT
+// distinction app.config.js already draws (ADR-HEARTH-083: "production" is the one bundle
+// identifier/build profile meant for eventual store distribution) rather than inventing a second
+// flag — eas.json's "production" profile sets this env var to "false" explicitly; every other
+// profile (development, preview — Sean's own personal builds) leaves it unset, which this
+// defaults to enabled, so nothing needs to opt in for the common case.
+const PERSONAL_HARDWARE_ENABLED = process.env.EXPO_PUBLIC_PERSONAL_HARDWARE_ENABLED !== "false";
+
 /** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
 async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
   await Promise.all(
@@ -440,6 +451,7 @@ export default function App() {
                 />
               )}
             </Tab.Screen>
+            {PERSONAL_HARDWARE_ENABLED && (
             <Tab.Screen name="Feeder" options={{ tabBarIcon: ({ color, size }) => <Ionicons name="paw-outline" size={size} color={color} /> }}>
               {() => (
                 <FeederTabScreen
@@ -453,6 +465,7 @@ export default function App() {
                 />
               )}
             </Tab.Screen>
+            )}
           </Tab.Navigator>
         </NavigationContainer>
         <StatusBar style="light" />
