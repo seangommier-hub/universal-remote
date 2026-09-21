@@ -1,5 +1,12 @@
 import { YamahaMusicCastDriver } from "./YamahaMusicCastDriver";
 import { Device } from "../../../core/types/Device";
+import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
+  loadFamilyCommandCenterConfig: jest.fn(),
+}));
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body } as Response;
@@ -27,6 +34,8 @@ describe("YamahaMusicCastDriver", () => {
   beforeEach(() => {
     driver = new YamahaMusicCastDriver();
     global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    resetRelayNecessityCacheForTests();
   });
 
   test("declares only capabilities the Extended Control API actually implements", () => {
@@ -154,5 +163,37 @@ describe("YamahaMusicCastDriver", () => {
   test("inputSelection without a string arg rejects before making any network call", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection" })).rejects.toThrow();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-120): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+  // SonyBraviaDriver.ts's/DenonDriver.ts's identical self-healing — a receiver that moves to a
+  // different network kept retrying the same dead IP forever.
+  describe("re-discovery after a network change", () => {
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: "192.168.1.60", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValueOnce(null).mockResolvedValueOnce({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.218" }] }) })
+        .mockResolvedValueOnce(statusResponse({ power: "on" }));
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218");
+      expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
+    });
+
+    test("a genuinely dead device (no better address found) still surfaces a real failure, not a silent hang", async () => {
+      mockLoadConfig.mockResolvedValue(null);
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+      const deviceWithMac = freshDeviceWithMac();
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow(/isn't configured for relay fallback/);
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.60");
+    });
   });
 });

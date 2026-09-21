@@ -4,7 +4,8 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { ChromecastClient } from "./ChromecastClient";
+import { ChromecastClient, ChromecastStatus } from "./ChromecastClient";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "ChromecastDriver";
 // A reasonable default step (5%), not a protocol-mandated value — CastV2 has no documented
@@ -154,13 +155,45 @@ export class ChromecastDriver implements DeviceDriver {
     }
   }
 
+  /** Raw, unhandled status read — no self-healing, no retry. Split out purely so
+   * `fetchLiveStateWithSelfHeal` below can attempt it twice (original IP, then a rediscovered
+   * one) without recursing into `refreshState`'s own disconnect/backoff bookkeeping. */
+  private async fetchLiveState(device: Device): Promise<ChromecastStatus> {
+    return new ChromecastClient().getStatus(requireIpAddress(device));
+  }
+
+  /**
+   * Real gap found live (2026-09-21, ADR-HEARTH-120): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+   * SonyBraviaDriver.ts's identical self-healing (ADR-HEARTH-017/109/119) — a Chromecast that
+   * moves to a different network kept retrying the same dead IP forever. On any reachability
+   * failure, check whether Family Command Center currently sees this device's MAC at a different
+   * address, retry once at whatever it finds. Safe to try unconditionally.
+   */
+  private async fetchLiveStateWithSelfHeal(device: Device): Promise<ChromecastStatus> {
+    try {
+      return await this.fetchLiveState(device);
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      const currentIp = device.config?.ipAddress;
+      if (typeof currentIp !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      if (!freshIp || freshIp === currentIp) throw err;
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp;
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
+      return await this.fetchLiveState(device);
+    }
+  }
+
   /** Re-reads volume/mute from the device and updates cached state. Never trusts a command's own result as proof of success — always reads the state back. */
   private async refreshState(device: Device): Promise<DeviceState> {
     const generation = this.generations.get(device.id) ?? 0;
-    const client = new ChromecastClient();
-    const ipAddress = requireIpAddress(device);
     try {
-      const status = await client.getStatus(ipAddress);
+      const status = await this.fetchLiveStateWithSelfHeal(device);
       const current = this.states.get(device.id);
       const state: DeviceState = {
         connection: "connected",

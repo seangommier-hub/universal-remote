@@ -1,5 +1,12 @@
 import { SonosDriver } from "./SonosDriver";
 import { Device } from "../../../core/types/Device";
+import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
+import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+
+jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
+  loadFamilyCommandCenterConfig: jest.fn(),
+}));
+const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
 
 function soapResponse(bodyFields: Record<string, string | number> = {}, ok = true, status = 200) {
   const inner = Object.entries(bodyFields)
@@ -30,6 +37,8 @@ describe("SonosDriver", () => {
   beforeEach(() => {
     driver = new SonosDriver();
     global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    resetRelayNecessityCacheForTests();
   });
 
   test("declares only capabilities the local UPnP control surface actually implements — no 'power'", () => {
@@ -137,5 +146,67 @@ describe("SonosDriver", () => {
   test("setVolume without a numeric arg rejects before making any network call", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setVolume" })).rejects.toThrow();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-120): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+  // SonyBraviaDriver.ts's identical self-healing — a speaker that moves to a different network
+  // kept retrying the same dead IP forever.
+  //
+  // URL-based fetch routing (not sequential mockResolvedValueOnce chaining) because refreshState's
+  // volume/mute/transport reads fire in parallel (Promise.all), same reasoning as
+  // SonyBraviaDriver.test.ts's equivalent tests — and GetVolume/GetMute even share the identical
+  // URL (both hit /RenderingControl/Control), so routing also inspects the SOAPACTION header.
+  describe("re-discovery after a network change", () => {
+    const OLD_IP = "192.168.1.90";
+    const NEW_IP = "192.168.1.218";
+
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: OLD_IP, hwaddr: "AA:BB:CC:DD:EE:FF" } };
+    }
+
+    function soapAction(init: RequestInit | undefined): string {
+      return (init?.headers as Record<string, string> | undefined)?.SOAPACTION ?? "";
+    }
+
+    function mockFetchRoutedByUrl(handler: (url: string, init: RequestInit | undefined) => Response | undefined): void {
+      (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+        const response = handler(url, init);
+        if (response) return response;
+        throw new Error(`unexpected fetch in test: ${url} ${soapAction(init)}`);
+      });
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });
+      mockFetchRoutedByUrl((url, init) => {
+        if (url.includes(OLD_IP)) throw new Error("Network request failed"); // stale IP -- never answers, direct or relayed
+        if (url.includes("/relay/http")) return { ok: false, status: 502, json: async () => ({}), text: async () => "" } as Response;
+        if (url.includes("/api/integrations/hearth/devices")) {
+          return { ok: true, status: 200, json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: NEW_IP, name: null }] }) } as Response;
+        }
+        if (url.includes(NEW_IP) && soapAction(init).includes("GetVolume")) return volumeResponse(30);
+        if (url.includes(NEW_IP) && soapAction(init).includes("GetMute")) return muteResponse(false);
+        if (url.includes(NEW_IP) && soapAction(init).includes("GetTransportInfo")) return transportResponse("PLAYING");
+        return undefined;
+      });
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(deviceWithMac.config?.ipAddress).toBe(NEW_IP);
+      const state = await driver.getState(deviceWithMac);
+      expect(state.connection).toBe("connected");
+      expect(state.values.volume).toBe(30);
+    });
+
+    test("a genuinely dead device (no better address found) still surfaces a real failure, not a silent hang", async () => {
+      mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- no relay fallback and no self-heal lookup possible
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network request failed"));
+
+      const deviceWithMac = freshDeviceWithMac();
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow();
+      expect(deviceWithMac.config?.ipAddress).toBe(OLD_IP);
+      expect((await driver.getState(deviceWithMac)).connection).toBe("disconnected");
+    });
   });
 });

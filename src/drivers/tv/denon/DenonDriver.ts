@@ -4,7 +4,8 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
-import { DenonClient, DenonConfig } from "./DenonClient";
+import { DenonClient, DenonConfig, DenonStatus } from "./DenonClient";
+import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
 const LOG_SCOPE = "DenonDriver";
 const VOLUME_STEP_DB = 0.5; // Denon's own remote/app step size for a single MVUP/MVDOWN press
@@ -156,12 +157,46 @@ export class DenonDriver implements DeviceDriver {
     }
   }
 
+  /** Raw, unhandled status read — no self-healing, no retry. Split out purely so
+   * `fetchLiveStateWithSelfHeal` below can attempt it twice (original IP, then a rediscovered
+   * one) without recursing into `refreshState`'s own disconnect/backoff bookkeeping. */
+  private async fetchLiveState(device: Device): Promise<DenonStatus> {
+    const client = new DenonClient(requireConfig(device));
+    return client.getStatus();
+  }
+
+  /**
+   * Real gap found live (2026-09-21, ADR-HEARTH-120): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+   * SonyBraviaDriver.ts's identical self-healing (ADR-HEARTH-017/109/119) — a receiver that moves
+   * to a different network kept retrying the same dead IP forever. On any reachability failure,
+   * check whether Family Command Center currently sees this device's MAC at a different address,
+   * retry once at whatever it finds. Safe to try unconditionally.
+   */
+  private async fetchLiveStateWithSelfHeal(device: Device): Promise<DenonStatus> {
+    try {
+      return await this.fetchLiveState(device);
+    } catch (err) {
+      const hwaddr = device.config?.hwaddr;
+      const currentIp = device.config?.ipAddress;
+      if (typeof currentIp !== "string") throw err;
+      logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
+      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      if (!freshIp || freshIp === currentIp) throw err;
+      logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
+      if (device.config) device.config.ipAddress = freshIp;
+      if (typeof hwaddr !== "string" && device.config) {
+        const discoveredMac = await findMacByIp(freshIp);
+        if (discoveredMac) device.config.hwaddr = discoveredMac;
+      }
+      return await this.fetchLiveState(device);
+    }
+  }
+
   /** Re-reads power/volume/mute from the receiver and updates cached state. Never trusts a command's own result as proof of success — always reads the state back. */
   private async refreshState(device: Device): Promise<DeviceState> {
     const generation = this.generations.get(device.id) ?? 0;
-    const client = new DenonClient(requireConfig(device));
     try {
-      const status = await client.getStatus();
+      const status = await this.fetchLiveStateWithSelfHeal(device);
       const current = this.states.get(device.id);
       const state: DeviceState = {
         connection: "connected",

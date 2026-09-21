@@ -89,4 +89,36 @@ describe("ChromecastDriver", () => {
   test("any other capability throws — never claims power or playPause", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/does not implement/);
   });
+
+  // Real gap found live (2026-09-21, ADR-HEARTH-120): mirrors LgWebOsDriver.ts's/RokuEcpDriver.ts's/
+  // SonyBraviaDriver.ts's identical self-healing — a Chromecast that moves to a different network
+  // kept retrying the same dead IP forever.
+  describe("re-discovery after a network change", () => {
+    function freshDeviceWithMac(): Device {
+      return { ...device, config: { ipAddress: "192.168.1.95", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+    }
+
+    test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // status call at the stale IP
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ devices: [{ hwaddr: "AA:BB:CC:DD:EE:FF", ip: "192.168.1.218" }] }) } as Response) // FCC lookup
+        .mockResolvedValueOnce(statusResponse(0.4, false)); // retry at the new address succeeds
+
+      const deviceWithMac = freshDeviceWithMac();
+      await driver.connect(deviceWithMac);
+
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.218");
+      expect((await driver.getState(deviceWithMac)).connection).toBe("connected");
+    });
+
+    test("a genuinely dead device (not found in Family Command Center's inventory either) still surfaces a real failure", async () => {
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network request failed")) // status call at the stale IP
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ devices: [] }) } as Response); // FCC lookup -- nothing matches
+
+      const deviceWithMac = freshDeviceWithMac();
+      await expect(driver.connect(deviceWithMac)).rejects.toThrow(/Network request failed/);
+      expect(deviceWithMac.config?.ipAddress).toBe("192.168.1.95");
+    });
+  });
 });
