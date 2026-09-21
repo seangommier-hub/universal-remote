@@ -58,8 +58,8 @@ function UtilityAction({
   scale: number;
 }) {
   return (
-    <View style={[styles.utilityAction, { width: 64 * scale }]}>
-      <CapabilityButton shape="circle" scale={scale} icon={icon} label={label} variant={active ? "accent" : "ghost"} onPress={onPress} disabled={disabled} />
+    <View style={[styles.utilityAction, { width: 36 * scale }]}>
+      <CapabilityButton shape="circle" size="xs" scale={scale} icon={icon} label={label} variant={active ? "accent" : "ghost"} onPress={onPress} disabled={disabled} />
       <Text style={styles.utilityActionLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -869,7 +869,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           because neither has a confirmed equivalent, not because this row forgot them. */}
       {has(device, "launchApp") && (
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Streaming Apps</Text>
           <View style={styles.streamingRow}>
             {STREAMING_APPS.map((app) => (
               <StreamingAppTile
@@ -901,7 +900,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           ahead of the utility row (Mute/Back/Home/Menu/...) rather than after it. */}
       {has(device, "inputSelection") && (
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Input</Text>
           {/* Real-device ask (2026-09-10): "change the arrangement of the inputs to be fewer
               rows" — the old styles.row (plain flexWrap, no column count) let the number of
               buttons per row vary with each label's own width, so a TV reporting several inputs
@@ -1277,39 +1275,25 @@ const styles = StyleSheet.create({
   // center button) rather than a full separate card — this hub is already fighting for vertical
   // space on a 375pt screen (see hubCard's own comment, "make it one page, no scrolling").
   playPauseRow: { marginTop: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
-  // Real-device feedback (2026-09-10): "settings and sleep timer overlap" — Samsung's utility row
-  // can now hold up to 6 items (mute/back/home/menu/settings/sleepTimer); 6×52px alone (312px)
-  // already exceeds a 375pt screen's available width before a single gap is added, let alone at
-  // the old spacing.xl gaps. flexWrap lets a row that's grown past its device's original 4-item
-  // assumption fold onto a second line instead of overflowing into whatever renders next.
-  //
-  // Real-device regression (2026-09-11): "i want the remote page to be 1 page, now the icons at
-  // the bottom span two lines" — checked the arithmetic this row was never actually verified
-  // against, unlike the hub row's own cited "316px, ~11px to spare" calculation. At the previous
-  // spacing.lg (16) gap, even LG's plain 4-item set (mute/back/home/menu, no settings/sleepTimer
-  // at all) needs 4×64 + 3×16 = 304px against this card's ~295px available content width (375
-  // baseline − 32px outer content padding − 48px utilityCard's own padding) — 9px over budget,
-  // enough to force an unwanted wrap for a device that was never meant to need one. Tightened to
-  // spacing.sm (8): 4×64 + 3×8 = 280px, comfortably under budget. Samsung's 6-item case (already
-  // over budget even at 52px alone) still wraps by design — that's expected, not a bug; only the
-  // unintended LG-sized wrap is what this fixes.
-  // Real-device regression (2026-09-12), reported a third time despite the two comments above:
-  // `gap` sets both axes to the same value, but only the utility circles themselves grow with
-  // `scale` (useResponsiveScale, tuned for larger phones like iPhone 17 Pro) — the row's own
-  // vertical gap between a wrapped first/second line stays the fixed, unscaled spacing.sm. On a
-  // large-screen device the icons grow toward that fixed gap from both sides, closing distance
-  // that was only ever budgeted for the smaller reference width these comments' arithmetic used.
-  // rowGap independent of columnGap keeps the already-verified horizontal fit (spacing.sm, "4×64 +
-  // 3×8 = 280px") exactly as tuned, while giving Samsung's wrapped second row (settings/sleepTimer)
-  // real clearance from the first row regardless of scale.
-  utilityRow: { flexDirection: "row", flexWrap: "wrap", columnGap: theme.spacing.sm, rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
+  // Sean, directly (2026-09-21, ADR-HEARTH-121): "reduce the button size to make the bottom card
+  // one row." Previously this row wrapped by design once a device's set grew past ~4 items (see
+  // git history for the full prior arithmetic) — Samsung's real 7-item case (home/menu/mute/back/
+  // settings/sleep/source) is the actual worst case now designed for. At the new xs circle size
+  // (36px item width, ADR-HEARTH-121) and a tightened spacing.xs (4px) gap: 7×36 + 6×4 = 276px,
+  // against this card's ~295px available content width (375 baseline − 32px outer content
+  // padding − 48px utilityCard's own padding) — 19px of margin, deliberately generous given this
+  // exact row's history of underestimated arithmetic (reported broken three times before this).
+  // flexWrap/rowGap stay in place as a defensive fallback only — not expected to trigger for any
+  // current driver's capability set, but a future driver adding an 8th+ item degrades to a second
+  // line instead of clipping off-card.
+  utilityRow: { flexDirection: "row", flexWrap: "wrap", columnGap: theme.spacing.xs, rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
   // Real-device finding (2026-09-10): "the settings label/button is still overlapping" — an
   // unconstrained-width column meant a longer caption ("Settings") could wrap to a second line
   // while its siblings ("Mute", "Home") stayed single-line, giving that one item a different
   // total height than the row it wrapped alongside — visually reading as two rows overlapping.
   // Fixed width + single line + tail-ellipsis makes every utility action exactly the same height,
   // no matter how long its label is, so a wrapped grid can never have mismatched row heights.
-  utilityAction: { alignItems: "center", gap: theme.spacing.xs, width: 64 },
+  utilityAction: { alignItems: "center", gap: theme.spacing.xs, width: 36 },
   utilityActionLabel: { color: theme.textSecondary, fontSize: theme.type.caption, fontWeight: "600", textAlign: "center" },
   // Real-device finding (2026-09-10): "boxes are not the same size" — flexBasis+flexGrow with
   // flexWrap meant that if the wordmark text in any one tile (e.g. "prime video") needed more

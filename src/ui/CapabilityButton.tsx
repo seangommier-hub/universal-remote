@@ -28,8 +28,8 @@ interface CapabilityButtonProps {
   icon?: IconName;
   /** "circle" renders a fixed-size round button — used for d-pad clusters and numeric keypads. Shows an icon when one is given (label becomes accessibility-name-only, as before); shows the label as text when there's no icon (e.g. a keypad digit). Defaults to the original pill shape. */
   shape?: "pill" | "circle";
-  /** Circle-shape diameter, from `theme.circleDiameter`. "sm" (the default, unchanged from before this prop existed) is every d-pad/keypad button; "lg" is for the single control on a screen that should read as the primary touch target. No effect on `shape="pill"`. */
-  size?: "sm" | "lg";
+  /** Circle-shape diameter, from `theme.circleDiameter`. "sm" (the default, unchanged from before this prop existed) is every d-pad/keypad button; "lg" is for the single control on a screen that should read as the primary touch target; "xs" (ADR-HEARTH-121) is for a row with many secondary controls that must fit on one line (e.g. the remote screen's utility row) — a deliberate touch-target-size tradeoff, not a default choice. No effect on `shape="pill"`. */
+  size?: "xs" | "sm" | "lg";
   /** Escape hatch for a call site whose background isn't the app's own surface colors (e.g. a live camera feed) — the built-in variants assume they're sitting on `theme.background`/`theme.surface`. Merged in last, so it can override anything. */
   containerStyle?: StyleProp<ViewStyle>;
   /** Device-width-derived scale factor (see useResponsiveScale.ts), applied to a circle
@@ -62,14 +62,16 @@ export function CapabilityButton({
 }: CapabilityButtonProps) {
   const isCircle = shape === "circle";
   const isLarge = isCircle && size === "lg";
+  const isXs = isCircle && size === "xs";
   const iconColor = variant === "accent" ? theme.background : disabled ? theme.textTertiary : theme.textPrimary;
+  const baseDiameter = isLarge ? theme.circleDiameter.lg : isXs ? theme.circleDiameter.xs : theme.circleDiameter.sm;
   // Only computed (and only ever applied) for a circle whose caller passed a
   // real scale -- scale===1 renders byte-for-byte the same style array as
   // before this prop existed, so no existing call site's layout changes.
   const scaledCircleStyle =
     isCircle && scale !== 1
       ? (() => {
-          const diameter = (isLarge ? theme.circleDiameter.lg : theme.circleDiameter.sm) * scale;
+          const diameter = baseDiameter * scale;
           return { width: diameter, height: diameter, borderRadius: diameter / 2 };
         })()
       : undefined;
@@ -85,6 +87,7 @@ export function CapabilityButton({
         styles.button,
         isCircle && styles.circleButton,
         isLarge && styles.circleButtonLarge,
+        isXs && styles.circleButtonXs,
         variant === "accent" && styles.accentButton,
         variant === "ghost" && styles.ghostButton,
         pressed && styles.pressed,
@@ -97,7 +100,7 @@ export function CapabilityButton({
         {icon && (
           <Ionicons
             name={icon}
-            size={(isLarge ? 28 : isCircle ? 22 : 18) * (isCircle ? scale : 1)}
+            size={(isLarge ? 28 : isXs ? 16 : isCircle ? 22 : 18) * (isCircle ? scale : 1)}
             color={iconColor}
             style={!isCircle && label ? styles.iconWithLabel : undefined}
           />
@@ -146,6 +149,10 @@ const styles = StyleSheet.create({
   circleButtonLarge: {
     width: theme.circleDiameter.lg,
     height: theme.circleDiameter.lg,
+  },
+  circleButtonXs: {
+    width: theme.circleDiameter.xs,
+    height: theme.circleDiameter.xs,
   },
   contentRow: {
     flexDirection: "row",
