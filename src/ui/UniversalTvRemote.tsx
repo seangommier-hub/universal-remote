@@ -509,6 +509,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           // one button, same as every other TV's "power" toggle above. Defaults to powerOn when
           // state isn't known yet (a TV is more often reached for while off than on), otherwise
           // sends whichever command is the real opposite of the last known state.
+          //
+          // Real bug found live (2026-09-22): this used to always disable on controlsDisabled,
+          // same as every other button — but powerOn (Wake-on-LAN) is specifically the ONE command
+          // designed to work with no live connection at all (ADR-HEARTH-102's whole point is that
+          // a fully-off TV has no SSAP socket to be "connected" through). That made the wake button
+          // unpressable in exactly the state it exists to handle. Only gate on connection when the
+          // next press would actually be powerOff, which is a real SSAP command over a live socket.
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -516,10 +523,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
             label="Power"
             variant={knownPower === "on" ? "accent" : "ghost"}
             onPress={() => send(knownPower === "on" ? "powerOff" : "powerOn")}
-            disabled={controlsDisabled}
+            disabled={knownPower === "on" && controlsDisabled}
           />
         )}
         {!hasSeparatePowerOnOff && has(device, "powerOn") && (
+          // Same reasoning as the merged button above — a powerOn-only device (Xbox/PS5) is also
+          // Wake-on-LAN, meant to work with no live connection at all. Never gated on controlsDisabled.
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -527,7 +536,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
             label="Power On"
             variant="accent"
             onPress={() => send("powerOn")}
-            disabled={controlsDisabled}
           />
         )}
         {!hasSeparatePowerOnOff && has(device, "powerOff") && (
@@ -578,7 +586,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         )}
       </View>
 
-      {isConnected && commandError ? (
+      {/* Real bug found live (2026-09-22): this used to be gated on isConnected too, which meant
+          a failed powerOn (Wake-on-LAN) attempt — the one command meant to run while disconnected
+          — set commandError but the banner never rendered, so a real failure (no known MAC yet,
+          Family Command Center unreachable) looked identical to a silently-ignored button press. */}
+      {commandError ? (
         <View style={styles.commandErrorBanner}>
           <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
           <Text style={styles.commandErrorText}>{commandError}</Text>
