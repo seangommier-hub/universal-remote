@@ -255,7 +255,12 @@ export function DevicesTabScreen({
         // an already-configured household's settings (e.g. adding the public/away URL,
         // ADR-HEARTH-123) — dropping straight into a device-discovery scan afterward would be a
         // surprising detour for that case. Back to the device list, same as Cancel, matches both.
-        <FamilyCommandCenterSettingsScreen onCancel={() => setScreen({ name: "list" })} onSaved={() => setScreen({ name: "list" })} />
+        <FamilyCommandCenterSettingsScreen
+          onCancel={() => setScreen({ name: "list" })}
+          onSaved={() => setScreen({ name: "list" })}
+          devices={devices}
+          onDeviceAdded={onDeviceAdded}
+        />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "create-scene" && (

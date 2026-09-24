@@ -4,12 +4,16 @@ import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig, verifyAndSavePublicUrl } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
+import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
+import { DeviceSharePanel } from "./DeviceSharePanel";
 import { theme } from "./theme";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
   onSaved: () => void;
+  devices: Device[];
+  onDeviceAdded: (device: Device) => Device;
 }
 
 /**
@@ -19,7 +23,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, onDeviceAdded }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("http://192.168.1.172:3210");
   const [token, setToken] = useState("");
@@ -130,6 +134,9 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved }: FamilyC
         />
       </View>
       {status === "checking" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
+
+      <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} />
+
     </ScrollView>
   );
 }
