@@ -10,6 +10,7 @@ import * as Network from "expo-network";
 import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPolicy";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
+import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
 import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
@@ -142,10 +143,19 @@ export default function App() {
       if (cameFromBackground) {
         reconnectAllDevices(runtime, runtime.deviceRegistry.list());
         runUpdateCheck(false);
+        syncDevicesWithHousehold();
       }
     });
     return () => subscription.remove();
   }, [runtime]);
+
+  // ADR-HEARTH-131: converge this phone's device list with the household's shared one at startup
+  // and every return to the foreground, so a new phone (or a device added on another phone) shows
+  // up without anyone pressing Share/Load.
+  useEffect(() => {
+    if (ready) syncDevicesWithHousehold();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-075): the AppState listener above
   // only covers a device losing connection while the app is backgrounded — the one gap left is a
@@ -230,6 +240,12 @@ export default function App() {
     } else if (manual) {
       setUpdateBanner(null); // "not-supported" (Expo Go / a build without expo-updates baked in)
     }
+  }
+
+  function syncDevicesWithHousehold(): void {
+    runAutoDeviceSync(runtime.deviceRegistry.list(), (device) => {
+      handleDeviceAdded(device);
+    });
   }
 
   async function handleReconnect(device: Device): Promise<void> {

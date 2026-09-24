@@ -16,7 +16,7 @@ module.exports = {
     // and reverted the same day (ADR-HEARTH-110) — the library proved incompatible with this
     // project's React Native version. No native change survives from that experiment, so this
     // stays at 1.1.0, matching the binary already installed.
-    version: "1.1.0",
+    version: "1.2.0", // 1.2.0 adds expo-sensors for physical bump (ADR-HEARTH-130/131)
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
