@@ -850,3 +850,26 @@ describe("LgWebOsDriver", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 });
+
+// ADR-HEARTH-132: a socket that dies without a clean close never fires onclose, so the driver used to
+// keep saying "connected" until a button press hung. A heartbeat now notices and reconnects.
+describe("LgWebOsDriver heartbeat", () => {
+  test("a connection that stops answering is declared disconnected without any socket close event", async () => {
+    jest.useFakeTimers();
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    const driver = new LgWebOsDriver();
+    try {
+      await connectDriver(driver);
+      expect((await driver.getState(device)).connection).toBe("connected");
+
+      await jest.advanceTimersByTimeAsync(60000); // two unanswered heartbeat probes
+
+      expect((await driver.getState(device)).connection).toBe("disconnected");
+    } finally {
+      await driver.disconnect(device);
+      jest.useRealTimers();
+    }
+  });
+});

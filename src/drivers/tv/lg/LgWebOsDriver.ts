@@ -8,6 +8,7 @@ import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 
 const LOG_SCOPE = "LgWebOsDriver";
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
@@ -143,6 +144,7 @@ export class LgWebOsDriver implements DeviceDriver {
   displayName = "LG webOS TV (WebSocket, encrypted via relay)";
 
   private clients = new Map<string, LgWebOsClient>();
+  private heartbeatStops = new Map<string, () => void>();
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -303,8 +305,9 @@ export class LgWebOsDriver implements DeviceDriver {
     // later replaces this client in `this.clients`, this closure's own comparison goes false, so
     // this specific socket closing for real (its own legitimate future disconnect) can never act
     // on behalf of whatever client has since replaced it.
-    client.onDisconnect = () => {
+    const handleDisconnect = () => {
       if (this.clients.get(device.id) !== client) return;
+      this.stopHeartbeat(device.id);
       this.clients.delete(device.id);
       this.playbackUnsubscribes.get(device.id)?.();
       this.playbackUnsubscribes.delete(device.id);
@@ -312,11 +315,25 @@ export class LgWebOsDriver implements DeviceDriver {
       this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
       this.scheduleReconnect(device);
     };
+    client.onDisconnect = handleDisconnect;
     const previous = this.clients.get(device.id);
     if (previous && previous !== client) previous.close();
     this.playbackUnsubscribes.get(device.id)?.(); // any subscription on a superseded client — its own socket close already stops the pushes, this just drops the stale closure
     this.playbackUnsubscribes.delete(device.id);
     this.clients.set(device.id, client);
+    // ADR-HEARTH-132: a socket that dies without a clean close never fires onDisconnect, so probe it.
+    this.stopHeartbeat(device.id);
+    this.heartbeatStops.set(
+      device.id,
+      startConnectionHeartbeat(
+        () => client.call("ssap://audio/getVolume"),
+        () => {
+          logger.warn(LOG_SCOPE, `${device.name} stopped answering — reconnecting`);
+          client.close();
+          handleDisconnect();
+        }
+      )
+    );
     // Successfully pairing over this socket means the TV is on right now.
     this.setState(device.id, { connection: "connected", values: { power: "on" }, lastUpdated: Date.now() });
     await this.refreshVolumeState(device, client);
@@ -325,7 +342,13 @@ export class LgWebOsDriver implements DeviceDriver {
     this.subscribeToPlaybackState(device, client);
   }
 
+  private stopHeartbeat(deviceId: string): void {
+    this.heartbeatStops.get(deviceId)?.();
+    this.heartbeatStops.delete(deviceId);
+  }
+
   async disconnect(device: Device): Promise<void> {
+    this.stopHeartbeat(device.id);
     this.bumpGeneration(device.id); // invalidates any connect() still in flight for this device
     this.clearReconnectTimer(device.id);
     this.playbackUnsubscribes.get(device.id)?.();
