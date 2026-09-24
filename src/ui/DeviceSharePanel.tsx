@@ -5,6 +5,7 @@ import { Device } from "../core/types/Device";
 import { fetchSharedDevices, publishDevices } from "../discovery/familyCommandCenterDeviceSync";
 import { selectDevicesToImport } from "../runtime/selectDevicesToImport";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
+import { BumpShareSection } from "./BumpShareSection";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
@@ -65,6 +66,7 @@ export function DeviceSharePanel({ devices, onDeviceAdded }: DeviceSharePanelPro
           <Text style={failed ? styles.error : styles.hint}>{message}</Text>
         </View>
       )}
+      <BumpShareSection devices={devices} onDeviceAdded={onDeviceAdded} />
     </View>
   );
 }
