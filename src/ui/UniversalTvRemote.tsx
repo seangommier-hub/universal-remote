@@ -331,6 +331,22 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     send("setChannel", { digits: digit });
   }
 
+  // ADR-HEARTH-139: Sean wants play, pause and select all on the one center button. LG cannot report
+  // whether video is playing, so tap stays a plain OK (what a real Magic Remote does) and a hold
+  // sends the explicit real Pause, then Play on the next hold, alternating. A tap resets the
+  // alternation, since an OK may itself have paused or resumed the video.
+  const lastHoldRef = useRef<"pause" | "play" | null>(null);
+  function pressCenterSelect() {
+    lastHoldRef.current = null;
+    send("selectPlayPause");
+  }
+  function holdCenterPlayPause() {
+    const next = lastHoldRef.current === "pause" ? "play" : "pause";
+    lastHoldRef.current = next;
+    fireHapticClick();
+    send(next);
+  }
+
   function pressKeypadEnter() {
     send(has(device, "selectPlayPause") ? "selectPlayPause" : "select");
     setChannelInput("");
@@ -736,7 +752,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                     icon={playbackState === "playing" ? "pause" : playbackState === "paused" ? "play" : "checkmark"}
                     label={playbackState === "playing" ? "Pause" : playbackState === "paused" ? "Play" : "Select"}
                     variant="accent"
-                    onPress={() => send("selectPlayPause")}
+                    onPress={pressCenterSelect}
+                    onLongPress={has(device, "play") && has(device, "pause") ? holdCenterPlayPause : undefined}
                     disabled={controlsDisabled}
                   />
                 ) : has(device, "select") ? (

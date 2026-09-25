@@ -82,6 +82,12 @@ export type CapabilityId =
   //    as a general documented mechanism — not a real basis for a universal capability. Sony's
   //    separate IRCC-IP protocol is unimplemented here (see SonyBraviaDriver.ts) and out of scope.
   | "playPause"
+  // ADR-HEARTH-139: explicit transport keys, for a device (LG) whose single toggle cannot know whether
+  // video is playing. Each sends its own real command, so it always does what its label says.
+  | "play"
+  | "pause"
+  | "rewind"
+  | "fastForward"
   // Sean, directly (2026-09-20), about his own real LG TV's included Magic Remote: "the lg remote
   // does all 3 with the scroll function button in the middle of the remote" — select, play, and
   // pause via that one physical OK/wheel-click button. Deep research (codebase + Roku/LG SSAP

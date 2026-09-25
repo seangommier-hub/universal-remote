@@ -934,3 +934,25 @@ describe("LgWebOsDriver isConnectionAlive", () => {
     }
   });
 });
+
+// ADR-HEARTH-139: press-and-hold on the center button sends explicit Pause / Play.
+describe("LgWebOsDriver explicit transport keys", () => {
+  test.each(["play", "pause", "rewind", "fastForward"] as const)("%s sends the real media.controls request", async (capability) => {
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    const driver = new LgWebOsDriver();
+    await connectDriver(driver);
+    const socket = MockWebSocket.at(0);
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability });
+    const request = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(request.uri).toBe(`ssap://media.controls/${capability}`);
+    socket.simulateMessage({ type: "response", id: request.id, payload: { returnValue: true } });
+    expect((await resultPromise).success).toBe(true);
+    await driver.disconnect(device);
+  });
+
+  test("the driver declares all four", () => {
+    expect(new LgWebOsDriver().getCapabilities()).toEqual(expect.arrayContaining(["play", "pause", "rewind", "fastForward"]));
+  });
+});

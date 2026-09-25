@@ -58,6 +58,11 @@ const LG_CAPABILITIES: CapabilityId[] = [
   // inferred fields, including the known firmware caveat (some older webOS versions 404 this
   // subscription).
   "selectPlayPause",
+  // ADR-HEARTH-139: real SSAP media.controls, confirmed accepted live by the TV while Netflix was in front.
+  "play",
+  "pause",
+  "rewind",
+  "fastForward",
   // Real-hardware research (2026-09-16, ADR-HEARTH-072): `ssap://com.webos.service.ime/insertText`
   // is documented directly in LG's own official "Connect SDK" (2014, LG Electronics), adopted
   // verbatim by the openHAB LG webOS binding's LGWebOSTVKeyboardInput.java — see Capability.ts's
@@ -517,6 +522,13 @@ export class LgWebOsDriver implements DeviceDriver {
       case "channelDown":
         await client.call("ssap://tv/channelDown");
         this.patchValues(device.id, { lastAction: "channelDown" });
+        return;
+      case "play":
+      case "pause":
+      case "rewind":
+      case "fastForward":
+        await client.call(`ssap://media.controls/${command.capability}`);
+        this.patchValues(device.id, { lastAction: command.capability });
         return;
       case "selectPlayPause":
         // Real-hardware confirmation, Sean directly (2026-09-20, ADR-HEARTH-114): his real Magic

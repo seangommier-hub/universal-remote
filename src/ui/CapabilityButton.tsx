@@ -22,6 +22,8 @@ type IconName = ComponentProps<typeof Ionicons>["name"];
 interface CapabilityButtonProps {
   label: string;
   onPress: () => void;
+  /** Optional press-and-hold action (ADR-HEARTH-139). A held press fires this instead of onPress. */
+  onLongPress?: () => void;
   variant?: "default" | "accent" | "ghost";
   disabled?: boolean;
   /** Optional leading icon (Ionicons glyph name). Purely decorative/additive — every existing call site with no icon renders exactly as before. */
@@ -51,6 +53,7 @@ interface CapabilityButtonProps {
 export function CapabilityButton({
   label,
   onPress,
+  onLongPress,
   variant = "default",
   disabled = false,
   icon,
@@ -79,6 +82,8 @@ export function CapabilityButton({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={LONG_PRESS_DELAY_MS}
       onPressIn={disabled ? undefined : fireHapticClick}
       disabled={disabled}
       accessibilityRole="button"
@@ -126,6 +131,8 @@ export function CapabilityButton({
     </Pressable>
   );
 }
+
+const LONG_PRESS_DELAY_MS = 400;
 
 const styles = StyleSheet.create({
   button: {
