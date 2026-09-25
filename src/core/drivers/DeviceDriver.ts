@@ -27,6 +27,9 @@ export interface DeviceDriver {
    * behavior is unchanged by this field's addition. */
   hasDynamicCapabilities?: boolean;
 
+  /** Optional cheap proof that this device's existing connection still works right now (ADR-HEARTH-138). Drivers holding a persistent socket implement it so a return to the app does not tear down a healthy connection. Omitted means "unknown, just reconnect". */
+  isConnectionAlive?(device: Device): Promise<boolean>;
+
   connect(device: Device): Promise<void>;
   disconnect(device: Device): Promise<void>;
 

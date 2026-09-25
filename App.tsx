@@ -11,6 +11,7 @@ import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPo
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
+import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
 import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
@@ -35,26 +36,6 @@ const Tab = createBottomTabNavigator();
 // profile (development, preview — Sean's own personal builds) leaves it unset, which this
 // defaults to enabled, so nothing needs to opt in for the common case.
 const PERSONAL_HARDWARE_ENABLED = process.env.EXPO_PUBLIC_PERSONAL_HARDWARE_ENABLED !== "false";
-
-/** Attempts to (re)connect every known device, one at a time is unnecessary — each is independent, so all run concurrently. Never throws: a single device's failure (logged) doesn't stop the others or the caller. */
-async function reconnectAllDevices(runtime: ReturnType<typeof createHearthRuntime>, devices: Device[]): Promise<void> {
-  await Promise.all(
-    devices.map(async (device) => {
-      const driver = runtime.driverRegistry.get(device.driverId);
-      try {
-        await driver?.connect(device);
-        // Real-hardware ask (2026-09-10): "only have to approve one time... forever remembered by
-        // the tv." A driver (LG today) may have just mutated device.config with a freshly-learned
-        // pairing key — re-saving here is what actually gets that onto disk, not just into memory
-        // for this session. Cheap no-op for every driver whose config didn't change.
-        saveDeviceQuietly(device);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.warn("App", `Could not reconnect ${device.name}`, { message });
-      }
-    })
-  );
-}
 
 /** saveDevice(), but failures are logged and swallowed rather than thrown — every call site here is a background persistence step riding along an already-successful connect(), not something that should fail the caller's own flow. */
 function saveDeviceQuietly(device: Device): void {
@@ -141,7 +122,7 @@ export default function App() {
       const cameFromBackground = appState.current.match(/inactive|background/) && nextState === "active";
       appState.current = nextState;
       if (cameFromBackground) {
-        reconnectAllDevices(runtime, runtime.deviceRegistry.list());
+        reconnectAllDevices(runtime, runtime.deviceRegistry.list(), saveDeviceQuietly);
         runUpdateCheck(false);
         syncDevicesWithHousehold();
       }
@@ -169,7 +150,7 @@ export default function App() {
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
       if (shouldReconnectOnNetworkChange(lastNetworkState.current, state)) {
-        reconnectAllDevices(runtime, runtime.deviceRegistry.list());
+        reconnectAllDevices(runtime, runtime.deviceRegistry.list(), saveDeviceQuietly);
       }
       lastNetworkState.current = state;
     });
@@ -214,7 +195,7 @@ export default function App() {
       // already shows the device either way, just with "disconnected" state until this resolves.
       // A failure here isn't the end of the story either: ADR-HEARTH-017's per-driver backoff
       // and the AppState listener above both keep retrying afterward.
-      reconnectAllDevices(runtime, persisted);
+      reconnectAllDevices(runtime, persisted, saveDeviceQuietly);
     })();
     return () => {
       cancelled = true;

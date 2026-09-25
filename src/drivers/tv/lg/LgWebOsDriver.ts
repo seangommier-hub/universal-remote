@@ -11,6 +11,9 @@ import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 
 const LOG_SCOPE = "LgWebOsDriver";
+// A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
+const LIVENESS_PROBE_TIMEOUT_MS = 3000;
+
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
 
 // "powerOff" is real SSAP (ssap://system/turnOff), sent over the live socket like every other
@@ -340,6 +343,26 @@ export class LgWebOsDriver implements DeviceDriver {
     await this.refreshInputList(device, client);
     await this.refreshApps(device, client);
     this.subscribeToPlaybackState(device, client);
+  }
+
+  /** True only if this TV's live socket answers a cheap request right now (ADR-HEARTH-138). */
+  async isConnectionAlive(device: Device): Promise<boolean> {
+    const client = this.clients.get(device.id);
+    if (!client) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        client.call("ssap://audio/getVolume"),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("liveness probe timed out")), LIVENESS_PROBE_TIMEOUT_MS);
+        }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private stopHeartbeat(deviceId: string): void {

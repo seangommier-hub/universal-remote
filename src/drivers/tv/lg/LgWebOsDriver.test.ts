@@ -902,3 +902,35 @@ describe("LgWebOsDriver heartbeat", () => {
     }
   });
 });
+
+// ADR-HEARTH-138: returning to the app must not tear down a TV connection that is still healthy.
+describe("LgWebOsDriver isConnectionAlive", () => {
+  test("is false when there is no connection at all", async () => {
+    installMockWebSocket();
+    expect(await new LgWebOsDriver().isConnectionAlive(device)).toBe(false);
+  });
+
+  test("is true when the live socket answers, and false when it goes unanswered", async () => {
+    jest.useFakeTimers();
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    const driver = new LgWebOsDriver();
+    try {
+      await connectDriver(driver);
+      const socket = MockWebSocket.at(0);
+
+      const alive = driver.isConnectionAlive(device);
+      const request = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: request.id, payload: { returnValue: true, volume: 9, mute: false } });
+      expect(await alive).toBe(true);
+
+      const dead = driver.isConnectionAlive(device);
+      await jest.advanceTimersByTimeAsync(3500);
+      expect(await dead).toBe(false);
+    } finally {
+      await driver.disconnect(device);
+      jest.useRealTimers();
+    }
+  });
+});
