@@ -48,4 +48,16 @@ describe("sendDigitSequence", () => {
     await expect(sendDigitSequence(4.5, async (digit) => pressed.push(digit) as unknown as void)).rejects.toThrow(/non-negative integer/);
     expect(pressed).toEqual([]);
   });
+
+  test("a string of digits is sent exactly as given, keeping leading zeros (a PIN is not a number)", async () => {
+    const pressed: string[] = [];
+    await sendDigitSequence("0123", async (digit) => pressed.push(digit) as unknown as void, 0);
+    expect(pressed).toEqual(["0", "1", "2", "3"]);
+  });
+
+  test("a string containing anything but digits is rejected without pressing anything", async () => {
+    const pressed: string[] = [];
+    await expect(sendDigitSequence("12a", async (digit) => pressed.push(digit) as unknown as void)).rejects.toThrow(/string of digits/);
+    expect(pressed).toEqual([]);
+  });
 });

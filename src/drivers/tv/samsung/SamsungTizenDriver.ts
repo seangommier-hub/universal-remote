@@ -328,6 +328,12 @@ export class SamsungTizenDriver implements DeviceDriver {
     const current = this.states.get(device.id)?.values ?? {};
 
     if (command.capability === "setChannel") {
+      const keyedDigits = command.args?.digits;
+      if (typeof keyedDigits === "string") {
+        // ADR-HEARTH-136: one raw remote digit press (PIN entry etc.); not a channel change.
+        await sendDigitSequence(keyedDigits, async (digit) => client.sendKey(`KEY_${digit}`));
+        return { success: true, deviceId: device.id, capability: command.capability, timestamp: Date.now(), state: current };
+      }
       const channel = command.args?.channel;
       if (typeof channel !== "number") throw new Error("setChannel requires a numeric 'channel' arg");
       // Digit key codes are KEY_0..KEY_9 — sourced from xchwarze/samsung-tv-ws-api's documented

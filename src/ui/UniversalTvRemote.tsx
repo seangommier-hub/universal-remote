@@ -323,13 +323,16 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     });
   }
 
-  function appendChannelDigit(digit: string) {
-    setChannelInput((current) => (current.length >= MAX_CHANNEL_DIGITS ? current : current + digit));
+  // ADR-HEARTH-136: like a physical remote, every digit goes to the device the moment it is pressed
+  // (so a PIN screen, a channel entry, or anything else that reads digits works), rather than being
+  // collected and sent as one number — which also dropped leading zeros. The display is only an echo.
+  function pressKeypadDigit(digit: string) {
+    setChannelInput((current) => (current.length >= MAX_CHANNEL_DIGITS ? digit : current + digit));
+    send("setChannel", { digits: digit });
   }
 
-  function submitChannelInput() {
-    if (channelInput.length === 0) return;
-    send("setChannel", { channel: Number(channelInput) });
+  function pressKeypadEnter() {
+    send(has(device, "selectPlayPause") ? "selectPlayPause" : "select");
     setChannelInput("");
   }
 
@@ -1018,13 +1021,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       {hasKeypad && activeTab === "keypad" && (
         <View style={styles.card}>
           <View style={styles.keypadHeader}>
-            <Text style={styles.cardLabel}>Channel Number</Text>
+            <Text style={styles.cardLabel}>Number Keys</Text>
             <Text style={styles.keypadDisplay}>{channelInput.length > 0 ? channelInput : "—"}</Text>
           </View>
           {KEYPAD_ROWS.map((digitRow) => (
             <View key={digitRow.join("")} style={styles.row}>
               {digitRow.map((digit) => (
-                <CapabilityButton key={digit} shape="circle" scale={scale} label={digit} onPress={() => appendChannelDigit(digit)} disabled={controlsDisabled} />
+                <CapabilityButton key={digit} shape="circle" scale={scale} label={digit} onPress={() => pressKeypadDigit(digit)} disabled={controlsDisabled} />
               ))}
             </View>
           ))}
@@ -1038,15 +1041,15 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
               onPress={() => setChannelInput("")}
               disabled={controlsDisabled || channelInput.length === 0}
             />
-            <CapabilityButton shape="circle" scale={scale} label="0" onPress={() => appendChannelDigit("0")} disabled={controlsDisabled} />
+            <CapabilityButton shape="circle" scale={scale} label="0" onPress={() => pressKeypadDigit("0")} disabled={controlsDisabled} />
             <CapabilityButton
               shape="circle"
               scale={scale}
               icon="checkmark"
               label="Enter"
               variant="accent"
-              onPress={submitChannelInput}
-              disabled={controlsDisabled || channelInput.length === 0}
+              onPress={pressKeypadEnter}
+              disabled={controlsDisabled || !(has(device, "selectPlayPause") || has(device, "select"))}
             />
           </View>
         </View>

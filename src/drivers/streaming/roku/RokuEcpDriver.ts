@@ -328,6 +328,13 @@ export class RokuEcpDriver implements DeviceDriver {
         return;
       }
       case "setChannel": {
+        const keyedDigits = command.args?.digits;
+        if (typeof keyedDigits === "string") {
+          // ADR-HEARTH-136: one raw remote digit press (PIN entry etc.); not a channel change.
+          await sendDigitSequence(keyedDigits, (digit) => client.keypress(`Lit_${digit}`));
+          this.patchValues(device.id, { lastAction: "digit" });
+          return;
+        }
         const channel = command.args?.channel;
         if (typeof channel !== "number") throw new RokuValidationError("setChannel requires a numeric 'channel' arg");
         // "Lit_<char>" sends a literal printable character — sourced from Roku's own official

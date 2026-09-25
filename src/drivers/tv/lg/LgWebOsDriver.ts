@@ -537,6 +537,14 @@ export class LgWebOsDriver implements DeviceDriver {
         if (typeof text !== "string" || text.length === 0) {
           throw new Error("textEntry requires a non-empty string 'text' arg");
         }
+        // ADR-HEARTH-136: apps with their own PIN/number screen (Netflix profile PIN) have no webOS
+        // on-screen keyboard, so insertText has nothing to type into. Digits are sent as real remote
+        // key presses instead, which every such screen accepts.
+        if (/^[0-9]+$/.test(text)) {
+          await sendDigitSequence(text, (digit) => client.sendButton(digit));
+          this.patchValues(device.id, { lastAction: "textEntry" });
+          return;
+        }
         // replace: 0 -- append/insert at the cursor rather than clearing the field first, matching
         // LGWebOSTVKeyboardInput.java's own always-used value (see Capability.ts's textEntry
         // citation). Whether a field is already empty is the TV's own on-screen keyboard's concern,
@@ -546,6 +554,13 @@ export class LgWebOsDriver implements DeviceDriver {
         return;
       }
       case "setChannel": {
+        const keyedDigits = command.args?.digits;
+        if (typeof keyedDigits === "string") {
+          // ADR-HEARTH-136: one raw remote digit press (PIN entry etc.); not a channel change.
+          await sendDigitSequence(keyedDigits, (digit) => client.sendButton(digit));
+          this.patchValues(device.id, { lastAction: "digit" });
+          return;
+        }
         const channel = command.args?.channel;
         if (typeof channel !== "number") throw new Error("setChannel requires a numeric 'channel' arg");
         // Digit button names are literal "0".."9" — sourced from hobbyquaker/lgtv2's documented

@@ -366,6 +366,35 @@ describe("LgWebOsDriver", () => {
     expect(result.state?.channel).toBe(142);
   }, 10000);
 
+  // ADR-HEARTH-136: keypad digits are raw remote key presses (Netflix profile PIN etc.), one per tap.
+  test("a keypad digit (setChannel with digits) presses just that key and does not claim a channel change", async () => {
+    await connectDriver(driver);
+    const mainSocket = MockWebSocket.at(0);
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { digits: "0" } });
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+    const result = await resultPromise;
+    expect(pointerSocket.sentMessages).toEqual(["type:button\nname:0\n\n"]);
+    expect(result.state?.channel).toBeUndefined();
+  }, 10000);
+
+  test("textEntry of only digits is sent as remote key presses, not IME insertText (PIN screens have no on-screen keyboard)", async () => {
+    await connectDriver(driver);
+    const mainSocket = MockWebSocket.at(0);
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "07" } });
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    expect(getSocketRequest.uri).not.toContain("ime/insertText");
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+    await resultPromise;
+    expect(pointerSocket.sentMessages).toEqual(["type:button\nname:0\n\n", "type:button\nname:7\n\n"]);
+  }, 10000);
+
   test("setChannel rejects a non-numeric channel arg without sending anything", async () => {
     await connectDriver(driver);
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: "12" } })).rejects.toThrow(
