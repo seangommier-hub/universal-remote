@@ -6,8 +6,8 @@ jest.mock("../discovery/familyCommandCenterDeviceSync");
 const mockFetch = fetchSharedDevices as jest.MockedFunction<typeof fetchSharedDevices>;
 const mockPublish = publishDevices as jest.MockedFunction<typeof publishDevices>;
 
-function device(id: string): Device {
-  return { id, name: id, category: "tv", manufacturer: "LG", driverId: "lg", capabilities: [], config: {} };
+function device(id: string, shared?: boolean): Device {
+  return { id, name: id, category: "tv", manufacturer: "LG", driverId: "lg", capabilities: [], config: {}, shared };
 }
 
 describe("runAutoDeviceSync", () => {
@@ -42,6 +42,18 @@ describe("runAutoDeviceSync", () => {
   test("a failure (no Family Command Center saved, unreachable) is swallowed", async () => {
     mockFetch.mockRejectedValue(new Error("Family Command Center isn't connected"));
     await expect(runAutoDeviceSync([device("a")], () => undefined)).resolves.toBeUndefined();
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  test("a device switched off for sharing is never published (ADR-HEARTH-140)", async () => {
+    mockFetch.mockResolvedValue([device("a")]);
+    await runAutoDeviceSync([device("private", false), device("mine", true)], () => undefined);
+    expect(mockPublish.mock.calls[0][0].map((d) => d.id)).toEqual(["mine", "a"]);
+  });
+
+  test("a phone whose only new device is private publishes nothing", async () => {
+    mockFetch.mockResolvedValue([device("a")]);
+    await runAutoDeviceSync([device("private", false)], () => undefined);
     expect(mockPublish).not.toHaveBeenCalled();
   });
 });

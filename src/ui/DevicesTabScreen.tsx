@@ -260,6 +260,7 @@ export function DevicesTabScreen({
           onSaved={() => setScreen({ name: "list" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
+          onDeviceUpdated={onDeviceUpdatedInPlace}
         />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}

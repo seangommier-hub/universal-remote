@@ -2,6 +2,7 @@ import { Device } from "../core/types/Device";
 import { logger } from "../core/logging/logger";
 import { fetchSharedDevices, publishDevices } from "../discovery/familyCommandCenterDeviceSync";
 import { selectDevicesToImport } from "./selectDevicesToImport";
+import { selectSharedDevices } from "./sharedDevices";
 
 const LOG_SCOPE = "autoDeviceSync";
 
@@ -16,7 +17,8 @@ export async function runAutoDeviceSync(localDevices: Device[], addDevice: (devi
     const shared = await fetchSharedDevices();
     const toImport = selectDevicesToImport(shared, localDevices);
     toImport.forEach(addDevice);
-    const union = [...localDevices, ...toImport];
+    // Only devices marked shared (ADR-HEARTH-140) are ever published; imports are shared by definition.
+    const union = [...selectSharedDevices(localDevices), ...toImport];
     const sharedIds = new Set(shared.map((d) => d.id));
     const hasNewForOthers = union.some((d) => !sharedIds.has(d.id));
     if (union.length > 0 && hasNewForOthers) await publishDevices(union);

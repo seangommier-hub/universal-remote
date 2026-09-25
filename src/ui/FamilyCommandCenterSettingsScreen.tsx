@@ -14,6 +14,7 @@ interface FamilyCommandCenterSettingsScreenProps {
   onSaved: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
+  onDeviceUpdated: (device: Device) => void;
 }
 
 /**
@@ -23,7 +24,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, onDeviceAdded }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("http://192.168.1.172:3210");
   const [token, setToken] = useState("");
@@ -135,7 +136,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
       </View>
       {status === "checking" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
 
-      <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} />
+      <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} onDeviceUpdated={onDeviceUpdated} />
 
     </ScrollView>
   );

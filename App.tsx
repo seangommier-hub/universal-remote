@@ -11,6 +11,7 @@ import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPo
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
+import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
 import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
 import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
@@ -225,7 +226,7 @@ export default function App() {
 
   function syncDevicesWithHousehold(): void {
     runAutoDeviceSync(runtime.deviceRegistry.list(), (device) => {
-      handleDeviceAdded(device);
+      handleDeviceAdded(markShared(device));
     });
   }
 
@@ -256,7 +257,9 @@ export default function App() {
           .list()
           .find((d) => d.id !== device.id && typeof d.config?.hwaddr === "string" && d.config.hwaddr.toLowerCase() === hwaddr.toLowerCase())
       : undefined;
-    const toStore: Device = duplicate ? { ...device, id: duplicate.id, name: duplicate.name, roomId: duplicate.roomId } : device;
+    // ADR-HEARTH-140: a device added on this phone stays private until its Share switch is turned on.
+    const withShareFlag: Device = device.shared === undefined ? { ...device, shared: false } : device;
+    const toStore: Device = duplicate ? { ...withShareFlag, id: duplicate.id, name: duplicate.name, roomId: duplicate.roomId, shared: duplicate.shared } : withShareFlag;
 
     runtime.deviceRegistry.add(toStore);
     if (duplicate) {

@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { Device } from "../core/types/Device";
 import { bumpDevices } from "../discovery/familyCommandCenterBump";
 import { selectDevicesToImport } from "../runtime/selectDevicesToImport";
+import { markShared, selectSharedDevices } from "../runtime/sharedDevices";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -30,13 +31,13 @@ export function BumpShareSection({ devices, onDeviceAdded }: BumpShareSectionPro
     setFailed(false);
     setMessage("");
     try {
-      const partnerDevices = await bumpDevices(devicesRef.current);
+      const partnerDevices = await bumpDevices(selectSharedDevices(devicesRef.current));
       if (partnerDevices === null) {
         setMessage("No other phone bumped at the same time. Try again on both phones together.");
         return;
       }
       const toImport = selectDevicesToImport(partnerDevices, devicesRef.current);
-      toImport.forEach((device) => onDeviceAdded(device));
+      toImport.forEach((device) => onDeviceAdded(markShared(device)));
       setMessage(toImport.length === 0 ? "Bumped! Nothing new — you already have all of their devices." : `Bumped! Added ${toImport.length} device${toImport.length === 1 ? "" : "s"}.`);
     } catch (err) {
       setFailed(true);

@@ -29,6 +29,8 @@ export interface Device {
   /** Capabilities this specific device instance actually supports (a subset of what its driver can theoretically do). */
   capabilities: CapabilityId[];
   roomId?: string;
+  /** Whether this device goes out to other household phones (bump, Share mine, automatic sync). Undefined means shared, so devices saved before ADR-HEARTH-140 keep syncing; new devices start as false. */
+  shared?: boolean;
   /** Driver-specific connection/pairing data (IP address, pre-shared key, auth token, etc). Shape is defined by each driver, not by this generic type. */
   config?: Record<string, unknown>;
 }

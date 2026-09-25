@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 import { Device } from "../core/types/Device";
 import { fetchSharedDevices, publishDevices } from "../discovery/familyCommandCenterDeviceSync";
 import { selectDevicesToImport } from "../runtime/selectDevicesToImport";
+import { isShared, markShared, selectSharedDevices } from "../runtime/sharedDevices";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { BumpShareSection } from "./BumpShareSection";
 import { CapabilityButton } from "./CapabilityButton";
@@ -12,10 +13,11 @@ import { theme } from "./theme";
 interface DeviceSharePanelProps {
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
+  onDeviceUpdated: (device: Device) => void;
 }
 
 /** Share this phone's devices with the household, or load the ones another phone shared (ADR-HEARTH-129). */
-export function DeviceSharePanel({ devices, onDeviceAdded }: DeviceSharePanelProps) {
+export function DeviceSharePanel({ devices, onDeviceAdded, onDeviceUpdated }: DeviceSharePanelProps) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -36,19 +38,32 @@ export function DeviceSharePanel({ devices, onDeviceAdded }: DeviceSharePanelPro
 
   const share = () =>
     run(async () => {
-      const count = await publishDevices(devices);
+      const count = await publishDevices(selectSharedDevices(devices));
       return `Shared ${count} device${count === 1 ? "" : "s"} with the household.`;
     });
 
   const load = () =>
     run(async () => {
       const toImport = selectDevicesToImport(await fetchSharedDevices(), devices);
-      toImport.forEach((device) => onDeviceAdded(device));
+      toImport.forEach((device) => onDeviceAdded(markShared(device)));
       return toImport.length === 0 ? "Nothing new to load — this phone already has every shared device." : `Loaded ${toImport.length} shared device${toImport.length === 1 ? "" : "s"}.`;
     });
 
   return (
     <View>
+      <Text style={styles.label}>Devices to share</Text>
+      <View style={styles.hintCard}>
+        <Text style={styles.hint}>Only devices switched on here are sent to other household phones, by Share, Bump, or the automatic sync. New devices start off.</Text>
+      </View>
+      {devices.map((device) => (
+        <View key={device.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: theme.spacing.xs }}>
+          <Text style={[styles.hint, { flex: 1 }]} numberOfLines={1}>
+            {device.name}
+          </Text>
+          <Switch value={isShared(device)} onValueChange={(value) => onDeviceUpdated({ ...device, shared: value })} />
+        </View>
+      ))}
+
       <Text style={styles.label}>Share devices between phones</Text>
       <View style={styles.hintCard}>
         <Text style={styles.hint}>
