@@ -1,3 +1,5 @@
+import { resetDirectFailureMemoryForTests } from "../core/network/wsRelayFallback";
+
 // Minimal WebSocket test double shared by driver tests that talk over a real WebSocket
 // (Samsung, LG). Mimics just the slice of the real WebSocket API this codebase uses
 // (onopen/onmessage/onerror/send/close/readyState).
@@ -66,6 +68,7 @@ export class MockWebSocket {
 
 export function installMockWebSocket(): void {
   MockWebSocket.reset();
+  resetDirectFailureMemoryForTests(); // the relay fallback remembers failed direct connections per app session (ADR-HEARTH-137)
   (global as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
 }
 

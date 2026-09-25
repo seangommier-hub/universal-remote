@@ -41,6 +41,23 @@ describe("openSocketWithRelayFallback", () => {
     expect(socket).toBe(relaySocket);
   });
 
+  // ADR-HEARTH-137: Hearth felt laggy next to a real remote partly because every new connection to a
+  // device that can only be reached through the relay first waited out a doomed direct attempt.
+  test("once the relay has worked for a device, the next connection skips the doomed direct attempt", async () => {
+    const first = openSocketWithRelayFallback("wss://10.20.30.40:3001");
+    MockWebSocket.at(0).simulateError();
+    await flushMicrotasks();
+    MockWebSocket.at(1).simulateOpen();
+    await first;
+
+    const second = openSocketWithRelayFallback("wss://10.20.30.40:3001");
+    await flushMicrotasks();
+    const next = MockWebSocket.at(2);
+    expect(next.url).toContain(":3211/"); // straight to the relay, no direct wss:// attempt in between
+    next.simulateOpen();
+    await second;
+  });
+
   // Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used even
   // when off network." Away from the home WiFi, both direct and the LAN relay fail outright.
   describe("public URL fallback (away from home)", () => {

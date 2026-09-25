@@ -10,6 +10,26 @@ import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCent
 
 const DIRECT_CONNECT_TIMEOUT_MS = 4000;
 const RELAY_CONNECT_TIMEOUT_MS = 8000;
+// ADR-HEARTH-137: a device whose direct socket failed (LG/Samsung use self-signed wss that iOS refuses,
+// or the device sits on another network segment) fails it the same way every time, so retrying it first
+// on every connect/pointer-socket open just added up to 4s of lag before the relay. Remember the failure
+// for the app session and skip straight to the relay, re-trying direct only occasionally.
+const DIRECT_RETRY_AFTER_MS = 10 * 60 * 1000;
+const directFailedAt = new Map<string, number>();
+
+function directKey(targetUrl: string): string {
+  try {
+    return new URL(targetUrl).host;
+  } catch {
+    return targetUrl;
+  }
+}
+
+/** Test-only: forgets which devices failed a direct connection. */
+export function resetDirectFailureMemoryForTests(): void {
+  directFailedAt.clear();
+}
+
 const RELAY_PORT = 3211;
 const RELAY_SCHEME = "ws";
 
@@ -62,8 +82,14 @@ function buildRelayUrl(scheme: string, host: string, port: number | undefined, t
  * handshake, same as if it had connected directly.
  */
 export async function openSocketWithRelayFallback(targetUrl: string): Promise<WebSocket> {
+  const key = directKey(targetUrl);
+  const failedAt = directFailedAt.get(key);
+  const skipDirect = failedAt !== undefined && Date.now() - failedAt < DIRECT_RETRY_AFTER_MS;
   try {
-    return await tryOpenSocket(targetUrl, DIRECT_CONNECT_TIMEOUT_MS, `connecting directly to ${targetUrl}`);
+    if (skipDirect) throw new Error("direct connection skipped: it failed recently");
+    const direct = await tryOpenSocket(targetUrl, DIRECT_CONNECT_TIMEOUT_MS, `connecting directly to ${targetUrl}`);
+    directFailedAt.delete(key);
+    return direct;
   } catch {
     const config = await loadFamilyCommandCenterConfig();
     if (!config) {
@@ -71,8 +97,11 @@ export async function openSocketWithRelayFallback(targetUrl: string): Promise<We
     }
     const lanRelayUrl = buildRelayUrl(RELAY_SCHEME, new URL(config.baseUrl).hostname, RELAY_PORT, config.token, targetUrl);
     try {
-      return await tryOpenSocket(lanRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center`);
+      const viaRelay = await tryOpenSocket(lanRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center`);
+      directFailedAt.set(key, failedAt !== undefined && skipDirect ? failedAt : Date.now());
+      return viaRelay;
     } catch (err) {
+      directFailedAt.delete(key); // the relay could not help either: try direct again next time
       if (!config.publicBaseUrl) throw err;
       // wss:// on the tunnel's public hostname, no explicit port -- Cloudflare terminates TLS on
       // 443 and forwards to the LAN relay's real port internally (ADR-HEARTH-123).
