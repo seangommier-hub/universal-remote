@@ -49,6 +49,7 @@ function UtilityAction({
   disabled,
   active,
   scale,
+  columns,
 }: {
   icon: IconName;
   label: string;
@@ -56,10 +57,11 @@ function UtilityAction({
   disabled: boolean;
   active?: boolean;
   scale: number;
+  columns: number;
 }) {
   return (
-    <View style={[styles.utilityAction, { width: 36 * scale }]}>
-      <CapabilityButton shape="circle" size="xs" scale={scale} icon={icon} label={label} variant={active ? "accent" : "ghost"} onPress={onPress} disabled={disabled} />
+    <View style={[styles.utilityAction, { width: `${100 / columns}%` }]}>
+      <CapabilityButton shape="circle" size="sm" scale={scale} icon={icon} label={label} variant={active ? "accent" : "default"} onPress={onPress} disabled={disabled} />
       <Text style={styles.utilityActionLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -393,6 +395,13 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // instead (see sleepTimerManager.ts's own doc comment for the full reasoning).
   const hasNativeSleepTimer = has(device, "sleepTimer");
   const canUniversalSleep = !hasNativeSleepTimer && (has(device, "power") || has(device, "powerOff"));
+  // ADR-HEARTH-134: equal-width columns so the utility buttons spread evenly (one row up to 5 buttons, else 3 or 4 across, wrapping
+  // to an even second row) instead of a ragged flex-wrap row of tiny chips.
+  const utilityButtonCount =
+    ["home", "menu", "mute", "back", "settings", "openSourceList"].filter((capability) => has(device, capability as CapabilityId)).length +
+    (hasNativeSleepTimer ? 1 : 0) +
+    (canUniversalSleep ? 1 : 0);
+  const utilityColumns = utilityButtonCount <= 5 ? Math.max(utilityButtonCount, 1) : utilityButtonCount === 6 ? 3 : 4;
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
   const muted = state.values.muted === true;
@@ -960,10 +969,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         <View style={[styles.card, styles.utilityCard]}>
           {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
           <View style={styles.utilityRow}>
-            {has(device, "home") && <UtilityAction scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
-            {has(device, "menu") && <UtilityAction scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
+            {has(device, "home") && <UtilityAction columns={utilityColumns} scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
+            {has(device, "menu") && <UtilityAction columns={utilityColumns} scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
             {has(device, "mute") && (
               <UtilityAction
+                columns={utilityColumns}
                 scale={scale}
                 icon={muted ? "volume-mute" : "volume-medium-outline"}
                 label={muted ? "Unmute" : "Mute"}
@@ -972,16 +982,17 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 disabled={controlsDisabled}
               />
             )}
-            {has(device, "back") && <UtilityAction scale={scale} icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
+            {has(device, "back") && <UtilityAction columns={utilityColumns} scale={scale} icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
             {/* Real-hardware ask (2026-09-10): "settings and sleep timer should be next to
                 eachother" — Samsung only; verified real KEY_TOOLS/KEY_SLEEP codes exist for this
                 protocol specifically (see Capability.ts). LG/Roku don't declare these capabilities
                 because their own public APIs genuinely have no equivalent — not omitted by
                 oversight. */}
-            {has(device, "settings") && <UtilityAction scale={scale} icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
-            {hasNativeSleepTimer && <UtilityAction scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
+            {has(device, "settings") && <UtilityAction columns={utilityColumns} scale={scale} icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
+            {hasNativeSleepTimer && <UtilityAction columns={utilityColumns} scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
             {canUniversalSleep && (
               <UtilityAction
+                columns={utilityColumns}
                 scale={scale}
                 icon={sleepExpiresAt ? "moon" : "moon-outline"}
                 label="Sleep"
@@ -996,7 +1007,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 different name (see ADR-HEARTH-027 and Capability.ts). The user drives the opened
                 picker with the d-pad/select this driver already has. */}
             {has(device, "openSourceList") && (
-              <UtilityAction scale={scale} icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
+              <UtilityAction columns={utilityColumns} scale={scale} icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
             )}
           </View>
         </View>
@@ -1303,14 +1314,14 @@ const styles = StyleSheet.create({
   // flexWrap/rowGap stay in place as a defensive fallback only — not expected to trigger for any
   // current driver's capability set, but a future driver adding an 8th+ item degrades to a second
   // line instead of clipping off-card.
-  utilityRow: { flexDirection: "row", flexWrap: "wrap", columnGap: theme.spacing.xs, rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
+  utilityRow: { flexDirection: "row", flexWrap: "wrap", rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
   // Real-device finding (2026-09-10): "the settings label/button is still overlapping" — an
   // unconstrained-width column meant a longer caption ("Settings") could wrap to a second line
   // while its siblings ("Mute", "Home") stayed single-line, giving that one item a different
   // total height than the row it wrapped alongside — visually reading as two rows overlapping.
   // Fixed width + single line + tail-ellipsis makes every utility action exactly the same height,
   // no matter how long its label is, so a wrapped grid can never have mismatched row heights.
-  utilityAction: { alignItems: "center", gap: theme.spacing.xs, width: 36 },
+  utilityAction: { alignItems: "center", gap: theme.spacing.xs },
   utilityActionLabel: { color: theme.textSecondary, fontSize: theme.type.caption, fontWeight: "600", textAlign: "center" },
   // Real-device finding (2026-09-10): "boxes are not the same size" — flexBasis+flexGrow with
   // flexWrap meant that if the wordmark text in any one tile (e.g. "prime video") needed more
