@@ -1136,7 +1136,8 @@ const styles = StyleSheet.create({
   // streaming, input, utility row) adds up to real height across six-plus stacked cards; every
   // gap between them is one of a handful of places left to reclaim without shrinking a touch
   // target or undoing spacing just asked for elsewhere (the utility card's own padding).
-  content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
+  // ADR-HEARTH-135: padding lg->md so the whole remote fits an iPhone 17 without scrolling.
+  content: { padding: theme.spacing.md, gap: theme.spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   headerDivider: { color: theme.border, fontSize: theme.type.title, fontWeight: "300" },
   // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — same fix as
@@ -1223,8 +1224,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.border,
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
   // Real-device ask (2026-09-10): "that card needs better spacing" — more generous padding than
   // the base `card` for the utility row specifically, since a sparse row of a few icon+caption
@@ -1234,7 +1235,7 @@ const styles = StyleSheet.create({
   // is what actually controls the gap between it and the bottom of the scrollable content
   // (the ScrollView's own contentContainerStyle padding applies equally above the first card too,
   // not extra room specific to this one).
-  utilityCard: { padding: theme.spacing.xl, marginBottom: theme.spacing.lg },
+  utilityCard: { paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm },
   cardLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,
