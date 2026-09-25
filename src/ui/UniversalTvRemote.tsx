@@ -372,7 +372,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // claiming "Off" for a device that is, as far as this app can ever know, neither on nor off.
   // undefined here means exactly that: unknown, not "assume off" — the pill below now hides itself
   // rather than state a fact this app doesn't have.
-  const knownPower = state.values.power === "on" || state.values.power === "off" ? state.values.power : undefined;
+  // ADR-HEARTH-133: a disconnected device keeps its last-known values, so an LG that dropped while
+  // "on" kept claiming "On" — the power button then chose powerOff (and disabled itself) instead of
+  // waking it. While disconnected the power state is genuinely unknown, so it is treated that way.
+  const knownPower =
+    state.connection === "connected" && (state.values.power === "on" || state.values.power === "off") ? state.values.power : undefined;
   // Real bug found live (2026-09-20): LgWebOsDriver is the first driver to declare BOTH powerOn
   // (Wake-on-LAN, ADR-HEARTH-102) and powerOff (SSAP) as separate capabilities — every earlier
   // driver had at most one of the two (Xbox/PS5: powerOn only; Roku: powerOff only), so this
@@ -494,6 +498,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           </Text>
         </View>
         {has(device, "power") && (
+          // ADR-HEARTH-133: Sony/Samsung's single "power" toggle falls back to Wake-on-LAN when the
+          // TV can't be reached, so like powerOn below it must stay pressable while disconnected.
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -501,7 +507,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
             label="Power"
             variant="accent"
             onPress={() => send("power")}
-            disabled={controlsDisabled}
           />
         )}
         {hasSeparatePowerOnOff && (
