@@ -14,6 +14,10 @@ import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallba
 import { logger } from "../../../core/logging/logger";
 
 const LOG_SCOPE = "LgWebOsClient";
+// Tested against a real LG on 2026-09-26: a TV that already knows this app's client-key registers with
+// the signed block, with only the signature removed, and with neither, so dropping it is safe.
+const CERTIFICATE_REJECTED_PATTERN = /blacklist|certificate/i;
+
 const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
 // Real gap found live (2026-09-21): unlike connect()'s own register handshake, `call()` never had
 // a timeout at all — confirmed via Family Command Center's own relay logs showing a real,
@@ -135,6 +139,10 @@ const PAIRING_MANIFEST = {
   },
 } as const;
 
+const { signed: _signedBlock, signatures: _signatureBlock, ...unsignedManifestBody } = PAIRING_MANIFEST.manifest;
+/* The same manifest without the signed certificate parts, for firmware that rejects the old one. */
+const UNSIGNED_PAIRING_MANIFEST = { forcePairing: PAIRING_MANIFEST.forcePairing, pairingType: PAIRING_MANIFEST.pairingType, manifest: unsignedManifestBody };
+
 interface PendingEntry {
   isRegister?: boolean;
   // Real-hardware research (2026-09-12, ADR-HEARTH-051): a subscription entry, unlike a normal
@@ -200,6 +208,19 @@ export class LgWebOsClient {
   // fresh, promptable pairing. Fixed: resolve with the key (new or reconfirmed) so the driver can
   // persist it, and send any previously-known key back in the manifest payload.
   async connect(): Promise<string | undefined> {
+    try {
+      return await this.connectWithManifest(PAIRING_MANIFEST);
+    } catch (err) {
+      // ADR-HEARTH-152: newer webOS firmware refuses the long-blacklisted 2014 test certificate this
+      // manifest was originally signed with ("403 Pairing rejected: blacklisted certificate detected").
+      // A TV that still accepts it keeps using it exactly as before; only on that specific refusal is
+      // the same register retried once without the signed block.
+      if (!(err instanceof Error) || !CERTIFICATE_REJECTED_PATTERN.test(err.message)) throw err;
+      return this.connectWithManifest(UNSIGNED_PAIRING_MANIFEST);
+    }
+  }
+
+  private async connectWithManifest(manifest: typeof PAIRING_MANIFEST | typeof UNSIGNED_PAIRING_MANIFEST): Promise<string | undefined> {
     let socket: WebSocket;
     try {
       socket = await openSocketWithRelayFallback(`${SCHEME}://${this.config.ipAddress}:${PORT}`);
@@ -258,7 +279,7 @@ export class LgWebOsClient {
       // A known client-key rides alongside the manifest (not nested inside it) — same shape
       // hobbyquaker/lgtv2 sends. Only included when we have one; an unpaired device still sends
       // the plain manifest and gets prompted, exactly as before.
-      const registerPayload = this.config.clientKey ? { ...PAIRING_MANIFEST, "client-key": this.config.clientKey } : PAIRING_MANIFEST;
+      const registerPayload = this.config.clientKey ? { ...manifest, "client-key": this.config.clientKey } : manifest;
       socket.send(JSON.stringify({ type: "register", id: registerId, payload: registerPayload }));
     });
   }

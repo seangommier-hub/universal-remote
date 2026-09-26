@@ -333,3 +333,46 @@ describe("LgWebOsClient", () => {
     });
   });
 });
+
+// ADR-HEARTH-152: newer webOS firmware rejects the 2014 test certificate the pairing manifest is signed with.
+describe("LgWebOsClient pairing certificate fallback", () => {
+  beforeEach(() => {
+    installMockWebSocket();
+    mockLoadConfig.mockReset();
+  });
+
+  test("a TV that rejects the blacklisted certificate is retried once with an unsigned manifest", async () => {
+    const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+    const connectPromise = client.connect();
+
+    const first = MockWebSocket.at(0);
+    first.simulateOpen();
+    await flushMicrotasks();
+    const firstRegister = JSON.parse(first.sentMessages[0]);
+    expect(firstRegister.payload.manifest.signed).toBeDefined();
+    first.simulateMessage({ type: "error", id: firstRegister.id, error: "403 Pairing rejected: blacklisted certificate detected" });
+    await flushMicrotasks(10);
+
+    const second = MockWebSocket.at(1);
+    second.simulateOpen();
+    await flushMicrotasks();
+    const secondRegister = JSON.parse(second.sentMessages[0]);
+    expect(secondRegister.payload.manifest.signed).toBeUndefined();
+    expect(secondRegister.payload.manifest.signatures).toBeUndefined();
+    expect(secondRegister.payload.manifest.permissions.length).toBeGreaterThan(0);
+    second.simulateMessage({ type: "registered", id: secondRegister.id, payload: { "client-key": "fresh-key" } });
+    await expect(connectPromise).resolves.toBe("fresh-key");
+  });
+
+  test("any other registration failure is not retried", async () => {
+    const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+    const connectPromise = client.connect();
+    const first = MockWebSocket.at(0);
+    first.simulateOpen();
+    await flushMicrotasks();
+    const register = JSON.parse(first.sentMessages[0]);
+    first.simulateMessage({ type: "error", id: register.id, error: "401 insufficient permissions" });
+    await expect(connectPromise).rejects.toThrow(/insufficient permissions/);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+});

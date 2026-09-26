@@ -4,7 +4,7 @@
 // Every intervalMs this runs a cheap real request over the live connection; consecutive failures
 // declare it dead so the driver's existing reconnect loop takes over.
 
-export const HEARTBEAT_INTERVAL_MS = 20000;
+export const HEARTBEAT_INTERVAL_MS = 8000;
 export const HEARTBEAT_FAILURES_BEFORE_DEAD = 2;
 
 /** Starts the heartbeat and returns a function that stops it. onDead fires at most once. */
