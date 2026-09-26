@@ -1,6 +1,7 @@
 import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 import { logger } from "../core/logging/logger";
 import { loadFamilyCommandCenterConfig, saveFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+import { isTrustedPublicUrl } from "./trustedServers";
 
 const LOG_SCOPE = "learnPublicUrl";
 const CONNECTION_INFO_PATH = "/api/integrations/hearth/connection-info";
@@ -16,7 +17,7 @@ export async function learnPublicUrlIfMissing(): Promise<boolean> {
     if (!response.ok) return false;
     const info = (await response.json()) as { publicBaseUrl?: string | null };
     const publicBaseUrl = info.publicBaseUrl?.trim().replace(/\/$/, "");
-    if (!publicBaseUrl) return false;
+    if (!publicBaseUrl || !isTrustedPublicUrl(publicBaseUrl, [config.baseUrl])) return false;
     await saveFamilyCommandCenterConfig({ ...config, publicBaseUrl });
     return true;
   } catch (error) {

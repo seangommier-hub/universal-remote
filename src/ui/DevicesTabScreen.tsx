@@ -16,6 +16,8 @@ import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
 import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
+import { PairInvite } from "../discovery/pairInvite";
+import { subscribeToPairInvites, takePendingPairInvite } from "./pendingPairInvite";
 import { CommandCenterRemoteScreen } from "./CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
@@ -34,7 +36,7 @@ export type DevicesScreen =
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
-  | { name: "fcc-join" }
+  | { name: "fcc-join"; invite?: PairInvite }
   | { name: "fcc-remote" }
   | { name: "edit-address"; device: Device }
   | { name: "rename-device"; device: Device }
@@ -94,6 +96,18 @@ export function DevicesTabScreen({
   useEffect(() => {
     loadFamilyCommandCenterConfig().then((config) => setFccConfigured(config !== null));
   }, [screen.name]);
+
+  // ADR-HEARTH-160: a hearth://pair link only opens the Join screen prefilled (cold start picks up
+  // the waiting one on mount, warm start subscribes); joining still needs a tap on its dialog.
+  useEffect(() => {
+    const openJoin = (invite: PairInvite) => setScreen({ name: "fcc-join", invite });
+    const waiting = takePendingPairInvite();
+    if (waiting) openJoin(waiting);
+    return subscribeToPairInvites((invite) => {
+      takePendingPairInvite();
+      openJoin(invite);
+    });
+  }, []);
 
   // Screen navigation after an add/rename/edit/save is this tab's own concern (ADR-HEARTH-104) —
   // App.tsx's handlers now only do registry/persistence work and hand back the updated device.
@@ -225,7 +239,7 @@ export function DevicesTabScreen({
           onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
         />
       )}
-      {screen.name === "fcc-join" && <JoinWithCodeScreen onCancel={() => setScreen({ name: "list" })} onJoined={() => setScreen({ name: "discover" })} />}
+      {screen.name === "fcc-join" && <JoinWithCodeScreen key={screen.invite?.code ?? "manual"} initialInvite={screen.invite} onCancel={() => setScreen({ name: "list" })} onJoined={() => setScreen({ name: "discover" })} />}
       {screen.name === "fcc-settings" && (
         // Real gap found live (2026-09-21): always advancing to "discover" after saving made sense
         // for this screen's original only-entry-point (first-time setup via the QR-scan flow's

@@ -10,7 +10,7 @@ describe("redeemPairCode", () => {
 
   test("posts the code with no bearer token and returns the pairing", async () => {
     const pairing = { baseUrl: "http://192.168.1.5:3210", publicBaseUrl: "https://hearth-relay.carddna.app", token: "tok" };
-    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => pairing });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify(pairing) });
 
     await expect(redeemPairCode(SERVER, "K7M2QX9P")).resolves.toEqual(pairing);
 

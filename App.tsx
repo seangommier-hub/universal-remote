@@ -24,6 +24,7 @@ import { Device } from "./src/core/types/Device";
 import { logger } from "./src/core/logging/logger";
 import { DevicesTabScreen } from "./src/ui/DevicesTabScreen";
 import { usePairLinkListener } from "./src/ui/usePairLinkListener";
+import { appNavigationRef } from "./src/ui/appNavigation";
 import { useActivities } from "./src/ui/useActivities";
 import { ActivityRunModal } from "./src/ui/ActivityRunModal";
 import { FeederTabScreen } from "./src/ui/FeederTabScreen";
@@ -373,7 +374,7 @@ function HearthApp() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <IphoneSafeAreaEmulation>
-        <NavigationContainer>
+        <NavigationContainer ref={appNavigationRef}>
           <Tab.Navigator
             screenOptions={{
               headerShown: false,
