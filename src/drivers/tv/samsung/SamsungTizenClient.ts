@@ -10,7 +10,7 @@
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 import { requestWithRelayFallback } from "../../../core/network/httpRelayFallback";
 
-const CONNECT_TIMEOUT_MS = 20000; // only hit on a first-time pairing, which needs a physical on-screen approval tap
+export const SAMSUNG_PAIRING_TIMEOUT_MS = 20000; // only hit on a first-time pairing, which needs a physical on-screen approval tap
 const MS_CHANNEL_CONNECT_EVENT = "ms.channel.connect";
 const MS_CHANNEL_UNAUTHORIZED_EVENT = "ms.channel.unauthorized";
 
@@ -78,7 +78,7 @@ export class SamsungTizenClient {
           ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
           : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
         reject(new Error(message));
-      }, CONNECT_TIMEOUT_MS);
+      }, SAMSUNG_PAIRING_TIMEOUT_MS);
 
       socket.onmessage = (event: { data: unknown }) => {
         let message: { event?: string; data?: { token?: string } };

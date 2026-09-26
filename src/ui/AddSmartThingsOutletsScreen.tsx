@@ -10,7 +10,10 @@ import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
 import { SMARTTHINGS_SETUP_GUIDE } from "./deviceSetupSteps";
+import { describePairingFailure } from "../discovery/pairingCopy";
 import { theme } from "./theme";
+
+const SMARTTHINGS_LABEL = "SmartThings";
 
 interface AddSmartThingsOutletsScreenProps {
   driverRegistry: DriverRegistry;
@@ -39,6 +42,7 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>({ name: "loading" });
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [reloadCount, setReloadCount] = useState(0);
 
   // Real-hardware finding (2026-09-14): the early return for showSetupGuide MUST come after every
   // hook in this component, not just after the useState calls — unlike the simpler Add*Screens
@@ -48,17 +52,18 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
   // ("Rendered fewer hooks than expected"), caught live on the emulator, not by inspection.
   useEffect(() => {
     let cancelled = false;
+    setPhase({ name: "loading" });
     listOutlets()
       .then((outlets) => {
         if (!cancelled) setPhase({ name: "picking", outlets });
       })
       .catch((err) => {
-        if (!cancelled) setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });
+        if (!cancelled) setPhase({ name: "error", message: describePairingFailure("smartthings", SMARTTHINGS_LABEL, err).message });
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadCount]);
 
   if (showSetupGuide) {
     return <DeviceSetupGuideScreen guide={SMARTTHINGS_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
@@ -86,7 +91,7 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
       await driver.connect(device);
       onAdded(device);
     } catch (err) {
-      setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });
+      setPhase({ name: "error", message: describePairingFailure("smartthings", SMARTTHINGS_LABEL, err).message });
     }
   }
 
@@ -110,9 +115,10 @@ export function AddSmartThingsOutletsScreen({ driverRegistry, onCancel, onAdded 
         {phase.name === "error" && (
           <View style={styles.errorCard}>
             <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-            <Text style={styles.error}>Couldn't load outlets: {phase.message}</Text>
+            <Text style={styles.error}>{phase.message}</Text>
           </View>
         )}
+        {phase.name === "error" && <CapabilityButton label="Try again" variant="accent" onPress={() => setReloadCount((count) => count + 1)} />}
 
         {phase.name === "picking" && (
           <View style={smartThingsStyles.outletList}>

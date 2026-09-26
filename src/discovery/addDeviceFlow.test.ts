@@ -1,6 +1,6 @@
 import { DeviceDriver } from "../core/drivers/DeviceDriver";
 import { Device } from "../core/types/Device";
-import { AddFlowDependencies, connectBrandDevice, describeAddFailure, missingFields } from "./addDeviceFlow";
+import { AddFlowDependencies, AddFlowFailedError, AddFlowNeedsFccError, connectBrandDevice, connectBrandDeviceOrThrow, describeAddFailure, missingFields } from "./addDeviceFlow";
 import { getBrand } from "./brandRegistry";
 
 function fakeDriver(connect: jest.Mock = jest.fn().mockResolvedValue(undefined)) {
@@ -100,6 +100,36 @@ describe("describeAddFailure", () => {
   test("a rejected token points at settings rather than the device", () => {
     const { message } = describeAddFailure(new Error("Family Command Center rejected the saved token."), getBrand("lg"), "1.2.3.4");
     expect(message).toMatch(/token/i);
+  });
+});
+
+describe("plain-language pairing failures (ADR-HEARTH-155)", () => {
+  test("a Samsung denial names the Device Manager path", () => {
+    const { message } = describeAddFailure(new Error("Pairing was denied on the TV"), getBrand("samsung"), "1.2.3.4");
+    expect(message).toContain("Access Notification");
+  });
+
+  test("a Roku 403 names the Permissive setting", () => {
+    const { message } = describeAddFailure(new Error("Roku at 1.2.3.4 returned HTTP 403 for device-info"), getBrand("roku"), "1.2.3.4");
+    expect(message).toContain("Permissive");
+  });
+});
+
+describe("connectBrandDeviceOrThrow", () => {
+  test("resolves to the device on success", async () => {
+    const { driver } = fakeDriver();
+    const device = await connectBrandDeviceOrThrow(makeDeps(driver), getBrand("roku"), TARGET);
+    expect(device.id).toBe("fcc-aa");
+  });
+
+  test("throws AddFlowFailedError carrying the friendly message", async () => {
+    const { driver } = fakeDriver(jest.fn().mockRejectedValue(new Error("Network request failed")));
+    await expect(connectBrandDeviceOrThrow(makeDeps(driver), getBrand("roku"), TARGET)).rejects.toBeInstanceOf(AddFlowFailedError);
+  });
+
+  test("throws AddFlowNeedsFccError when Family Command Center is missing", async () => {
+    const { driver } = fakeDriver();
+    await expect(connectBrandDeviceOrThrow(makeDeps(driver, { hasFccConfig: async () => false }), getBrand("lg"), TARGET)).rejects.toBeInstanceOf(AddFlowNeedsFccError);
   });
 });
 

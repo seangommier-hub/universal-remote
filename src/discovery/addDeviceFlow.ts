@@ -2,6 +2,7 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { Device } from "../core/types/Device";
 import { BrandEntry, BrandField, initialCapabilities } from "./brandRegistry";
+import { describePairingFailure } from "./pairingCopy";
 
 // ADR-HEARTH-148: the ONE connect path for adding a device by address — used by the Discover
 // screen, the home Suggested list and the generic IP add screen, replacing three copies of the
@@ -43,6 +44,8 @@ export function describeAddFailure(error: unknown, brand: BrandEntry, ipAddress:
   if (diagnosis.kind === "lan-blocked") {
     return { message: `Couldn't reach the ${brand.label} at ${ipAddress}. Make sure it's on and on the same Wi-Fi as this phone.`, diagnosis };
   }
+  const pairing = describePairingFailure(brand.id, brand.label, error);
+  if (pairing.kind !== "unknown" && pairing.kind !== "unreachable") return { message: pairing.message, diagnosis: null };
   if (diagnosis.kind === "unknown") {
     return { message: `Couldn't add the ${brand.label}: ${diagnosis.message} (${brand.hint})`, diagnosis: null };
   }
@@ -84,4 +87,23 @@ export async function connectBrandDevice(deps: AddFlowDependencies, brand: Brand
   }
   const reported = deps.readReportedName(device.id)?.trim();
   return { kind: "added", device: reported && !target.name ? { ...device, name: reported } : device };
+}
+
+/** The add attempt failed; carries the plain-language message and any network diagnosis for the screen. */
+export class AddFlowFailedError extends Error {
+  constructor(message: string, readonly diagnosis: NetworkFailureDiagnosis | null) {
+    super(message);
+  }
+}
+
+/** The add attempt cannot start until Family Command Center is set up. */
+export class AddFlowNeedsFccError extends Error {}
+
+/** Connects a brand at an address and resolves to the device, throwing AddFlowFailedError / AddFlowNeedsFccError otherwise — the shape a pairing session's run() needs. */
+export async function connectBrandDeviceOrThrow(deps: AddFlowDependencies, brand: BrandEntry, target: AddTarget): Promise<Device> {
+  const outcome = await connectBrandDevice(deps, brand, target);
+  if (outcome.kind === "added") return outcome.device;
+  if (outcome.kind === "needs-fcc") throw new AddFlowNeedsFccError("Family Command Center is required.");
+  if (outcome.kind === "failed") throw new AddFlowFailedError(outcome.message, outcome.diagnosis);
+  throw new Error(`The ${brand.label} needs more information before it can connect.`);
 }

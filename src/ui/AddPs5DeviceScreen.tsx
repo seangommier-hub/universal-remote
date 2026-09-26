@@ -1,14 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { logger } from "../core/logging/logger";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
-import { Ps5Client } from "../drivers/gaming/ps5/Ps5Client";
+import { getBrand } from "../discovery/brandRegistry";
+import { describePairingFailure, pairingPromptFor } from "../discovery/pairingCopy";
+import { pollPairingStatus } from "../discovery/pairingPoll";
+import { PairingRunContext } from "../discovery/pairingSession";
+import { PS5_PAIRING_POLL_INTERVAL_MS, PS5_PAIRING_POLL_MAX_ATTEMPTS, Ps5Client } from "../drivers/gaming/ps5/Ps5Client";
 import { PS5_DRIVER_ID } from "../drivers/gaming/ps5/Ps5Driver";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { PairingProgressCard } from "./PairingProgressCard";
+import { Ps5SignInStep } from "./Ps5SignInStep";
 import { theme } from "./theme";
+import { usePairingSession } from "./usePairingSession";
 
 interface AddPs5DeviceScreenProps {
   driverRegistry: DriverRegistry;
@@ -17,224 +26,206 @@ interface AddPs5DeviceScreenProps {
   initialIpAddress?: string;
 }
 
-type Stage = "idle" | "login" | "pin" | "saving" | "error";
+type Stage = "form" | "signin" | "linking" | "pin" | "finishing";
 
-const POLL_INTERVAL_MS = 1500;
-const POLL_MAX_ATTEMPTS = 20; // ~30s
+const LOG_SCOPE = "AddPs5DeviceScreen";
+const PS5_BRAND = getBrand("ps5");
+const LINK_PROMPT = pairingPromptFor("ps5")!;
+const PIN_PROMPT = pairingPromptFor("ps5-pin")!;
+const PIN_LENGTH = 8;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Opens the PlayStation sign-in page in the in-app browser, falling back to the system browser. */
+async function openSignInPage(loginUrl: string): Promise<void> {
+  try {
+    await WebBrowser.openBrowserAsync(loginUrl);
+  } catch (error) {
+    logger.warn(LOG_SCOPE, "In-app browser unavailable, using the system browser", { message: error instanceof Error ? error.message : String(error) });
+    await Linking.openURL(loginUrl);
+  }
 }
 
 /**
- * Pairs a PS5 via Family Command Center's real PSN-login-based flow (Ps5Client.ts) — a real,
- * multi-step process the household member has to walk through interactively: open a real Sony
- * login link, paste back the resulting redirect URL, then enter a PIN from the console's own
- * screen. Nothing about the PSN password ever passes through this screen or Family Command
- * Center — that login happens entirely on Sony's own page.
+ * Pairs a PS5 through Family Command Center's PSN-login flow (Ps5Client.ts), cut down for
+ * ADR-HEARTH-155 to: one "Sign in with PlayStation" button, one paste box that recognises the
+ * pasted address by itself, and the console's 8-digit code. Nothing about the PSN password ever
+ * passes through this screen or Family Command Center — that happens on Sony's own page.
  */
 export function AddPs5DeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddPs5DeviceScreenProps) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("PS5");
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
-  const [stage, setStage] = useState<Stage>("idle");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [stage, setStage] = useState<Stage>("form");
+  const [formError, setFormError] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [loginUrl, setLoginUrl] = useState("");
-  const [redirectUrl, setRedirectUrl] = useState("");
   const [pin, setPin] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const pairing = usePairingSession();
 
-  async function pollUntil(target: "awaiting_pin" | "success"): Promise<void> {
-    const client = new Ps5Client();
-    for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-      await sleep(POLL_INTERVAL_MS);
-      if (!sessionId) return;
-      const status = await client.getLoginStatus(sessionId);
-      if (status.status === target) return;
-      if (status.status === "error") throw new Error(status.errorMessage || "Pairing failed on Family Command Center");
-    }
-    throw new Error("Timed out waiting for that step to complete — try again");
-  }
-
-  async function handleStartLogin() {
-    if (ipAddress.trim().length === 0) {
-      setStage("error");
-      setErrorMessage("Enter the PS5's IP address first.");
-      return;
-    }
-    setBusy(true);
-    setErrorMessage("");
+  async function handleSignIn() {
+    if (ipAddress.trim().length === 0) return setFormError("Enter the PS5's IP address first.");
+    setStarting(true);
+    setFormError("");
+    pairing.cancel();
     try {
-      const client = new Ps5Client();
-      const result = await client.startLogin(ipAddress.trim());
-      setSessionId(result.sessionId);
-      setLoginUrl(result.loginUrl);
-      setStage("login");
-    } catch (err) {
-      setStage("error");
-      setErrorMessage(err instanceof Error ? err.message : String(err));
+      const { sessionId: id, loginUrl } = await new Ps5Client().startLogin(ipAddress.trim());
+      setSessionId(id);
+      setStage("signin");
+      await openSignInPage(loginUrl);
+    } catch (error) {
+      setStage("form");
+      setFormError(describePairingFailure("ps5", PS5_BRAND.label, error).message);
     } finally {
-      setBusy(false);
+      setStarting(false);
     }
   }
 
-  async function handleOpenLoginLink() {
-    try {
-      await Linking.openURL(loginUrl);
-    } catch {
-      // Best-effort — the URL is also shown as plain text on screen for the household member to
-      // copy manually if the system can't open it directly.
-    }
+  function pollFor(client: Ps5Client, id: string, target: "awaiting_pin" | "success", context: PairingRunContext): Promise<void> {
+    return pollPairingStatus({
+      fetchStatus: () => client.getLoginStatus(id),
+      target,
+      intervalMs: PS5_PAIRING_POLL_INTERVAL_MS,
+      maxAttempts: PS5_PAIRING_POLL_MAX_ATTEMPTS,
+      context,
+      fallbackErrorMessage: "Pairing failed on Family Command Center",
+    });
   }
 
-  async function handleSubmitRedirect() {
-    if (!sessionId || redirectUrl.trim().length === 0) return;
-    setBusy(true);
-    setErrorMessage("");
-    try {
-      await new Ps5Client().submitRedirectUrl(sessionId, redirectUrl.trim());
-      await pollUntil("awaiting_pin");
-      setStage("pin");
-    } catch (err) {
-      setStage("error");
-      setErrorMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  function handleRedirectFound(redirectUrl: string) {
+    if (!sessionId || stage !== "signin") return;
+    setStage("linking");
+    pairing.start<void>({
+      totalMs: LINK_PROMPT.timeoutMs,
+      run: async (context) => {
+        const client = new Ps5Client();
+        await client.submitRedirectUrl(sessionId, redirectUrl);
+        await pollFor(client, sessionId, "awaiting_pin", context);
+      },
+      onDone: () => setStage("pin"),
+      connectedHoldMs: 0,
+    });
   }
 
-  async function handleSubmitPin() {
-    if (!sessionId || pin.trim().length === 0) return;
+  async function finishPairing(id: string, code: string, context: PairingRunContext): Promise<Device> {
     const driver = driverRegistry.get(PS5_DRIVER_ID);
-    if (!driver) {
-      setStage("error");
-      setErrorMessage("PS5 driver is not registered in this build.");
-      return;
-    }
-    setBusy(true);
-    setErrorMessage("");
-    try {
-      await new Ps5Client().submitPin(sessionId, pin.trim());
-      await pollUntil("success");
-      setStage("saving");
-
-      const device: Device = {
-        id: `ps5-${Date.now()}`,
-        name: name.trim() || "PS5",
-        category: "gaming",
-        manufacturer: "Sony",
-        driverId: PS5_DRIVER_ID,
-        capabilities: driver.getCapabilities(),
-        config: { ipAddress: ipAddress.trim() },
-      };
-      await driver.connect(device);
-      onAdded(device);
-    } catch (err) {
-      setStage("error");
-      setErrorMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    if (!driver) throw new Error("PS5 driver is not registered in this build.");
+    const client = new Ps5Client();
+    await client.submitPin(id, code);
+    await pollFor(client, id, "success", context);
+    const device: Device = {
+      id: `ps5-${Date.now()}`,
+      name: name.trim() || "PS5",
+      category: "gaming",
+      manufacturer: "Sony",
+      driverId: PS5_DRIVER_ID,
+      capabilities: driver.getCapabilities(),
+      config: { ipAddress: ipAddress.trim() },
+    };
+    await driver.connect(device);
+    return device;
   }
+
+  function submitPin(code: string) {
+    if (!sessionId || code.trim().length === 0) return;
+    setStage("finishing");
+    pairing.start<Device>({
+      totalMs: PIN_PROMPT.timeoutMs,
+      run: (context) => finishPairing(sessionId, code.trim(), context),
+      onDone: onAdded,
+      discard: (device) => driverRegistry.get(PS5_DRIVER_ID)?.disconnect(device).catch(() => {}),
+    });
+  }
+
+  function handlePinChange(text: string) {
+    setPin(text);
+    if (text.trim().length === PIN_LENGTH) submitPin(text);
+  }
+
+  function backTo(target: Stage) {
+    pairing.cancel();
+    setStage(target);
+  }
+
+  const failure = pairing.state.phase === "failed" ? describePairingFailure("ps5", PS5_BRAND.label, pairing.state.error) : null;
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
-      <View style={styles.headerRow}>
-        <View style={styles.iconBadge}>
-          <Ionicons name="game-controller-outline" size={20} color={theme.accentEnd} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
+        <View style={styles.headerRow}>
+          <View style={styles.iconBadge}>
+            <Ionicons name="game-controller-outline" size={20} color={theme.accentEnd} />
+          </View>
+          <Text style={styles.title} accessibilityRole="header">Add PS5</Text>
         </View>
-        <Text style={styles.title}>Add PS5</Text>
-      </View>
 
-      {(stage === "idle" || stage === "error") && (
-        <>
-          <View style={styles.hintCard}>
-            <Text style={styles.hint}>
-              Power-on only. Pairing needs your real PlayStation Network sign-in (never seen by this app — it happens
-              on Sony's own page) plus a PIN from the console itself.
-            </Text>
-          </View>
-          <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="PS5" placeholderTextColor={theme.textTertiary} />
-          <Text style={styles.label}>IP address</Text>
-          <TextInput
-            style={styles.input}
-            value={ipAddress}
-            onChangeText={setIpAddress}
-            placeholder="192.168.1.214"
-            placeholderTextColor={theme.textTertiary}
-            autoCapitalize="none"
-            keyboardType="numbers-and-punctuation"
-          />
-          {stage === "error" && (
-            <View style={styles.errorCard}>
-              <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-              <Text style={styles.error}>{errorMessage}</Text>
+        {stage === "form" && (
+          <>
+            <View style={styles.hintCard}>
+              <Text style={styles.hint}>
+                Power-on only. Pairing needs your PlayStation sign-in (never seen by this app; it happens on Sony's own
+                page) and an 8-digit code from the console.
+              </Text>
             </View>
-          )}
-          <View style={styles.row}>
-            <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={busy} />
-            <CapabilityButton label={busy ? "Starting..." : "Pair"} variant="accent" onPress={handleStartLogin} disabled={busy} />
-          </View>
-        </>
-      )}
+            <Text style={styles.label}>Name</Text>
+            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="PS5" placeholderTextColor={theme.textTertiary} accessibilityLabel="Device name" />
+            <Text style={styles.label}>IP address</Text>
+            <TextInput
+              style={styles.input}
+              value={ipAddress}
+              onChangeText={setIpAddress}
+              placeholder="192.168.1.214"
+              placeholderTextColor={theme.textTertiary}
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
+              accessibilityLabel="IP address"
+            />
+            {formError.length > 0 && (
+              <View style={styles.errorCard}>
+                <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
+                <Text style={styles.error}>{formError}</Text>
+              </View>
+            )}
+            <View style={styles.row}>
+              <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={starting} />
+              <CapabilityButton label={starting ? "Starting..." : "Sign in with PlayStation"} variant="accent" onPress={handleSignIn} disabled={starting} />
+            </View>
+          </>
+        )}
 
-      {stage === "login" && (
-        <>
-          <View style={styles.hintCard}>
-            <Text style={styles.hint}>
-              1. Tap below to open PlayStation's real sign-in page and log in with your own account.{"\n"}
-              2. After signing in, the page will look blank or broken — that's expected.{"\n"}
-              3. Copy the full URL from your browser's address bar and paste it below.
-            </Text>
-          </View>
-          <CapabilityButton label="Open PlayStation Sign-In" variant="accent" onPress={handleOpenLoginLink} disabled={busy} />
-          <Text style={[styles.hint, { marginTop: theme.spacing.sm }]} numberOfLines={2}>
-            {loginUrl}
-          </Text>
-          <Text style={styles.label}>Paste the redirect URL here</Text>
-          <TextInput
-            style={styles.input}
-            value={redirectUrl}
-            onChangeText={setRedirectUrl}
-            placeholder="https://remoteplay.dl.playstation.net/..."
-            placeholderTextColor={theme.textTertiary}
-            autoCapitalize="none"
-          />
-          <View style={styles.row}>
-            <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={busy} />
-            <CapabilityButton label={busy ? "Checking..." : "Continue"} variant="accent" onPress={handleSubmitRedirect} disabled={busy} />
-          </View>
-        </>
-      )}
+        {stage === "signin" && <Ps5SignInStep onOpenSignIn={handleSignIn} onRedirectFound={handleRedirectFound} onCancel={onCancel} disabled={starting} />}
 
-      {stage === "pin" && (
-        <>
-          <View style={styles.hintCard}>
-            <Text style={styles.hint}>
-              On the PS5: Settings → System → Remote Play → Link Device. Enter the 8-digit PIN it shows below.
-            </Text>
-          </View>
-          <Text style={styles.label}>PIN</Text>
-          <TextInput
-            style={styles.input}
-            value={pin}
-            onChangeText={setPin}
-            placeholder="12345678"
-            placeholderTextColor={theme.textTertiary}
-            keyboardType="numbers-and-punctuation"
-          />
-          <View style={styles.row}>
-            <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={busy} />
-            <CapabilityButton label={busy ? "Pairing..." : "Finish Pairing"} variant="accent" onPress={handleSubmitPin} disabled={busy} />
-          </View>
-        </>
-      )}
+        {stage === "linking" && (
+          <PairingProgressCard state={pairing.state} prompt={LINK_PROMPT} failure={failure} onRetry={handleSignIn} onCancel={() => backTo("signin")} />
+        )}
 
-      {stage === "saving" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
-    </ScrollView>
+        {stage === "pin" && (
+          <>
+            <View style={styles.hintCard}>
+              <Text style={styles.hint} accessibilityRole="header">{PIN_PROMPT.heading}</Text>
+              <Text style={styles.hint}>{PIN_PROMPT.instruction}</Text>
+            </View>
+            <Text style={styles.label}>8-digit code</Text>
+            <TextInput
+              style={styles.input}
+              value={pin}
+              onChangeText={handlePinChange}
+              placeholder="12345678"
+              placeholderTextColor={theme.textTertiary}
+              keyboardType="number-pad"
+              maxLength={PIN_LENGTH}
+              autoFocus
+              accessibilityLabel="PS5 8-digit code"
+            />
+            <View style={styles.row}>
+              <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} />
+              <CapabilityButton label="Finish Pairing" variant="accent" onPress={() => submitPin(pin)} disabled={pin.trim().length === 0} />
+            </View>
+          </>
+        )}
+
+        {stage === "finishing" && (
+          <PairingProgressCard state={pairing.state} prompt={PIN_PROMPT} failure={failure} onRetry={() => backTo("pin")} onCancel={() => backTo("pin")} />
+        )}
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

@@ -14,6 +14,10 @@
 import { fccJsonRequest } from "../../../core/network/fccJsonRequest";
 import { LONG_FETCH_TIMEOUT_MS } from "../../../core/network/fetchWithTimeout";
 
+/** How often and how many times each PS5 pairing step's status is polled. */
+export const PS5_PAIRING_POLL_INTERVAL_MS = 1500;
+export const PS5_PAIRING_POLL_MAX_ATTEMPTS = 20;
+
 export type Ps5LoginStatus = "awaiting_redirect" | "awaiting_pin" | "success" | "error";
 
 export interface Ps5LoginStatusResponse {
