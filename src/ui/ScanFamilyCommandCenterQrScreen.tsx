@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { learnPublicUrlIfMissing } from "../discovery/learnPublicUrl";
 import { logger } from "../core/logging/logger";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -86,6 +87,7 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onUseManual
     setStatus("verifying");
     try {
       await verifyAndSaveFamilyCommandCenterConfig(payload.baseUrl, payload.token);
+      await learnPublicUrlIfMissing();
       logger.info(LOG_SCOPE, "Family Command Center pairing verified and saved", { baseUrl: payload.baseUrl });
       onSaved();
     } catch (err) {

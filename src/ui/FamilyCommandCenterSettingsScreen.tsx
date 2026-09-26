@@ -9,11 +9,12 @@ import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSharePanel } from "./DeviceSharePanel";
-import { theme } from "./theme";
+import { InviteSomeonePanel } from "./InviteSomeonePanel";import { theme } from "./theme";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
   onSaved: () => void;
+  onJoinWithCode: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
   onDeviceUpdated: (device: Device) => void;
@@ -26,10 +27,11 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [baseUrl, setBaseUrl] = useState("http://192.168.1.172:3210");
+  const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
+  const [alreadyConnected, setAlreadyConnected] = useState(false);
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -38,6 +40,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
   useEffect(() => {
     loadFamilyCommandCenterConfig().then((existing) => {
       if (existing) {
+        setAlreadyConnected(true);
         setBaseUrl(existing.baseUrl);
         setToken(existing.token);
         setPublicBaseUrl(existing.publicBaseUrl ?? "");
@@ -86,7 +89,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
         style={styles.input}
         value={baseUrl}
         onChangeText={setBaseUrl}
-        placeholder="http://192.168.1.172:3210"
+        placeholder="http://192.168.x.x:3210"
         placeholderTextColor={theme.textTertiary}
         autoCapitalize="none"
         keyboardType="url"
@@ -141,6 +144,9 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
         />
       </View>
       {status === "checking" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
+
+      <CapabilityButton label="Join with a code instead" variant="ghost" onPress={onJoinWithCode} disabled={status === "checking"} />
+      {alreadyConnected && <InviteSomeonePanel />}
 
       <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} onDeviceUpdated={onDeviceUpdated} />
 

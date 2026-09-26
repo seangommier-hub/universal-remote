@@ -23,6 +23,7 @@ import { Device } from "./src/core/types/Device";
 import { Scene } from "./src/core/types/Scene";
 import { logger } from "./src/core/logging/logger";
 import { DevicesTabScreen } from "./src/ui/DevicesTabScreen";
+import { usePairLinkListener } from "./src/ui/usePairLinkListener";
 import { FeederTabScreen } from "./src/ui/FeederTabScreen";
 import { theme } from "./src/ui/theme";
 
@@ -151,6 +152,8 @@ export default function App() {
   // type change).
   // ADR-HEARTH-146: quietly ship warn/error log lines to Family Command Center for remote diagnosis.
   useEffect(() => startClientLogShipper(), []);
+  // ADR-HEARTH-149: hearth://pair invite links + silent public-address learning.
+  usePairLinkListener();
 
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
