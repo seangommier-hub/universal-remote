@@ -1,5 +1,6 @@
 import type { FamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 import { FccUnreachableError } from "./fccErrors";
+import { recordFccReached, recordFccUnreachable } from "./fccOutage";
 import { FccRoute, recordLanFailure, recordRouteSuccess, shouldPreferPublicRoute } from "./fccConnectivity";
 import { DEFAULT_FETCH_TIMEOUT_MS, FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
 
@@ -50,6 +51,7 @@ export async function fccFetch(
     try {
       const response = await fetchWithTimeout(`${baseUrl}${path}`, request, timeoutMs);
       recordRouteSuccess(route);
+      recordFccReached();
       return response;
     } catch (err) {
       if (init.signal?.aborted) throw err;
@@ -57,5 +59,6 @@ export async function fccFetch(
       lastError = err;
     }
   }
+  recordFccUnreachable();
   throw new FccUnreachableError(describeFailure(lastError), { cause: lastError });
 }
