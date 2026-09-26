@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 
 // Connection settings for the Family Command Center discovery integration
 // (ADR-HEARTH-010). Split the same way persistence.ts splits device config:
@@ -33,7 +34,7 @@ export async function verifyAndSaveFamilyCommandCenterConfig(baseUrl: string, to
     throw new FamilyCommandCenterVerificationError("Address and token are both required.");
   }
 
-  const response = await fetch(`${trimmedUrl}/api/integrations/hearth/devices`, {
+  const response = await fetchWithTimeout(`${trimmedUrl}/api/integrations/hearth/devices`, {
     headers: { Authorization: `Bearer ${trimmedToken}` },
   });
   if (!response.ok) {

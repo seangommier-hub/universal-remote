@@ -47,6 +47,7 @@ import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 
 const SSDP_MULTICAST_ADDRESS = "239.255.255.250";
 const SSDP_PORT = 1900;
@@ -195,7 +196,7 @@ export class SsdpDiscoveryProvider implements DiscoveryProvider {
       const config = await loadFamilyCommandCenterConfig();
       if (!config) return;
 
-      const response = await fetch(`${config.baseUrl}/api/integrations/hearth/ssdp/scan`, {
+      const response = await fetchWithTimeout(`${config.baseUrl}/api/integrations/hearth/ssdp/scan`, {
         headers: { Authorization: `Bearer ${config.token}` },
         signal,
       });

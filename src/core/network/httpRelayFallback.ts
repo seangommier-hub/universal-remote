@@ -1,4 +1,5 @@
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
 
 // See ADR-HEARTH-011. A device may sit on a network segment the phone isn't currently joined
 // to (e.g. an isolated Guest/IoT/kids-AP network) — direct connection then fails not because
@@ -63,16 +64,6 @@ interface RelayHttpResult {
   body: string;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 // Real bug found live (2026-09-20): a device on a segment the phone can't reach directly (e.g. an
 // isolated Guest/IoT/kids-AP network, see this file's own top comment) means the *direct* leg
 // reliably times out on every single command, so a household member driving the on-screen remote
@@ -88,7 +79,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 // native shape the cancellation actually took.
 function isCancellation(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  if (err.name === "AbortError") return true;
+  if (err instanceof FetchTimeoutError || err.name === "AbortError") return true;
   return /cancel/i.test(err.message);
 }
 

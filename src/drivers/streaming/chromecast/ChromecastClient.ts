@@ -12,21 +12,23 @@
 // rebuild cycle first, so this goes through Family Command Center unconditionally.
 
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { DEFAULT_FETCH_TIMEOUT_MS, fetchWithTimeout } from "../../../core/network/fetchWithTimeout";
 
 export interface ChromecastStatus {
   volumeLevel: number; // 0.0-1.0, the protocol's own native scale
   muted: boolean;
 }
 
-async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function fccRequest<T>(path: string, init?: RequestInit, timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS): Promise<T> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) {
     throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
   }
-  const response = await fetch(`${config.baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}`, ...(init?.headers ?? {}) },
-  });
+  const response = await fetchWithTimeout(
+    `${config.baseUrl}${path}`,
+    { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}`, ...(init?.headers ?? {}) } },
+    timeoutMs
+  );
   if (!response.ok) {
     throw new Error(response.status === 401 ? "Family Command Center rejected the saved token." : `Family Command Center returned ${response.status}.`);
   }
