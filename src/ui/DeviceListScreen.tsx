@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
@@ -12,6 +12,7 @@ import type { ActivityProgress } from "./useActivities";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
+import { checksForDevice } from "../discovery/brandSetupChecks";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
@@ -67,6 +68,8 @@ interface DeviceListScreenProps {
   onRename: (device: Device) => void;
   /** Opens the "teach a button" flow for a Broadlink IR/RF hub device (see TeachBroadlinkCommandScreen.tsx) — offered from the same long-press menu, but only for that one driver, since every other device's capabilities come from a fixed protocol rather than something taught after the fact. */
   onTeachCommands: (device: Device) => void;
+  /** Opens the wake checklist and guided wake test for an existing device (ADR-HEARTH-154). */
+  onSetupChecks: (device: Device) => void;
   /** Activities (ADR-HEARTH-150, formerly Scenes/ADR-HEARTH-056): household multi-step macros — a horizontal row of chips
    * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
    * for vertical space on the home screen, the same "one screen" pressure every other layout
@@ -125,6 +128,7 @@ export function DeviceListScreen({
   onEditAddress,
   onRename,
   onTeachCommands,
+  onSetupChecks,
   activities,
   activityProgress,
   activityHistory,
@@ -369,6 +373,18 @@ export function DeviceListScreen({
                     }}
                   >
                     <Text style={styles.modalOptionLabel}>Edit address</Text>
+                  </Pressable>
+                )}
+                {checksForDevice(actionsTarget, Platform.OS).length > 0 && (
+                  <Pressable
+                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                    onPress={() => {
+                      const device = actionsTarget;
+                      setActionsTarget(null);
+                      onSetupChecks(device);
+                    }}
+                  >
+                    <Text style={styles.modalOptionLabel}>Setup checks</Text>
                   </Pressable>
                 )}
                 {actionsTarget.driverId === BROADLINK_IR_DRIVER_ID && (

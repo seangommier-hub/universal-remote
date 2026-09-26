@@ -19,12 +19,15 @@ import { CommandCenterRemoteScreen } from "./CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
 import { ActivityEditorScreen } from "./ActivityEditorScreen";
+import { PostAddResult, PostAddScreen } from "./PostAddScreen";
 import type { useActivities } from "./useActivities";
+import { isShared } from "../runtime/sharedDevices";
 import { theme } from "./theme";
 
 type Screen =
   | { name: "list" }
   | { name: "remote"; device: Device }
+  | { name: "post-add"; device: Device; mode: "post-add" | "setup-checks" }
   | { name: "add"; brand: BrandId; initialIpAddress?: string }
   | { name: "discover" }
   | { name: "fcc-scan" }
@@ -94,7 +97,20 @@ export function DevicesTabScreen({
   // App.tsx's handlers now only do registry/persistence work and hand back the updated device.
   function handleAdded(device: Device) {
     const stored = onDeviceAdded(device);
-    setScreen({ name: "remote", device: stored });
+    setScreen({ name: "post-add", device: stored, mode: "post-add" });
+  }
+
+  // ADR-HEARTH-154: applies the name and sharing choices made on the post-add screen, then opens the remote.
+  async function handlePostAddDone(device: Device, mode: "post-add" | "setup-checks", result: PostAddResult): Promise<void> {
+    let current = device;
+    if (mode === "post-add") {
+      if (result.name !== current.name) current = await onRenameDevice(current, result.name);
+      if (result.shared !== isShared(current)) {
+        current = { ...current, shared: result.shared };
+        onDeviceUpdatedInPlace(current);
+      }
+    }
+    setScreen(mode === "post-add" ? { name: "remote", device: current } : { name: "list" });
   }
 
   async function handleRename(device: Device, newName: string): Promise<void> {
@@ -169,6 +185,16 @@ export function DevicesTabScreen({
           onReconnect={() => onReconnect(screen.device)}
           onRename={handleRename}
           onBack={() => setScreen({ name: "list" })}
+        />
+      )}
+      {screen.name === "post-add" && (
+        <PostAddScreen
+          key={screen.device.id}
+          device={screen.device}
+          mode={screen.mode}
+          commandEngine={runtime.commandEngine}
+          stateStore={runtime.stateStore}
+          onDone={(result) => void handlePostAddDone(screen.device, screen.mode, result)}
         />
       )}
       {screen.name === "add" && renderAddScreen(screen.brand, { ...addScreenProps, initialIpAddress: screen.initialIpAddress, onOpenFccSetup: openFccSetup })}
@@ -274,6 +300,7 @@ export function DevicesTabScreen({
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
           onRename={(device) => setScreen({ name: "rename-device", device })}
           onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}
+          onSetupChecks={(device) => setScreen({ name: "post-add", device, mode: "setup-checks" })}
           activities={activities.activities}
           activityProgress={activities.progress}
           activityHistory={activities.history}
