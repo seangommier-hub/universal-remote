@@ -10,6 +10,7 @@ import * as Network from "expo-network";
 import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPolicy";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
+import { startClientLogShipper } from "./src/runtime/clientLogShipper";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
@@ -148,6 +149,9 @@ export default function App() {
   // so a silent same-type roam to a different access point isn't distinguishable from no change
   // at all — this covers what IS observable: connectivity lost-then-regained, and a connection
   // type change).
+  // ADR-HEARTH-146: quietly ship warn/error log lines to Family Command Center for remote diagnosis.
+  useEffect(() => startClientLogShipper(), []);
+
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
       if (shouldReconnectOnNetworkChange(lastNetworkState.current, state)) {
