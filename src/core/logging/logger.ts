@@ -1,3 +1,5 @@
+import { recordLogEntry } from "./logBuffer";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface Logger {
@@ -8,6 +10,7 @@ export interface Logger {
 }
 
 function write(level: LogLevel, scope: string, message: string, meta?: Record<string, unknown>): void {
+  recordLogEntry(level, scope, message, meta);
   const line = `[${level.toUpperCase()}] [${scope}] ${message}`;
   const consoleMethod = level === "debug" ? console.debug : level === "info" ? console.info : level === "warn" ? console.warn : console.error;
   if (meta) {
