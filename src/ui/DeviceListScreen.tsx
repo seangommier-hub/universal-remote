@@ -13,6 +13,7 @@ import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommand
 import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
 import { scanAllProviders } from "../discovery/scanAllProviders";
 import { CapabilityButton } from "./CapabilityButton";
+import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
 import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
@@ -104,6 +105,8 @@ interface DeviceListScreenProps {
   onConnectFamilyCommandCenter: () => void;
   /** Whether Family Command Center is already configured — see `onConnectFamilyCommandCenter`'s own comment for why this changes the header button's destination, icon, and label. */
   fccConfigured: boolean;
+  /** Opens the invite-code join screen (ADR-HEARTH-149), offered on the first-run empty state. */
+  onJoinWithCode: () => void;
   /** Opens the phone-as-trackpad-and-keyboard screen for the Family Command Center itself (ADR-HEARTH-033) — a different thing from pairing/discovering *devices*, so its own header button rather than folding into onConnectFamilyCommandCenter. */
   onOpenCommandCenterRemote: () => void;
   /** Manually triggers an EAS Update check (ADR-HEARTH-084/086) — Sean's "a true update button" ask, rather than only ever waiting for the silent automatic check on launch/foreground. */
@@ -163,6 +166,7 @@ export function DeviceListScreen({
   onDiscover,
   onConnectFamilyCommandCenter,
   fccConfigured,
+  onJoinWithCode,
   onOpenCommandCenterRemote,
   onCheckForUpdates,
   updateBanner,
@@ -394,11 +398,7 @@ export function DeviceListScreen({
 
       <Text style={styles.sectionLabel}>Connected Devices</Text>
       {devices.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="home-outline" size={40} color={theme.textTertiary} />
-          <Text style={styles.emptyTitle}>No devices yet</Text>
-          <Text style={styles.emptyBody}>Add your first TV or streaming device below to start controlling it.</Text>
-        </View>
+        <FirstRunSetupCard serverSaved={fccConfigured} onJoinWithCode={onJoinWithCode} onScanQr={onConnectFamilyCommandCenter} />
       ) : (
         <FlatList
           data={devices}

@@ -28,6 +28,7 @@ import { AddKasaDeviceScreen } from "./AddKasaDeviceScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
+import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { CommandCenterRemoteScreen } from "./CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
@@ -41,6 +42,7 @@ type Screen =
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
+  | { name: "fcc-join" }
   | { name: "fcc-remote" }
   | { name: "edit-address"; device: Device }
   | { name: "rename-device"; device: Device }
@@ -248,6 +250,7 @@ export function DevicesTabScreen({
           onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
         />
       )}
+      {screen.name === "fcc-join" && <JoinWithCodeScreen onCancel={() => setScreen({ name: "list" })} onJoined={() => setScreen({ name: "discover" })} />}
       {screen.name === "fcc-settings" && (
         // Real gap found live (2026-09-21): always advancing to "discover" after saving made sense
         // for this screen's original only-entry-point (first-time setup via the QR-scan flow's
@@ -258,6 +261,7 @@ export function DevicesTabScreen({
         <FamilyCommandCenterSettingsScreen
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "list" })}
+          onJoinWithCode={() => setScreen({ name: "fcc-join" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
@@ -304,6 +308,7 @@ export function DevicesTabScreen({
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={() => setScreen(fccConfigured ? { name: "fcc-settings" } : { name: "fcc-scan" })}
           fccConfigured={fccConfigured}
+          onJoinWithCode={() => setScreen({ name: "fcc-join" })}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onCheckForUpdates={onCheckForUpdates}
           updateBanner={updateBanner}
