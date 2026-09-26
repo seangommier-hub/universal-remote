@@ -83,7 +83,7 @@ describe("createWakeTestDependencies", () => {
     const execute = jest.fn().mockResolvedValue({ success: false, error: { code: "driver_error", message: "no MAC" } });
     const deps = createWakeTestDependencies(device, { execute } as never, new StateStore());
     expect(await deps.sendPowerOn()).toContain("no MAC");
-    expect(execute).toHaveBeenCalledWith({ deviceId: "tv", capability: "powerOn" });
+    expect(execute).toHaveBeenCalledWith({ deviceId: "tv", capability: "powerOn" }, { silent: true });
   });
 
   it("reads and subscribes to the state store's connection", () => {

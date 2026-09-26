@@ -46,7 +46,7 @@ describe("runActivity command steps", () => {
   test("passes args through to the engine", async () => {
     const { deps, engine } = makeDeps(alwaysOk);
     await runActivity(makeActivity([cmd("tv", "inputSelection", { args: { input: "hdmi1" } })]), deps);
-    expect(engine.execute).toHaveBeenCalledWith({ deviceId: "tv", capability: "inputSelection", args: { input: "hdmi1" } });
+    expect(engine.execute).toHaveBeenCalledWith({ deviceId: "tv", capability: "inputSelection", args: { input: "hdmi1" } }, { silent: true });
   });
 
   test("a failed step with the default policy does not stop later steps", async () => {

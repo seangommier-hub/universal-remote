@@ -74,4 +74,42 @@ describe("CommandEngine", () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("driver_error");
   });
+
+  describe("outcome observer (ADR-HEARTH-170)", () => {
+    test("is told about a success and a failure for a known device", async () => {
+      const { deviceRegistry, engine } = buildEngine();
+      deviceRegistry.add({ ...livingRoomTv, capabilities: ["power", "setVolume"] });
+      const seen: boolean[] = [];
+      engine.setOutcomeObserver((_command, device, result) => seen.push(result.success && device.id === "tv-1"));
+
+      await engine.execute({ deviceId: "tv-1", capability: "power" });
+      await engine.execute({ deviceId: "tv-1", capability: "setVolume" });
+
+      expect(seen).toEqual([true, false]);
+    });
+
+    test("is skipped for silent commands and for devices that do not exist", async () => {
+      const { deviceRegistry, engine } = buildEngine();
+      deviceRegistry.add(livingRoomTv);
+      const observer = jest.fn();
+      engine.setOutcomeObserver(observer);
+
+      await engine.execute({ deviceId: "tv-1", capability: "power" }, { silent: true });
+      await engine.execute({ deviceId: "missing", capability: "power" });
+
+      expect(observer).not.toHaveBeenCalled();
+    });
+
+    test("an observer that throws never changes the command result", async () => {
+      const { deviceRegistry, engine } = buildEngine();
+      deviceRegistry.add(livingRoomTv);
+      engine.setOutcomeObserver(() => {
+        throw new Error("boom");
+      });
+
+      const result = await engine.execute({ deviceId: "tv-1", capability: "power" });
+
+      expect(result.success).toBe(true);
+    });
+  });
 });

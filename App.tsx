@@ -11,6 +11,7 @@ import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPo
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { startClientLogShipper } from "./src/runtime/clientLogShipper";
+import { startActivityLog } from "./src/runtime/startActivityLog";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
@@ -159,6 +160,8 @@ function HearthApp() {
   // type change).
   // ADR-HEARTH-146: quietly ship warn/error log lines to Family Command Center for remote diagnosis.
   useEffect(() => startClientLogShipper(), []);
+  // ADR-HEARTH-170: household activity log ("Sean turned off Den TV"), delivered in the background.
+  useEffect(() => (isDemoMode() ? undefined : startActivityLog(runtime.activityLog)), [runtime]);
   // ADR-HEARTH-149: hearth://pair invite links + silent public-address learning.
   usePairLinkListener();
 

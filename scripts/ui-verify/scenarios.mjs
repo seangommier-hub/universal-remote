@@ -76,7 +76,18 @@ export const SCENARIOS = [
   },
   { name: "activity-editor", screen: "activity-editor", assertFit: false },
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
-  { name: "post-add", screen: "post-add:lg", assertFit: false },
+  {
+    name: "fcc-settings-activity",
+    screen: "fcc-settings",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("This phone is called").fill("Sean's iPhone");
+      await page.getByText("Recent activity", { exact: true }).first().scrollIntoViewIfNeeded();
+      await page.waitForSelector("text=Sean turned off Den TV");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "post-add",screen: "post-add:lg", assertFit: false },
   { name: "setup-checks", screen: "setup-checks:lg", assertFit: false },
   {
     name: "pairing-card",

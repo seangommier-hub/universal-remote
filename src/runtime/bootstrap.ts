@@ -25,6 +25,10 @@ import { LifxLightDriver } from "../drivers/lighting/lifx/LifxLightDriver";
 import { ShellyRelayDriver } from "../drivers/outlet/shelly/ShellyRelayDriver";
 import { VizioSmartCastDriver } from "../drivers/tv/vizio/VizioSmartCastDriver";
 import { WizLightDriver } from "../drivers/lighting/wiz/WizLightDriver";
+import { randomUUID } from "expo-crypto";
+import { ActivityLogRecorder } from "../core/activityLog/ActivityLogRecorder";
+import { saveOutbox } from "./activityLogOutbox";
+import { getPhoneName } from "./phoneName";
 import { isDemoMode } from "../demo/demoMode";
 import { swapInDemoDrivers } from "../demo/demoRuntime";
 
@@ -33,6 +37,12 @@ export interface HearthRuntime {
   driverRegistry: DriverRegistry;
   stateStore: StateStore;
   commandEngine: CommandEngine;
+  /** Outbox of household activity entries (ADR-HEARTH-170); fed by the command engine, drained by the shipper. */
+  activityLog: ActivityLogRecorder;
+}
+
+function createActivityLogRecorder(): ActivityLogRecorder {
+  return new ActivityLogRecorder({ getWho: getPhoneName, newId: randomUUID, now: Date.now, onChange: saveOutbox });
 }
 
 /**
@@ -73,6 +83,8 @@ export function createHearthRuntime(): HearthRuntime {
   if (isDemoMode()) swapInDemoDrivers(driverRegistry);
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
+  const activityLog = createActivityLogRecorder();
+  if (!isDemoMode()) commandEngine.setOutcomeObserver((command, device, result) => activityLog.record(command, device, result));
 
-  return { deviceRegistry, driverRegistry, stateStore, commandEngine };
+  return { deviceRegistry, driverRegistry, stateStore, commandEngine, activityLog };
 }

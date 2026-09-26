@@ -94,7 +94,7 @@ function retriesFor(step: CommandStep): number {
 
 async function tryExecute(step: CommandStep, deps: ActivityRunDeps): Promise<{ result?: CommandResult; thrown?: string }> {
   try {
-    return { result: await deps.commandEngine.execute({ deviceId: step.deviceId, capability: step.capability, args: step.args }) };
+    return { result: await deps.commandEngine.execute({ deviceId: step.deviceId, capability: step.capability, args: step.args }, { silent: true }) };
   } catch (err) {
     return { thrown: err instanceof Error ? err.message : String(err) };
   }
