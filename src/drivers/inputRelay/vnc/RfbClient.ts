@@ -10,8 +10,13 @@
 // so the transport is expected to be a `websockify`-style WebSocket<->TCP bridge (proposed as a
 // new endpoint on the Family Command Center's relay, not a public/direct VNC port).
 
+import { withTimeout } from "../../../core/util/withTimeout";
+
 const CLIENT_VERSION = "RFB 003.008\n";
 const SECURITY_TYPE_NONE = 1;
+// A silent relay or VNC server otherwise leaves every handshake read waiting forever.
+const HANDSHAKE_TIMEOUT_MS = 10000;
+const MS_PER_SECOND = 1000;
 
 export interface RfbServerInfo {
   width: number;
@@ -68,7 +73,17 @@ export class RfbClient {
 
   constructor(private websocketUrl: string) {}
 
-  async connect(): Promise<RfbServerInfo> {
+  /** Opens the socket and completes the RFB handshake, rejecting (and closing the socket) if it stalls past HANDSHAKE_TIMEOUT_MS. */
+  connect(): Promise<RfbServerInfo> {
+    return withTimeout(
+      this.performHandshake(),
+      HANDSHAKE_TIMEOUT_MS,
+      () => new RfbProtocolError(`Timed out after ${HANDSHAKE_TIMEOUT_MS / MS_PER_SECOND} seconds waiting for ${this.websocketUrl} to complete the VNC handshake`),
+      () => this.disconnect()
+    );
+  }
+
+  private async performHandshake(): Promise<RfbServerInfo> {
     await this.openSocket();
     await this.negotiateVersion();
     await this.negotiateSecurity();

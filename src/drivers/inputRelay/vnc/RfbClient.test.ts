@@ -222,4 +222,29 @@ describe("RfbClient", () => {
 
     expect(() => client.sendPointerEvent(0, 0, 0)).toThrow(RfbProtocolError);
   });
+
+  describe("handshake timeout", () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test("connect() rejects and closes the socket when the socket never opens", async () => {
+      const connectPromise = new RfbClient("ws://relay.local/vnc").connect();
+      const assertion = expect(connectPromise).rejects.toThrow(/Timed out after 10 seconds waiting for ws:\/\/relay\.local\/vnc/);
+
+      await jest.advanceTimersByTimeAsync(10000);
+
+      await assertion;
+      expect(latestSocket().closed).toBe(true);
+    });
+
+    test("connect() rejects when the server opens the socket but never sends its version", async () => {
+      const connectPromise = new RfbClient("ws://relay.local/vnc").connect();
+      const assertion = expect(connectPromise).rejects.toBeInstanceOf(RfbProtocolError);
+      latestSocket().serverOpens();
+
+      await jest.advanceTimersByTimeAsync(10000);
+
+      await assertion;
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 
 // Connection settings for the Family Command Center discovery integration
 // (ADR-HEARTH-010). Split the same way persistence.ts splits device config:
@@ -74,7 +75,7 @@ export async function verifyAndSavePublicUrl(publicBaseUrl: string): Promise<voi
 }
 
 async function verifyReachable(baseUrl: string, token: string): Promise<void> {
-  const response = await fetch(`${baseUrl}/api/integrations/hearth/devices`, {
+  const response = await fetchWithTimeout(`${baseUrl}/api/integrations/hearth/devices`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {

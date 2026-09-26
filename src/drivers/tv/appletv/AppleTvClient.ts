@@ -9,6 +9,7 @@
 // filesystem; this client and Hearth's own device.config never see it, only ever an IP address.
 
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { LONG_FETCH_TIMEOUT_MS, fetchWithTimeout } from "../../../core/network/fetchWithTimeout";
 
 export type AppleTvPairingStatus = "awaiting_pin" | "success" | "error";
 
@@ -17,15 +18,16 @@ export interface AppleTvPairingStatusResponse {
   errorMessage?: string;
 }
 
-async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function fccRequest<T>(path: string, init?: RequestInit, timeoutMs: number = LONG_FETCH_TIMEOUT_MS): Promise<T> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) {
     throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
   }
-  const response = await fetch(`${config.baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}`, ...(init?.headers ?? {}) },
-  });
+  const response = await fetchWithTimeout(
+    `${config.baseUrl}${path}`,
+    { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}`, ...(init?.headers ?? {}) } },
+    timeoutMs
+  );
   if (!response.ok) {
     throw new Error(response.status === 401 ? "Family Command Center rejected the saved token." : `Family Command Center returned ${response.status}.`);
   }

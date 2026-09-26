@@ -208,6 +208,20 @@ describe("SsdpDiscoveryProvider", () => {
     );
   });
 
+  test("the fallback gives up and resolves instead of hanging when Family Command Center never answers", async () => {
+    const dgram = jest.requireMock("react-native-udp") as { default: { createSocket: jest.Mock } };
+    dgram.default.createSocket.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read property 'createSocket' of null");
+    });
+    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    global.fetch = jest.fn(() => new Promise<Response>(() => {}));
+
+    const scanPromise = new SsdpDiscoveryProvider().scan(() => {});
+    await jest.advanceTimersByTimeAsync(8000);
+
+    await expect(scanPromise).resolves.toBeUndefined();
+  });
+
   test("does not call the Family Command Center fallback at all when the native scan already found something", async () => {
     const provider = new SsdpDiscoveryProvider();
     const found: unknown[] = [];

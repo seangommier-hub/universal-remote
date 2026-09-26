@@ -35,6 +35,22 @@ describe("verifyAndSaveFamilyCommandCenterConfig", () => {
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
+  test("rejects with a timeout instead of hanging when the server never answers", async () => {
+    jest.useFakeTimers();
+    try {
+      global.fetch = jest.fn(() => new Promise<Response>(() => {}));
+
+      const pending = verifyAndSaveFamilyCommandCenterConfig("http://192.168.1.172:3210", "secret-token");
+      const assertion = expect(pending).rejects.toThrow(/192\.168\.1\.172:3210 timed out after 8 seconds/);
+      await jest.advanceTimersByTimeAsync(8000);
+
+      await assertion;
+      expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test("rejects with a FamilyCommandCenterVerificationError instance on empty fields, without making a request", async () => {
     await expect(verifyAndSaveFamilyCommandCenterConfig("", "")).rejects.toBeInstanceOf(FamilyCommandCenterVerificationError);
     expect(global.fetch).not.toHaveBeenCalled();
