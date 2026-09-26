@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { KIND_ICON } from "../discovery/deviceKind";
 import { DiscoveryRow, primaryLabelFor } from "../discovery/discoveryRows";
+import { canRequestSupport, looksLikeLine } from "../discovery/unsupportedReport";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceInlineFields } from "./DeviceInlineFields";
 import { NetworkFailureNotice } from "./NetworkFailureNotice";
@@ -11,6 +12,7 @@ import { RowUiState } from "./useAddDiscoveredDevice";
 export const FCC_REQUIRED_MESSAGE = "Requires Family Command Center — set it up first.";
 const ICON_SIZE = 22;
 const MIN_TARGET = 44;
+const SUPPORT_LINK_HEIGHT = 28;
 const OFFLINE_OPACITY = 0.6;
 const MORE_ACTIONS_LABEL = "More actions";
 
@@ -22,6 +24,8 @@ interface DiscoveredDeviceRowProps {
   onOpenFccSetup: () => void;
   /** Opens the row's secondary actions (hide, "It's a ..."); omit to show no overflow. */
   onMore?: (row: DiscoveryRow) => void;
+  /** ADR-HEARTH-167: sends a prefilled "please support this device" report; omit to hide the link. */
+  onRequestSupport?: (row: DiscoveryRow) => void;
 }
 
 function PrimaryButton({ row, busy, onPress }: { row: DiscoveryRow; busy: boolean; onPress: () => void }) {
@@ -48,7 +52,7 @@ function PrimaryButton({ row, busy, onPress }: { row: DiscoveryRow; busy: boolea
 }
 
 /** One network device: icon, a human title, a short subtitle, exactly one primary button, and an optional overflow for the rare actions. */
-export function DiscoveredDeviceRow({ row, ui, onPrimary, onSubmitFields, onOpenFccSetup, onMore }: DiscoveredDeviceRowProps) {
+export function DiscoveredDeviceRow({ row, ui, onPrimary, onSubmitFields, onOpenFccSetup, onMore, onRequestSupport }: DiscoveredDeviceRowProps) {
   const iconName = row.brand ? row.brand.icon : KIND_ICON[row.kind];
   const dim = !row.online ? styles.dim : null;
   return (
@@ -82,6 +86,18 @@ export function DiscoveredDeviceRow({ row, ui, onPrimary, onSubmitFields, onOpen
           </Pressable>
         )}
       </View>
+      {onRequestSupport && canRequestSupport(row) && (
+        <View style={styles.supportRow}>
+          <Text style={styles.supportLine}>{looksLikeLine(row)}</Text>
+          {row.supportRequested ? (
+            <Text style={styles.supportDone}>Support requested</Text>
+          ) : (
+            <Pressable style={styles.supportLinkTarget} onPress={() => onRequestSupport(row)} accessibilityRole="button" accessibilityLabel={`Request support for ${row.title}`} hitSlop={12}>
+              <Text style={styles.supportLink}>Request support</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
       {ui.error && <Text style={styles.error}>{ui.error.message}</Text>}
       {ui.error?.diagnosis && <NetworkFailureNotice diagnosis={ui.error.diagnosis} />}
       {ui.needsFcc && (
@@ -113,6 +129,11 @@ const styles = StyleSheet.create({
   addedChip: { minHeight: MIN_TARGET, paddingHorizontal: theme.spacing.lg, minWidth: 84, alignItems: "center", justifyContent: "center" },
   addedLabel: { color: theme.textTertiary, fontWeight: "600", fontSize: theme.type.label },
   more: { width: MIN_TARGET, height: MIN_TARGET, alignItems: "center", justifyContent: "center" },
+  supportRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.md, paddingRight: theme.spacing.sm },
+  supportLine: { flexShrink: 1, color: theme.textSecondary, fontSize: theme.type.label },
+  supportLinkTarget: { minHeight: SUPPORT_LINK_HEIGHT, justifyContent: "center" },
+  supportLink: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "700" },
+  supportDone: { color: theme.textTertiary, fontSize: theme.type.label },
   error: { color: theme.statusError, fontSize: theme.type.label },
   fccRow: { gap: theme.spacing.sm },
 });

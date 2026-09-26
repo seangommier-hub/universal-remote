@@ -1,11 +1,11 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Modal, Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Modal, Pressable, StyleSheet, Text } from "react-native";
 import { BrandEntry, brandsForAddress } from "../discovery/brandRegistry";
 import { DiscoveryRow } from "../discovery/discoveryRows";
+import { BrandOptionList } from "./BrandOptionList";
 import { theme } from "./theme";
 
 const MIN_TARGET = 44;
-const ICON_SIZE = 18;
+const SEARCH_AFTER = 6;
 const BACKDROP_COLOR = "#00000099";
 
 interface BrandPickerModalProps {
@@ -26,20 +26,7 @@ export function BrandPickerModal({ row, onPick, onCancel }: BrandPickerModalProp
             What is {row?.title}?
           </Text>
           <Text style={styles.body}>Pick the brand. Its address ({row?.device.ip}) carries over.</Text>
-          <ScrollView style={styles.list}>
-            {brands.map((brand) => (
-              <Pressable
-                key={brand.id}
-                style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-                onPress={() => onPick(brand)}
-                accessibilityRole="button"
-                accessibilityLabel={`It's a ${brand.label}`}
-              >
-                <Ionicons name={brand.icon} size={ICON_SIZE} color={theme.accentEnd} />
-                <Text style={styles.optionLabel}>{brand.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <BrandOptionList brands={brands} onPick={onPick} accessibilityLabelFor={(brand) => `It's a ${brand.label}`} searchAfter={SEARCH_AFTER} />
           <Pressable style={styles.cancel} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Cancel">
             <Text style={styles.cancelLabel}>Cancel</Text>
           </Pressable>
@@ -54,10 +41,6 @@ const styles = StyleSheet.create({
   card: { width: "100%", maxWidth: 360, maxHeight: "80%", backgroundColor: theme.surfaceRaised, borderRadius: theme.radius.lg, padding: theme.spacing.lg, gap: theme.spacing.sm },
   title: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700" },
   body: { color: theme.textSecondary, fontSize: theme.type.label },
-  list: { flexGrow: 0 },
-  option: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, minHeight: MIN_TARGET, borderRadius: theme.radius.sm },
-  optionPressed: { backgroundColor: theme.surface },
-  optionLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "600" },
   cancel: { minHeight: MIN_TARGET, alignItems: "center", justifyContent: "center", borderTopWidth: 1, borderTopColor: theme.border },
   cancelLabel: { color: theme.textSecondary, fontSize: theme.type.body, fontWeight: "600", textAlign: "center" },
 });

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { PairInvite } from "../discovery/pairInvite";
+import { interpretScannedQr } from "../discovery/scannedQr";
 import { learnPublicUrlIfMissing } from "../discovery/learnPublicUrl";
 import { logger } from "../core/logging/logger";
 import { CapabilityButton } from "./CapabilityButton";
@@ -14,6 +16,8 @@ const LOG_SCOPE = "ScanFamilyCommandCenterQrScreen";
 interface ScanFamilyCommandCenterQrScreenProps {
   onCancel: () => void;
   onSaved: () => void;
+  /** ADR-HEARTH-167: the QR was a household invite link; hand it to the Join screen (which still asks before joining). */
+  onInvite: (invite: PairInvite) => void;
   onUseManualEntry: () => void;
 }
 
@@ -40,25 +44,13 @@ function useScanLineAnimation(active: boolean) {
   return progress.interpolate({ inputRange: [0, 1], outputRange: [8, FRAME_SIZE - 8] });
 }
 
-function parsePairingPayload(raw: string): { baseUrl: string; token: string } | null {
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed.baseUrl === "string" && typeof parsed.token === "string") {
-      return { baseUrl: parsed.baseUrl, token: parsed.token };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Scans the QR code Family Command Center's own Settings screen shows (JSON: {baseUrl, token})
  * and feeds it into the same verify-before-save flow the manual entry form uses — this is the
  * primary pairing path per ADR-HEARTH-011's update, since typing a long token by hand is bad UX
  * for a non-technical household member. Manual entry stays available as a fallback.
  */
-export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onUseManualEntry }: ScanFamilyCommandCenterQrScreenProps) {
+export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onInvite, onUseManualEntry }: ScanFamilyCommandCenterQrScreenProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
@@ -70,13 +62,15 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onUseManual
   async function handleScanned(data: string) {
     if (status !== "scanning") return; // ignore repeat scans while we're already verifying/erroring
 
-    const payload = parsePairingPayload(data);
+    const scanned = interpretScannedQr(data);
+    if (scanned?.kind === "invite") return onInvite(scanned.invite);
+    const payload = scanned?.kind === "settings" ? scanned : null;
     if (!payload) {
       // Never log `data` itself here — if this *is* a valid pairing payload that merely failed a
       // type check for some other reason, that string still contains the token.
       logger.debug(LOG_SCOPE, "Scanned QR did not parse as a pairing payload", { rawLength: data.length });
       setStatus("error");
-      setErrorMessage("That QR code isn't a Family Command Center pairing code.");
+      setErrorMessage("That QR code isn't a Hearth invite or a Family Command Center pairing code.");
       return;
     }
 

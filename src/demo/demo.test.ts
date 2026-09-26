@@ -41,11 +41,11 @@ describe("demo fixtures", () => {
     expect(demoActivities().length).toBeGreaterThanOrEqual(3);
   });
 
-  it("test_discover_payload_parses_with_six_recognized_and_twenty_one_others", () => {
+  it("test_discover_payload_parses_with_eight_recognized_and_twenty_one_others", () => {
     const parsed = demoDiscoverAllBody().devices.map(parseNetworkDevice);
     expect(parsed.every((d) => d !== null)).toBe(true);
     const recognized = parsed.filter((d) => d?.brand);
-    expect(recognized).toHaveLength(6);
+    expect(recognized).toHaveLength(8);
     expect(parsed.length - recognized.length).toBeGreaterThanOrEqual(20);
     expect(new Set(parsed.map((d) => d?.ip)).size).toBe(parsed.length);
   });

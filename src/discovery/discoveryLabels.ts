@@ -18,6 +18,8 @@ const LOG_SCOPE = "discover-labels";
 export interface DeviceLabel {
   hidden?: boolean;
   brand?: BrandId;
+  /** ADR-HEARTH-167: the person already sent a "please support this device" report for it. */
+  supportRequested?: boolean;
 }
 
 export type DeviceLabels = Record<string, DeviceLabel>;
@@ -44,6 +46,7 @@ export function parseLabels(raw: string | null): DeviceLabels {
     const label: DeviceLabel = {};
     if (typeof entry.hidden === "boolean") label.hidden = entry.hidden;
     if (isBrandId(entry.brand)) label.brand = entry.brand;
+    if (typeof entry.supportRequested === "boolean") label.supportRequested = entry.supportRequested;
     if (Object.keys(label).length > 0) labels[key] = label;
   }
   return labels;
@@ -80,6 +83,7 @@ export function buildLabelPayload(device: Pick<NetworkDevice, "id">, patch: Devi
 
 /** Best-effort: tells the Pi about a label so the whole household shares it; never throws, a missing endpoint is normal. */
 export async function pushLabelToPi(device: Pick<NetworkDevice, "id">, patch: DeviceLabel): Promise<void> {
+  if (patch.brand === undefined && patch.hidden === undefined) return; // support-request marks stay on this phone
   try {
     const config = await loadFamilyCommandCenterConfig();
     if (!config) return;

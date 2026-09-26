@@ -14,6 +14,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { ConnectivityBadge } from "./ConnectivityBadge";
 import { DeviceConnectionStatus } from "./DeviceConnectionStatus";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
+import { BrandOptionList } from "./BrandOptionList";
 import { checksForDevice } from "../discovery/brandSetupChecks";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
@@ -25,6 +26,8 @@ import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
+
+const ADD_PICKER_SEARCH_AFTER = 6;
 
 const CATEGORY_ICON: Record<string, IconName> = {
   tv: "tv-outline",
@@ -318,19 +321,15 @@ export function DeviceListScreen({
         <Pressable style={styles.modalBackdrop} onPress={() => setShowAddPicker(false)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Add a device</Text>
-            {addPickerBrands().map((option) => (
-              <Pressable
-                key={option.id}
-                style={({ pressed }) => [styles.modalOptionRow, pressed && styles.modalOptionPressed]}
-                onPress={() => {
-                  setShowAddPicker(false);
-                  onAddDevice(option.id);
-                }}
-              >
-                <Ionicons name={option.icon} size={18} color={theme.accentEnd} />
-                <Text style={styles.modalOptionLabel}>{option.label}</Text>
-              </Pressable>
-            ))}
+            <BrandOptionList
+              brands={addPickerBrands()}
+              searchAfter={ADD_PICKER_SEARCH_AFTER}
+              accessibilityLabelFor={(brand) => `Add ${brand.label}`}
+              onPick={(brand) => {
+                setShowAddPicker(false);
+                onAddDevice(brand.id);
+              }}
+            />
             <Pressable style={styles.modalCancel} onPress={() => setShowAddPicker(false)}>
               <Text style={styles.modalCancelLabel}>Cancel</Text>
             </Pressable>
@@ -485,13 +484,6 @@ const styles = StyleSheet.create({
     fontSize: theme.type.label,
     textAlign: "center",
     marginTop: theme.spacing.md,
-  },
-  modalOptionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.radius.sm,
   },
   card: {
     flexDirection: "row",

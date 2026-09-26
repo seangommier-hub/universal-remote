@@ -33,6 +33,11 @@ const LG_INPUTS = [
   { id: "HDMI_4", label: "Switch" },
 ];
 
+// ADR-HEARTH-167: devices a person adds from the demo Discover screen with "Add all ready"; each connects after a short pause so per-row progress is visible.
+const ADD_ALL_CONNECT_DELAY_MS = 600;
+const ADD_ALL_DEMO_IDS = ["net-192.168.1.62", "net-192.168.1.64", "net-192.168.1.66", "net-192.168.1.67"];
+const ADD_ALL_SCRIPTS: Record<string, DemoDeviceScript> = Object.fromEntries(ADD_ALL_DEMO_IDS.map((id) => [id, { reachable: true, connectDelayMs: ADD_ALL_CONNECT_DELAY_MS, values: { power: "on" } }]));
+
 /** Per-device starting state used by the demo driver. */
 export const DEMO_DEVICE_SCRIPTS: Record<string, DemoDeviceScript> = {
   [DEMO_LG_ID]: { reachable: true, values: { power: "on", volume: 18, muted: false, input: "HDMI_1", inputs: LG_INPUTS, playbackState: "playing" } },
@@ -41,6 +46,7 @@ export const DEMO_DEVICE_SCRIPTS: Record<string, DemoDeviceScript> = {
   [DEMO_SONOS_ID]: { reachable: true, values: { volume: 32, muted: false, playbackState: "paused" } },
   [DEMO_KASA_ID]: { reachable: true, values: { power: "on" } },
   [DEMO_BROADLINK_ID]: { reachable: true, values: {} },
+  ...ADD_ALL_SCRIPTS,
 };
 
 function demoDevice(id: string, name: string, driverId: string, category: Device["category"], manufacturer: string, ipTail: number): Device {

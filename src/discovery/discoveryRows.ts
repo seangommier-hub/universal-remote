@@ -23,6 +23,8 @@ export interface DiscoveryRow {
   kind: DeviceKind;
   online: boolean;
   hidden: boolean;
+  /** ADR-HEARTH-167: a support report was already sent for this unrecognized device. */
+  supportRequested: boolean;
 }
 
 export interface DiscoveryRows {
@@ -90,6 +92,7 @@ export function toDiscoveryRow(device: NetworkDevice, added: Device[], labels: D
     kind,
     online: device.online,
     hidden: isHidden(device, labels),
+    supportRequested: labels[labelKey(device)]?.supportRequested ?? false,
   };
 }
 

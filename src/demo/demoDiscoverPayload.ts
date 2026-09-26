@@ -26,6 +26,8 @@ const RECOGNIZED: DemoRow[] = [
   row(63, "console", "XboxOne", "Microsoft", { brand: "xbox", confidence: "certain", friendlyName: "Xbox Series X" }),
   row(64, "audio", "yamaha-rx-v485", "Yamaha", { brand: "yamaha", confidence: "likely", friendlyName: "Yamaha Receiver" }),
   row(65, "streaming", "Apple-TV", "Apple", { brand: "appletv", confidence: "guess" }),
+  row(66, "streaming", "Roku-Ultra", "Roku", { brand: "roku", confidence: "certain", model: "Ultra 4800", friendlyName: "Guest Room Roku" }),
+  row(67, "audio", "Sonos-Move", "Sonos", { brand: "sonos", confidence: "certain", friendlyName: "Patio Sonos" }),
 ];
 
 const OTHER: DemoRow[] = [
@@ -52,7 +54,7 @@ const OTHER: DemoRow[] = [
   row(105, "unknown", null, "Shenzhen Bilian"),
 ];
 
-/** Builds the JSON body the demo fetch returns for the discover-all endpoint: 6 recognized devices plus 21 others. */
+/** Builds the JSON body the demo fetch returns for the discover-all endpoint: 8 recognized devices plus 21 others. */
 export function demoDiscoverAllBody(): { devices: Array<DemoRow & { id: string; evidence: string[]; online: boolean; hidden: boolean; labelBrand: null }> } {
   const devices = [...RECOGNIZED, ...OTHER].map((entry) => ({ ...entry, id: `net-${entry.ip}`, evidence: [], online: true, hidden: false, labelBrand: null }));
   return { devices };

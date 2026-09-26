@@ -30,5 +30,7 @@ export function useDeviceLabels() {
   const setHidden = useCallback((device: NetworkDevice, hidden: boolean) => apply(device, { hidden }), [apply]);
   const setBrand = useCallback((device: NetworkDevice, brand: BrandId) => apply(device, { brand }), [apply]);
 
-  return { labels, setHidden, setBrand };
+  const markSupportRequested = useCallback((device: NetworkDevice) => apply(device, { supportRequested: true }), [apply]);
+
+  return { labels, setHidden, setBrand, markSupportRequested };
 }

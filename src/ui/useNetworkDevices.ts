@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { discoverAll, NetworkDevice } from "../discovery/discoverAll";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { ScanStatus } from "../discovery/discoverySections";
+import { shouldRescanOnForeground } from "../discovery/scanProgress";
 
 export type NetworkScanStatus = ScanStatus;
 
@@ -17,11 +19,13 @@ export function useNetworkDevices() {
   const [devices, setDevices] = useState<NetworkDevice[]>([]);
   const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
   const [scannedAt, setScannedAt] = useState<number | null>(null);
+  const [scanStartedAt, setScanStartedAt] = useState<number | null>(null);
   const [fccConfigured, setFccConfigured] = useState<boolean | null>(null);
   const mounted = useRef(true);
 
   const rescan = useCallback(async (): Promise<NetworkDevice[]> => {
     setStatus("scanning");
+    setScanStartedAt(Date.now());
     const [result, config] = await Promise.all([discoverAll(), loadFamilyCommandCenterConfig().catch(() => null)]);
     if (mounted.current) {
       setDevices(result.devices);
@@ -41,9 +45,20 @@ export function useNetworkDevices() {
     };
   }, [rescan]);
 
+  // ADR-HEARTH-167: coming back to the app (e.g. after turning Local Network on in Settings) re-scans on its own.
+  const latest = useRef({ status, scannedAt });
+  latest.current = { status, scannedAt };
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (next) => {
+      const { status: current, scannedAt: last } = latest.current;
+      if (next === "active" && shouldRescanOnForeground({ scanning: current === "scanning", scannedAt: last, now: Date.now() })) void rescan();
+    });
+    return () => subscription.remove();
+  }, [rescan]);
+
   const replaceDevice = useCallback((updated: NetworkDevice) => {
     setDevices((current) => current.map((device) => (device.ip === updated.ip ? updated : device)));
   }, []);
 
-  return { status, devices, failure, scannedAt, fccConfigured, rescan, replaceDevice };
+  return { status, devices, failure, scannedAt, scanStartedAt, fccConfigured, rescan, replaceDevice };
 }
