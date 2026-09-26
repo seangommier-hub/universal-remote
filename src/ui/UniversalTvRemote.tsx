@@ -9,6 +9,7 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { describeReconnectFailure } from "./describeReconnectFailure";
+import { describeDeviceStatus } from "./describeDeviceStatus";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
@@ -176,6 +177,8 @@ const KEYPAD_ROWS = [
 const MAX_CHANNEL_DIGITS = 4; // no real-world channel number needs more than this; guards against a runaway digit sequence being sent to the device
 const SLEEP_TIMER_DURATIONS_MINUTES = [15, 30, 45, 60]; // matches the presets Samsung's own native sleepTimer cycles through — familiar even for devices using the universal fallback
 
+const MS_PER_SECOND = 1000;
+
 /**
  * One remote screen that works for any TV driver. Every control shown here is gated on the
  * device's declared capabilities — this file has no Samsung- or LG-specific logic at all.
@@ -191,7 +194,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // reference screen — see useResponsiveScale.ts for why this is the
   // right axis to scale (and font size/spacing deliberately are not).
   const scale = useResponsiveScale();
-  const isAway = useConnectivityMode() === "away";
+  const connectivityMode = useConnectivityMode();
+  const isAway = connectivityMode === "away";
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
   // (the "196 = 196, arrows land tangent to the disc" math in the styles
   // below is derived from it) -- this is that same value scaled for the
@@ -472,6 +476,16 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       )
     : undefined;
   const isConnected = state.connection === "connected";
+  // ADR-HEARTH-163: the existing connection pill carries the plain-language status line (no added height).
+  const statusLine = describeDeviceStatus({
+    connection: state.connection,
+    knownPower,
+    wakeBurstActive: false,
+    lastError: reconnectError || undefined,
+    connectivityMode,
+    fccReachable: connectivityMode === "unknown" ? undefined : true,
+    secondsSinceLastSeen: Math.max(0, Math.round((Date.now() - state.lastUpdated) / MS_PER_SECOND)),
+  });
   // Real-hardware finding (2026-09-09): a persisted device reappears in the device list
   // immediately on app load, but its live driver connection reconnects separately in the
   // background (App.tsx) and can fail silently. Without this, every button stayed fully
@@ -589,9 +603,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       </View>
 
       <View style={styles.statusRow}>
-        <View style={[styles.statusPill, isConnected ? styles.statusPillOn : styles.statusPillOff]}>
+        <View style={[styles.statusPill, styles.statusPillShrink, isConnected ? styles.statusPillOn : styles.statusPillOff]}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? theme.statusOn : theme.statusOff }]} />
-          <Text style={styles.statusPillText}>{isConnected ? "Connected" : state.connection}</Text>
+          <Text style={styles.statusPillText} numberOfLines={1}>
+            {statusLine}
+          </Text>
         </View>
         {knownPower !== undefined && (
           <View style={styles.statusPill}>
@@ -1201,6 +1217,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     paddingHorizontal: theme.spacing.md,
   },
+  statusPillShrink: { flexShrink: 1 },
   statusPillOn: { backgroundColor: theme.statusOnSoft },
   statusPillOff: { backgroundColor: theme.surfaceRaised },
   statusDot: { width: 7, height: 7, borderRadius: theme.radius.full },

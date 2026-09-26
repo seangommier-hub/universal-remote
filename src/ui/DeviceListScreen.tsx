@@ -11,6 +11,8 @@ import { ActivityHistoryList } from "./ActivityHistoryList";
 import type { ActivityProgress } from "./useActivities";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { useConnectivityMode } from "./useConnectivityMode";
+import { ConnectivityBadge } from "./ConnectivityBadge";
+import { DeviceConnectionStatus } from "./DeviceConnectionStatus";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
 import { checksForDevice } from "../discovery/brandSetupChecks";
 import { CapabilityButton } from "./CapabilityButton";
@@ -88,26 +90,6 @@ interface DeviceListScreenProps {
   onRemoveActivity: (activity: Activity) => void;
 }
 
-/** A small live indicator so a device's connection state is visible at a glance from the list, without tapping in and waiting out the full reconnect timeout to find out. Subscribes independently per row so one device's state change doesn't re-render the whole list. */
-function ConnectionStatus({ stateStore, deviceId }: { stateStore: StateStore; deviceId: string }) {
-  const [connection, setConnection] = useState(() => stateStore.get(deviceId).connection);
-
-  useEffect(() => {
-    setConnection(stateStore.get(deviceId).connection);
-    return stateStore.subscribe(deviceId, (state) => setConnection(state.connection));
-  }, [stateStore, deviceId]);
-
-  const color = connection === "connected" ? theme.statusOn : connection === "disconnected" ? theme.statusError : theme.statusOff;
-  const label = connection === "connected" ? "Connected" : connection === "disconnected" ? "Disconnected" : "Unknown";
-
-  return (
-    <View style={styles.connectionRow}>
-      <View style={[styles.connectionDot, { backgroundColor: color }]} />
-      <Text style={styles.connectionLabel}>{label}</Text>
-    </View>
-  );
-}
-
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
 export function DeviceListScreen({
   devices,
@@ -175,9 +157,12 @@ export function DeviceListScreen({
           <View style={styles.emberDot} />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={1}>
-            Hearth
-          </Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title} numberOfLines={1}>
+              Hearth
+            </Text>
+            <ConnectivityBadge mode={connectivityMode} />
+          </View>
           <Text style={styles.subtitle} numberOfLines={1}>
             {connectivityMode === "away" ? "Remote — away from home" : "One home. One remote."}
           </Text>
@@ -296,7 +281,7 @@ export function DeviceListScreen({
                 <Text style={styles.deviceMeta} numberOfLines={1}>
                   {item.manufacturer} {item.model}
                 </Text>
-                <ConnectionStatus stateStore={stateStore} deviceId={item.id} />
+                <DeviceConnectionStatus stateStore={stateStore} deviceId={item.id} />
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
             </Pressable>
@@ -444,6 +429,7 @@ const styles = StyleSheet.create({
   // brandMark + both fccButtons, pushing/overlapping those icons instead of wrapping (the
   // "settings gear overlapping other items" report, 2026-09-12).
   headerText: { flex: 1, minWidth: 0 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
   fccButton: {
     width: 44,
     height: 44,
@@ -535,9 +521,6 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1, minWidth: 0 },
   deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
   deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
-  connectionRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, marginTop: theme.spacing.xs },
-  connectionDot: { width: 7, height: 7, borderRadius: theme.radius.full },
-  connectionLabel: { color: theme.textTertiary, fontSize: theme.type.caption },
   emptyState: {
     alignItems: "center",
     gap: theme.spacing.sm,
