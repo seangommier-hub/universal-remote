@@ -110,7 +110,7 @@ export function CapabilityButton({
             style={!isCircle && label ? styles.iconWithLabel : undefined}
           />
         )}
-        {!icon && (
+        {(!icon || !isCircle) && (
           <Text
             style={[
               styles.label,

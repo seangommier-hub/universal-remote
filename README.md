@@ -43,6 +43,22 @@ npm test            # jest (jest-expo preset)
 - Publish JS to every installed channel (preview at runtimes 1.1.0 and 1.2.0, plus family): `bash scripts/ship-update.sh "message"`. Never use `eas update --auto` (ADR-HEARTH-107).
 - Add a family member: `node scripts/ios-credentials/inviteFamilyMember.js <apple-id-email> "<First>" "<Last>"` (run again after they accept). Migration steps for the old ad hoc phones: `docs/TESTFLIGHT_MIGRATION.md`.
 
+||||||| f56225c
+
+## Verify UI without a phone
+
+A demo household (fake devices, Activities and Discover results, no network) renders in a browser at iPhone 17 size, so layouts can be checked from screenshots (ADR-HEARTH-157).
+
+```bash
+npx playwright install chromium        # once
+node scripts/ui-verify/run.mjs         # builds the web export, screenshots every screen, prints PASS/FAIL
+node scripts/ui-verify/run.mjs --no-build --only=remote-lg,discover
+```
+
+PNGs land in `scripts/ui-verify/out/` (gitignored). Manual: `npx expo start --web`, then open `http://localhost:8081/?demo=1&screen=remote:lg`
+(`screen` = `list`, `discover`, `fcc-settings`, `activity-editor`, `remote:<lg|samsung|roku|sonos|kasa|broadlink>`, `post-add:<x>`, `setup-checks:<x>`, `add:<brand>`).
+Demo mode only turns on with `EXPO_PUBLIC_DEMO=1` at build time or `?demo=1` on web. Web is not iOS: fonts differ (browser sans, not SF) and safe-area insets are emulated (top 62, bottom 34).
+
 ## Known limitations (current stage)
 
 - Sony, Samsung, LG, and Roku drivers are real but unvalidated against actual hardware — see `ROADMAP.md`. Roku's is the simplest and most likely to work exactly as written (official docs, no pairing/TLS).

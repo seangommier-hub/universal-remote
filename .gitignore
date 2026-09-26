@@ -44,3 +44,4 @@ yarn-error.*
 
 # headless runner build output
 runner/dist/
+scripts/ui-verify/out/
