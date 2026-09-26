@@ -1,4 +1,5 @@
 import { FccNotConfiguredError, FccTokenRejectedError } from "../core/network/fccErrors";
+import { AndroidTvRelayError } from "../drivers/tv/androidtv/AndroidTvClient";
 import { LG_PAIRING_TIMEOUT_MS, LgUnreachableError } from "../drivers/tv/lg/LgWebOsClient";
 import { SAMSUNG_PAIRING_TIMEOUT_MS, SamsungPairingError } from "../drivers/tv/samsung/SamsungTizenClient";
 import { BrandId, getBrand } from "./brandRegistry";
@@ -27,7 +28,7 @@ describe("pairingPromptFor", () => {
   });
 
   it("has a prompt for every brand with a waiting step and none for the rest", () => {
-    for (const id of ["lg", "samsung", "appletv", "hue", "ps5", "ps5-pin", "sony", "xbox", "smartthings"] as const) {
+    for (const id of ["lg", "samsung", "appletv", "androidtv", "hue", "ps5", "ps5-pin", "sony", "xbox", "smartthings"] as const) {
       expect(pairingPromptFor(id)).not.toBeNull();
     }
     expect(pairingPromptFor("roku")).toBeNull();
@@ -119,6 +120,26 @@ describe("describePairingFailure: Apple TV", () => {
 
   it("leaves an unrelated error as unknown", () => {
     expect(describe_("appletv", new Error("disk full")).kind).toBe("unknown");
+  });
+});
+
+describe("describePairingFailure: Android TV", () => {
+  it("explains a rejected code and asks for the new one", () => {
+    const result = describe_("androidtv", new AndroidTvRelayError("bad_code", "wrong code", 400));
+    expect(result.kind).toBe("wrong-pin");
+    expect(result.message).toMatch(/6-character code/);
+  });
+
+  it("explains an expired pairing session as a timeout", () => {
+    expect(describe_("androidtv", new AndroidTvRelayError("unknown_session", "expired", 404)).kind).toBe("timeout");
+  });
+
+  it("explains an unreachable TV", () => {
+    expect(describe_("androidtv", new AndroidTvRelayError("unreachable", "no route", 502)).kind).toBe("unreachable");
+  });
+
+  it("leaves an unrelated error as unknown", () => {
+    expect(describe_("androidtv", new Error("disk full")).kind).toBe("unknown");
   });
 });
 

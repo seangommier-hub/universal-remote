@@ -1,5 +1,6 @@
 import { DeviceDriver } from "../core/drivers/DeviceDriver";
 import { DeviceCategory } from "../core/types/Device";
+import { ANDROID_TV_DRIVER_ID } from "../drivers/tv/androidtv/AndroidTvDriver";
 import { APPLE_TV_DRIVER_ID } from "../drivers/tv/appletv/AppleTvDriver";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { CHROMECAST_DRIVER_ID } from "../drivers/streaming/chromecast/ChromecastDriver";
@@ -38,6 +39,7 @@ export type BrandId =
   | "kasa"
   | "chromecast"
   | "appletv"
+  | "androidtv"
   | "ps5"
   | "xbox"
   | "hue"
@@ -149,6 +151,10 @@ export const BRAND_REGISTRY: BrandEntry[] = [
     id: "kasa", label: "TP-Link Kasa Plug", driverId: KASA_PLUG_DRIVER_ID, manufacturer: "TP-Link", category: "outlet", icon: "flash-outline", defaultName: "Kasa Plug",
     needsFcc: false, hint: "Older Kasa firmware only — no pairing.", vendorPattern: /tp-?link|\bkasa\b/i, inAddPicker: true,
   }),
+  {
+    id: "androidtv", label: "Google TV / Android TV", driverId: ANDROID_TV_DRIVER_ID, manufacturer: "Google", category: "streaming", icon: "tv-outline", defaultName: "Google TV",
+    addMode: "custom-screen", fields: [], needsFcc: true, needsIp: true, hint: "Pairs with a 6-character code shown on the TV.", vendorPattern: /android[- ]?tv|google[- ]?tv|nvidia[- ]?shield|\bshield\b/i, inAddPicker: true,
+  },
   ipOnly({
     id: "shelly", label: "Shelly Relay", driverId: SHELLY_RELAY_DRIVER_ID, manufacturer: "Shelly", category: "outlet", icon: "flash-outline", defaultName: "Shelly Relay",
     needsFcc: false, hint: "Shelly plugs and relays, first or newer generation — no pairing, but the Shelly's own login must be off.", vendorPattern: /shelly|allterco/i, inAddPicker: true,

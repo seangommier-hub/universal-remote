@@ -38,7 +38,7 @@ describe("brand registry consistency", () => {
 
   test("brands that need Family Command Center match the drivers that only work through it", () => {
     const needsFcc = BRAND_REGISTRY.filter((b) => b.needsFcc).map((b) => b.id).sort();
-    expect(needsFcc).toEqual(["appletv", "broadlink", "chromecast", "lg", "lifx", "ps5", "vizio", "wiz"]);
+    expect(needsFcc).toEqual(["androidtv", "appletv", "broadlink", "chromecast", "lg", "lifx", "ps5", "vizio", "wiz"]);
   });
 });
 
@@ -81,6 +81,17 @@ describe("brand lookups", () => {
   test("the Vizio TV pairs on its own screen and the other new brands need only an address", () => {
     expect(getBrand("vizio").addMode).toBe("custom-screen");
     for (const id of ["wiz", "lifx", "shelly"] as const) expect(getBrand(id).addMode).toBe("ip-only");
+  });
+
+  test("Google TV and Shield names are Android TV, while an Android phone is not", () => {
+    expect(matchBrandByText("Google TV Streamer")?.id).toBe("androidtv");
+    expect(matchBrandByText("SHIELD-Android-TV")?.id).toBe("androidtv");
+    expect(matchBrandByText("android-1a2b3c4d")).toBeUndefined();
+  });
+
+  test("Android TV is a guided custom-screen brand that needs Family Command Center", () => {
+    const brand = getBrand("androidtv");
+    expect(brand).toMatchObject({ addMode: "custom-screen", needsFcc: true, needsIp: true, category: "streaming" });
   });
 
   test("an unknown hostname matches nothing", () => {

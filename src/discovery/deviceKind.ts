@@ -105,7 +105,7 @@ const CATEGORY_KIND: Partial<Record<DeviceCategory, DeviceKind>> = {
 const KIND_PATTERNS: Array<[DeviceKind, RegExp]> = [
   ["camera", /\b(ring|arlo|wyze|blink|reolink|hikvision|nest ?cam|doorbell|camera|cam)\b/i],
   ["console", /xbox|playstation|\bps[45]\b|nintendo/i],
-  ["streaming", /roku|chromecast|fire ?tv|firestick|apple ?tv|appletv|nvidia shield/i],
+  ["streaming", /roku|chromecast|fire ?tv|firestick|apple ?tv|appletv|nvidia shield|google ?tv streamer|android ?tv box/i],
   ["audio", /sonos|\becho\b|alexa|homepod|soundbar|denon|yamaha|speaker|amazon/i],
   ["tv", /\btv\b|bravia|webos|television|vizio|hisense|tcl/i],
   ["lighting", /\bhue\b|lifx|\bwiz\b|wiz[-_][0-9a-f]{6}|nanoleaf|philips|bulb|light/i],
