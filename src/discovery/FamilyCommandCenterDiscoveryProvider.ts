@@ -9,6 +9,7 @@ import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "../core/network/fccErrors";
+import { fccFetch, isFccTimeout } from "../core/network/fccRequest";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -108,25 +109,14 @@ export class FamilyCommandCenterDiscoveryProvider implements DiscoveryProvider {
       throw new FccNotConfiguredError("Family Command Center isn't connected yet — add its address and token in Settings first.");
     }
 
-    const timeoutController = new AbortController();
-    const timeout = setTimeout(() => timeoutController.abort(), SCAN_TIMEOUT_MS);
-    const onCallerAbort = () => timeoutController.abort();
-    signal?.addEventListener("abort", onCallerAbort);
-
     let res: Response;
     try {
-      res = await fetch(`${config.baseUrl}/api/integrations/hearth/devices`, {
-        headers: { Authorization: `Bearer ${config.token}` },
-        signal: timeoutController.signal,
-      });
+      res = await fccFetch(config, "/api/integrations/hearth/devices", { signal }, SCAN_TIMEOUT_MS);
     } catch (err) {
-      if (timeoutController.signal.aborted && !signal?.aborted) {
+      if (isFccTimeout(err) && !signal?.aborted) {
         throw new FccUnreachableError(`Family Command Center didn't respond within ${SCAN_TIMEOUT_MS / 1000} seconds — check it's reachable and try again.`);
       }
       throw new FccUnreachableError(err instanceof Error ? err.message : String(err));
-    } finally {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onCallerAbort);
     }
     if (res.status === HTTP_UNAUTHORIZED) throw new FccTokenRejectedError("Family Command Center rejected the saved token.");
     if (!res.ok) throw new Error(`Family Command Center returned ${res.status}.`);

@@ -1,4 +1,5 @@
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { recordLanFailure, recordRouteSuccess, resetConnectivityForTests, shouldPreferPublicRoute, shouldSkipDirectAttempt } from "./fccConnectivity";
 
 // See ADR-HEARTH-011. Mirrors httpRelayFallback.ts's fallback pattern for WebSocket-based
 // drivers (Samsung, LG): try a direct connection to the device first, and only relay through
@@ -28,6 +29,7 @@ function directKey(targetUrl: string): string {
 /** Test-only: forgets which devices failed a direct connection. */
 export function resetDirectFailureMemoryForTests(): void {
   directFailedAt.clear();
+  resetConnectivityForTests();
 }
 
 const RELAY_PORT = 3211;
@@ -72,6 +74,41 @@ function buildRelayUrl(scheme: string, host: string, port: number | undefined, t
   return `${scheme}://${authority}/?token=${encodeURIComponent(token)}&target=${encodeURIComponent(targetUrl)}`;
 }
 
+async function openViaLanRelay(config: FamilyCommandCenterConfig, targetUrl: string): Promise<WebSocket> {
+  const lanRelayUrl = buildRelayUrl(RELAY_SCHEME, new URL(config.baseUrl).hostname, RELAY_PORT, config.token, targetUrl);
+  try {
+    const socket = await tryOpenSocket(lanRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center`);
+    recordRouteSuccess("lan");
+    return socket;
+  } catch (err) {
+    recordLanFailure();
+    throw err;
+  }
+}
+
+// wss:// on the tunnel's public hostname, no explicit port -- Cloudflare terminates TLS on 443 and
+// forwards to the LAN relay's real port internally (ADR-HEARTH-123).
+async function openViaPublicRelay(publicBaseUrl: string, token: string, targetUrl: string): Promise<WebSocket> {
+  const publicRelayUrl = buildRelayUrl("wss", publicRelayHost(publicBaseUrl), undefined, token, targetUrl);
+  const socket = await tryOpenSocket(publicRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center's public tunnel`);
+  recordRouteSuccess("public");
+  return socket;
+}
+
+/** Tries the LAN relay then the public one (public first while away from home, ADR-HEARTH-147); rejects with the last failure. */
+async function openViaFccRelays(config: FamilyCommandCenterConfig, targetUrl: string): Promise<WebSocket> {
+  const lan = () => openViaLanRelay(config, targetUrl);
+  const { publicBaseUrl } = config;
+  if (!publicBaseUrl) return lan();
+  const viaPublic = () => openViaPublicRelay(publicBaseUrl, config.token, targetUrl);
+  const [first, second] = shouldPreferPublicRoute() ? [viaPublic, lan] : [lan, viaPublic];
+  try {
+    return await first();
+  } catch {
+    return second();
+  }
+}
+
 /**
  * Opens a WebSocket to `targetUrl`, trying a direct connection first, then Family Command
  * Center's LAN relay, then — only if that also fails and a public URL is configured (away from
@@ -84,9 +121,10 @@ function buildRelayUrl(scheme: string, host: string, port: number | undefined, t
 export async function openSocketWithRelayFallback(targetUrl: string): Promise<WebSocket> {
   const key = directKey(targetUrl);
   const failedAt = directFailedAt.get(key);
-  const skipDirect = failedAt !== undefined && Date.now() - failedAt < DIRECT_RETRY_AFTER_MS;
+  const skipDirect =
+    (failedAt !== undefined && Date.now() - failedAt < DIRECT_RETRY_AFTER_MS) || shouldSkipDirectAttempt(directKey(targetUrl).split(":")[0]);
   try {
-    if (skipDirect) throw new Error("direct connection skipped: it failed recently");
+    if (skipDirect) throw new Error("direct connection skipped: it failed recently, or the phone is away from home");
     const direct = await tryOpenSocket(targetUrl, DIRECT_CONNECT_TIMEOUT_MS, `connecting directly to ${targetUrl}`);
     directFailedAt.delete(key);
     return direct;
@@ -95,18 +133,14 @@ export async function openSocketWithRelayFallback(targetUrl: string): Promise<We
     if (!config) {
       throw new Error(`Could not reach ${targetUrl} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`);
     }
-    const lanRelayUrl = buildRelayUrl(RELAY_SCHEME, new URL(config.baseUrl).hostname, RELAY_PORT, config.token, targetUrl);
+    let viaRelay: WebSocket;
     try {
-      const viaRelay = await tryOpenSocket(lanRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center`);
-      directFailedAt.set(key, failedAt !== undefined && skipDirect ? failedAt : Date.now());
-      return viaRelay;
+      viaRelay = await openViaFccRelays(config, targetUrl);
     } catch (err) {
       directFailedAt.delete(key); // the relay could not help either: try direct again next time
-      if (!config.publicBaseUrl) throw err;
-      // wss:// on the tunnel's public hostname, no explicit port -- Cloudflare terminates TLS on
-      // 443 and forwards to the LAN relay's real port internally (ADR-HEARTH-123).
-      const publicRelayUrl = buildRelayUrl("wss", publicRelayHost(config.publicBaseUrl), undefined, config.token, targetUrl);
-      return tryOpenSocket(publicRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center's public tunnel`);
+      throw err;
     }
+    directFailedAt.set(key, failedAt !== undefined && skipDirect ? failedAt : Date.now());
+    return viaRelay;
   }
 }

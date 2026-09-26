@@ -1,5 +1,7 @@
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "./fccErrors";
+import { resetConnectivityForTests, shouldSkipDirectAttempt } from "./fccConnectivity";
+import { fccFetch } from "./fccRequest";
 import { FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
 
 // See ADR-HEARTH-011. A device may sit on a network segment the phone isn't currently joined
@@ -28,6 +30,7 @@ function relayKey(ip: string, port: number): string {
 /** Test-only: clears the "this address needs relay" memory between test cases. Never called from real app code — the whole point is that this persists for the app's actual lifetime. */
 export function resetRelayNecessityCacheForTests(): void {
   knownRelayOnly.clear();
+  resetConnectivityForTests();
 }
 
 const DIRECT_TIMEOUT_MS = 4000;
@@ -93,14 +96,14 @@ function isCancellation(err: unknown): boolean {
 // triggers the public-URL fallback below.
 
 
-async function callRelayAt(baseUrl: string, token: string, request: RelayableRequest): Promise<RelayableResponse> {
+async function callRelayThroughFcc(config: FamilyCommandCenterConfig, request: RelayableRequest): Promise<RelayableResponse> {
   let response: Response;
   try {
-    response = await fetchWithTimeout(
-      `${baseUrl}${RELAY_PATH}`,
+    response = await fccFetch(
+      config,
+      RELAY_PATH,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           targetIp: request.ip,
           targetPort: request.port,
@@ -113,10 +116,11 @@ async function callRelayAt(baseUrl: string, token: string, request: RelayableReq
       RELAY_TIMEOUT_MS
     );
   } catch (err) {
-    if (isCancellation(err)) {
+    const cause = err instanceof FccUnreachableError ? err.cause : err;
+    if (isCancellation(cause)) {
       throw new FccUnreachableError(`Family Command Center didn't respond within ${RELAY_TIMEOUT_MS / 1000} seconds while relaying to ${request.ip}:${request.port} — try again`);
     }
-    throw new FccUnreachableError(err instanceof Error ? err.message : String(err));
+    throw err;
   }
 
   if (response.status === HTTP_UNAUTHORIZED) {
@@ -143,22 +147,15 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
     );
   }
 
-  try {
-    return await callRelayAt(config.baseUrl, config.token, request);
-  } catch (err) {
-    // Only a genuine "couldn't reach it at all" failure falls through to the public tunnel — and
-    // only when one's actually configured (Settings screen, optional). Away from the home WiFi,
-    // the LAN baseUrl fails fast (nothing there to answer), so this adds one real network attempt,
-    // not a silent hang.
-    if (!(err instanceof FccUnreachableError) || !config.publicBaseUrl) throw err;
-    return await callRelayAt(config.publicBaseUrl, config.token, request);
-  }
+  // The shared client (ADR-HEARTH-147) tries the LAN address, then the public tunnel only for a
+  // genuine "couldn't reach it at all" failure, and remembers which one worked.
+  return callRelayThroughFcc(config, request);
 }
 
 /** Tries a direct HTTP request first; falls back to relaying through Family Command Center if that fails. Skips the direct attempt entirely once this address has already proven direct-unreachable this session (see knownRelayOnly above). */
 export async function requestWithRelayFallback(request: RelayableRequest): Promise<RelayableResponse> {
   const key = relayKey(request.ip, request.port);
-  if (knownRelayOnly.has(key)) {
+  if (knownRelayOnly.has(key) || shouldSkipDirectAttempt(request.ip)) {
     return callRelay(request);
   }
   const directUrl = `http://${request.ip}:${request.port}${request.path}`;

@@ -11,8 +11,8 @@
 // open a real PSN login link, paste back the post-login redirect URL, then enter an 8-digit PIN
 // from the console's own screen — hence the multi-call shape below instead of one "pair" call.
 
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
-import { LONG_FETCH_TIMEOUT_MS, fetchWithTimeout } from "../../../core/network/fetchWithTimeout";
+import { fccJsonRequest } from "../../../core/network/fccJsonRequest";
+import { LONG_FETCH_TIMEOUT_MS } from "../../../core/network/fetchWithTimeout";
 
 export type Ps5LoginStatus = "awaiting_redirect" | "awaiting_pin" | "success" | "error";
 
@@ -22,19 +22,7 @@ export interface Ps5LoginStatusResponse {
 }
 
 async function fccRequest<T>(path: string, init?: RequestInit, timeoutMs: number = LONG_FETCH_TIMEOUT_MS): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
-  if (!config) {
-    throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
-  }
-  const response = await fetchWithTimeout(
-    `${config.baseUrl}${path}`,
-    { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}`, ...(init?.headers ?? {}) } },
-    timeoutMs
-  );
-  if (!response.ok) {
-    throw new Error(response.status === 401 ? "Family Command Center rejected the saved token." : `Family Command Center returned ${response.status}.`);
-  }
-  return response.json();
+  return fccJsonRequest<T>(path, init, timeoutMs);
 }
 
 /** Talks to Family Command Center's PS5 pairing/wake relay. */
