@@ -1,4 +1,6 @@
 import { DISCOVER_ALL_PATH } from "../discovery/discoverAll";
+import { ACTIVITY_LOG_PATH } from "../discovery/familyCommandCenterActivityLog";
+import { demoActivityLogBody } from "./demoActivityLog";
 import { demoDiscoverAllBody } from "./demoDiscoverPayload";
 
 export const DEMO_FCC_BASE_URL = "http://demo-fcc.invalid:3211";
@@ -15,6 +17,7 @@ export async function demoFetch(input: RequestInfo | URL): Promise<Response> {
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   if (!url.startsWith(DEMO_FCC_BASE_URL)) throw new TypeError("Demo mode: network access is disabled");
   if (url.endsWith(DISCOVER_ALL_PATH)) return jsonResponse(demoDiscoverAllBody(), HTTP_OK);
+  if (url.includes(ACTIVITY_LOG_PATH)) return jsonResponse(demoActivityLogBody(), HTTP_OK);
   return jsonResponse({ error: "not available in demo mode" }, HTTP_NOT_FOUND);
 }
 

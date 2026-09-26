@@ -6,7 +6,8 @@ import { Activity, ActivityRun, StepResult } from "../core/types/Activity";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
 import { ActivitiesClient, familyCommandCenterActivitiesClient } from "../discovery/familyCommandCenterActivities";
-import { loadActivityState, loadMemberName, saveActivityState, saveMemberName } from "../runtime/activityPersistence";
+import { loadActivityState, loadMemberName, saveActivityState } from "../runtime/activityPersistence";
+import { setPhoneName } from "../runtime/phoneName";
 import { ActivityRunResult, mergeRetryResults, retryableIndexes, runActivity } from "../runtime/activityRunner";
 import { reportRun } from "../runtime/activityRunReporter";
 import { syncActivities } from "../runtime/activitySync";
@@ -163,7 +164,7 @@ export function useActivities({ commandEngine, stateStore, client = familyComman
 
   const updateMemberName = useCallback((name: string) => {
     setMemberNameState(name.trim() || undefined);
-    saveMemberName(name).catch((err) => logger.warn(LOG_SCOPE, "could not save member name", { message: String(err) }));
+    setPhoneName(name).catch((err) => logger.warn(LOG_SCOPE, "could not save member name", { message: String(err) }));
   }, []);
 
   return {

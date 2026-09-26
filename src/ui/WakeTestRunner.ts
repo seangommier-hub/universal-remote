@@ -108,7 +108,7 @@ export function createWakeTestDependencies(device: Device, commandEngine: Comman
     sendPowerOn: async () => {
       const capability = powerOnCapability(device);
       if (!capability) return "This device has no way to be switched on from Hearth.";
-      const result = await commandEngine.execute({ deviceId: device.id, capability });
+      const result = await commandEngine.execute({ deviceId: device.id, capability }, { silent: true });
       return result.success ? null : `Hearth could not send the power-on: ${result.error?.message ?? "unknown reason"}.`;
     },
     readConnection: () => stateStore.get(device.id).connection,

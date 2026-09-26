@@ -9,7 +9,10 @@ import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSharePanel } from "./DeviceSharePanel";
-import { InviteSomeonePanel } from "./InviteSomeonePanel";import { theme } from "./theme";
+import { InviteSomeonePanel } from "./InviteSomeonePanel";
+import { PhoneNameField } from "./PhoneNameField";
+import { RecentActivityList } from "./RecentActivityList";
+import { theme } from "./theme";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
@@ -147,6 +150,8 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
 
       <CapabilityButton label="Join with a code instead" variant="ghost" onPress={onJoinWithCode} disabled={status === "checking"} />
       {alreadyConnected && <InviteSomeonePanel />}
+      <PhoneNameField />
+      {alreadyConnected && <RecentActivityList />}
 
       <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} onDeviceUpdated={onDeviceUpdated} />
 
