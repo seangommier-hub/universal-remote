@@ -7,7 +7,9 @@ import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
-import { Scene } from "../core/types/Scene";
+import { Activity, ActivityRun } from "../core/types/Activity";
+import { ActivityHistoryList } from "./ActivityHistoryList";
+import type { ActivityProgress } from "./useActivities";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
@@ -123,15 +125,19 @@ interface DeviceListScreenProps {
   onRename: (device: Device) => void;
   /** Opens the "teach a button" flow for a Broadlink IR/RF hub device (see TeachBroadlinkCommandScreen.tsx) — offered from the same long-press menu, but only for that one driver, since every other device's capabilities come from a fixed protocol rather than something taught after the fact. */
   onTeachCommands: (device: Device) => void;
-  /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056) — a horizontal row of chips
+  /** Activities (ADR-HEARTH-150, formerly Scenes/ADR-HEARTH-056): household multi-step macros — a horizontal row of chips
    * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
    * for vertical space on the home screen, the same "one screen" pressure every other layout
    * decision here has had to account for. */
-  scenes: Scene[];
-  onRunScene: (scene: Scene) => void;
-  onCreateScene: () => void;
-  onEditScene: (scene: Scene) => void;
-  onRemoveScene: (scene: Scene) => void;
+  activities: Activity[];
+  /** The step currently running, so its chip can show "2/5" while it works. */
+  activityProgress: ActivityProgress | null;
+  /** Most recent household runs from the Pi, newest first. */
+  activityHistory: ActivityRun[];
+  onRunActivity: (activity: Activity) => void;
+  onCreateActivity: () => void;
+  onEditActivity: (activity: Activity) => void;
+  onRemoveActivity: (activity: Activity) => void;
 }
 
 /** A small live indicator so a device's connection state is visible at a glance from the list, without tapping in and waiting out the full reconnect timeout to find out. Subscribes independently per row so one device's state change doesn't re-render the whole list. */
@@ -177,11 +183,13 @@ export function DeviceListScreen({
   onEditAddress,
   onRename,
   onTeachCommands,
-  scenes,
-  onRunScene,
-  onCreateScene,
-  onEditScene,
-  onRemoveScene,
+  activities,
+  activityProgress,
+  activityHistory,
+  onRunActivity,
+  onCreateActivity,
+  onEditActivity,
+  onRemoveActivity,
 }: DeviceListScreenProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
@@ -277,11 +285,11 @@ export function DeviceListScreen({
     }
   }
 
-  function showSceneActions(scene: Scene) {
-    Alert.alert(scene.name, undefined, [
+  function showActivityActions(activity: Activity) {
+    Alert.alert(activity.name, undefined, [
       { text: "Cancel", style: "cancel" },
-      { text: "Edit", onPress: () => onEditScene(scene) },
-      { text: "Delete", style: "destructive", onPress: () => onRemoveScene(scene) },
+      { text: "Edit", onPress: () => onEditActivity(activity) },
+      { text: "Delete", style: "destructive", onPress: () => onRemoveActivity(activity) },
     ]);
   }
 
@@ -361,30 +369,34 @@ export function DeviceListScreen({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sceneRow}>
         <Pressable
           style={({ pressed }) => [styles.sceneChip, styles.newSceneChip, pressed && styles.cardPressed]}
-          onPress={onCreateScene}
+          onPress={onCreateActivity}
           accessibilityRole="button"
-          accessibilityLabel="New scene"
+          accessibilityLabel="New activity"
         >
           <Ionicons name="add" size={16} color={theme.accentEnd} />
-          <Text style={styles.newSceneLabel}>New Scene</Text>
+          <Text style={styles.newSceneLabel}>New Activity</Text>
         </Pressable>
-        {scenes.map((scene) => (
-          <Pressable
-            key={scene.id}
-            style={({ pressed }) => [styles.sceneChip, pressed && styles.cardPressed]}
-            onPress={() => onRunScene(scene)}
-            onLongPress={() => showSceneActions(scene)}
-            accessibilityRole="button"
-            accessibilityLabel={`Run ${scene.name}`}
-            accessibilityHint="Double tap to run. Long press for more options."
-          >
-            <Ionicons name="flash" size={14} color={theme.accentEnd} />
-            <Text style={styles.sceneLabel} numberOfLines={1}>
-              {scene.name}
-            </Text>
-          </Pressable>
-        ))}
+        {activities.map((activity) => {
+          const running = activityProgress?.activityId === activity.id ? activityProgress : null;
+          return (
+            <Pressable
+              key={activity.id}
+              style={({ pressed }) => [styles.sceneChip, pressed && styles.cardPressed]}
+              onPress={() => onRunActivity(activity)}
+              onLongPress={() => showActivityActions(activity)}
+              accessibilityRole="button"
+              accessibilityLabel={`Run ${activity.name}`}
+              accessibilityHint={running ? "Double tap to stop this run." : "Double tap to run. Long press for more options."}
+            >
+              <Ionicons name="flash" size={14} color={theme.accentEnd} />
+              <Text style={styles.sceneLabel} numberOfLines={1}>
+                {running ? `${activity.name} ${running.index + 1}/${running.total}` : activity.name}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
+      <ActivityHistoryList runs={activityHistory} />
 
       {/* ADR-HEARTH-093: one at a time, per Sean's own explicit scoping — not a widget per
           playing device. Absent entirely when nothing is playing/paused anywhere. */}

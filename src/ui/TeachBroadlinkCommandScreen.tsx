@@ -6,7 +6,7 @@ import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { BroadlinkClient } from "../drivers/irHub/broadlink/BroadlinkClient";
 import { BROADLINK_TEACHABLE_CAPABILITIES } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
-import { CAPABILITY_LABELS } from "./CreateSceneScreen";
+import { CAPABILITY_LABELS } from "../core/activities/activityChoices";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 import { addDeviceFormStyles as formStyles } from "./addDeviceFormStyles";

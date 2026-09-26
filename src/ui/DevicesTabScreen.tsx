@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { HearthRuntime } from "../runtime/bootstrap";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { Device } from "../core/types/Device";
-import { Scene } from "../core/types/Scene";
+import { Activity } from "../core/types/Activity";
 import { DeviceListScreen, AddableBrand } from "./DeviceListScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
 import { LightControlScreen } from "./LightControlScreen";
@@ -32,7 +32,8 @@ import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { CommandCenterRemoteScreen } from "./CommandCenterRemoteScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
-import { CreateSceneScreen } from "./CreateSceneScreen";
+import { ActivityEditorScreen } from "./ActivityEditorScreen";
+import type { useActivities } from "./useActivities";
 import { theme } from "./theme";
 
 type Screen =
@@ -47,12 +48,12 @@ type Screen =
   | { name: "edit-address"; device: Device }
   | { name: "rename-device"; device: Device }
   | { name: "teach-broadlink"; device: Device }
-  | { name: "create-scene"; editingScene?: Scene };
+  | { name: "edit-activity"; editingActivity?: Activity };
 
 interface DevicesTabScreenProps {
   runtime: HearthRuntime;
   devices: Device[];
-  scenes: Scene[];
+  activities: ReturnType<typeof useActivities>;
   updateBanner: { status: "checking" | "downloaded" | "error" | "up-to-date" } | null;
   onCheckForUpdates: () => void;
   onApplyUpdate: () => void;
@@ -63,9 +64,6 @@ interface DevicesTabScreenProps {
   onAddressUpdated: (updated: Device) => void;
   onDeviceUpdatedInPlace: (updated: Device) => void;
   onRemoveDevice: (device: Device) => Promise<void>;
-  onRunScene: (scene: Scene) => Promise<void>;
-  onSceneSaved: (scene: Scene) => void;
-  onRemoveScene: (scene: Scene) => void;
 }
 
 /**
@@ -78,7 +76,7 @@ interface DevicesTabScreenProps {
 export function DevicesTabScreen({
   runtime,
   devices,
-  scenes,
+  activities,
   updateBanner,
   onCheckForUpdates,
   onApplyUpdate,
@@ -89,9 +87,6 @@ export function DevicesTabScreen({
   onAddressUpdated,
   onDeviceUpdatedInPlace,
   onRemoveDevice,
-  onRunScene,
-  onSceneSaved,
-  onRemoveScene,
 }: DevicesTabScreenProps) {
   const [screen, setScreen] = useState<Screen>({ name: "list" });
   // Real gap found live (2026-09-21): the header's "Connect Family Command Center" button always
@@ -131,8 +126,8 @@ export function DevicesTabScreen({
     setScreen((current) => (current.name === "teach-broadlink" && current.device.id === updated.id ? { name: "teach-broadlink", device: updated } : current));
   }
 
-  function handleSceneSavedAndReturnToList(scene: Scene) {
-    onSceneSaved(scene);
+  function handleActivitySavedAndReturnToList(activity: Activity) {
+    activities.saveActivity(activity);
     setScreen({ name: "list" });
   }
 
@@ -268,13 +263,22 @@ export function DevicesTabScreen({
         />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
-      {screen.name === "create-scene" && (
-        <CreateSceneScreen
+      {screen.name === "edit-activity" && (
+        <ActivityEditorScreen
           devices={devices}
           stateStore={runtime.stateStore}
-          editingScene={screen.editingScene}
+          editingActivity={screen.editingActivity}
+          newActivityId={activities.newActivityId}
           onCancel={() => setScreen({ name: "list" })}
-          onSaved={handleSceneSavedAndReturnToList}
+          onSaved={handleActivitySavedAndReturnToList}
+          onTestRun={(draft) => activities.run(draft, "inline")}
+          onCancelRun={activities.cancelRun}
+          onRetryFailed={activities.retryFailed}
+          onDismissRun={activities.dismissRun}
+          progress={activities.progress}
+          lastRun={activities.lastRun}
+          memberName={activities.memberName}
+          onMemberNameChange={activities.updateMemberName}
         />
       )}
       {screen.name === "edit-address" && (
@@ -318,11 +322,13 @@ export function DevicesTabScreen({
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
           onRename={(device) => setScreen({ name: "rename-device", device })}
           onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}
-          scenes={scenes}
-          onRunScene={onRunScene}
-          onCreateScene={() => setScreen({ name: "create-scene" })}
-          onEditScene={(scene) => setScreen({ name: "create-scene", editingScene: scene })}
-          onRemoveScene={onRemoveScene}
+          activities={activities.activities}
+          activityProgress={activities.progress}
+          activityHistory={activities.history}
+          onRunActivity={(activity) => (activities.progress ? activities.cancelRun() : activities.run(activity))}
+          onCreateActivity={() => setScreen({ name: "edit-activity" })}
+          onEditActivity={(activity) => setScreen({ name: "edit-activity", editingActivity: activity })}
+          onRemoveActivity={activities.removeActivity}
         />
       )}
     </View>
