@@ -18,6 +18,7 @@ import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
 import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
+import { useNameSuggestion } from "./useNameSuggestion";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
@@ -70,6 +71,8 @@ interface DeviceListScreenProps {
   onTeachCommands: (device: Device) => void;
   /** Opens the wake checklist and guided wake test for an existing device (ADR-HEARTH-154). */
   onSetupChecks: (device: Device) => void;
+  /** ADR-HEARTH-156: applies the name the device itself reports. */
+  onUseDeviceName: (device: Device, name: string) => void;
   /** Activities (ADR-HEARTH-150, formerly Scenes/ADR-HEARTH-056): household multi-step macros — a horizontal row of chips
    * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
    * for vertical space on the home screen, the same "one screen" pressure every other layout
@@ -129,6 +132,7 @@ export function DeviceListScreen({
   onRename,
   onTeachCommands,
   onSetupChecks,
+  onUseDeviceName,
   activities,
   activityProgress,
   activityHistory,
@@ -147,6 +151,7 @@ export function DeviceListScreen({
   const [actionsTarget, setActionsTarget] = useState<Device | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
   const nowPlaying = useNowPlaying(devices, stateStore);
+  const nameSuggestion = useNameSuggestion(actionsTarget, stateStore);
 
   function showActivityActions(activity: Activity) {
     Alert.alert(activity.name, undefined, [
@@ -364,6 +369,18 @@ export function DeviceListScreen({
                 >
                   <Text style={styles.modalOptionLabel}>Rename</Text>
                 </Pressable>
+                {nameSuggestion && (
+                  <Pressable
+                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
+                    onPress={() => {
+                      const device = actionsTarget;
+                      setActionsTarget(null);
+                      onUseDeviceName(device, nameSuggestion);
+                    }}
+                  >
+                    <Text style={styles.modalOptionLabel}>{`Use the name set on the device: "${nameSuggestion}"`}</Text>
+                  </Pressable>
+                )}
                 {typeof actionsTarget.config?.ipAddress === "string" && (
                   <Pressable
                     style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}

@@ -140,3 +140,47 @@ describe("broadlink", () => {
     expect(outcome.kind === "added" && outcome.device.capabilities).toEqual([]);
   });
 });
+
+describe("connectBrandDevice identity (ADR-HEARTH-156)", () => {
+  const identity = { brand: "roku", model: "Ultra 4800", name: "Living Room Roku", uuid: "U-1", serial: "S-1", mac: "aa:bb:cc:dd:ee:ff", evidence: [] };
+
+  test("names the device from the Pi's answer and stores uuid, serial, model and a missing MAC", async () => {
+    const { driver } = fakeDriver();
+    const recordNameSource = jest.fn();
+    const deps = makeDeps(driver, { identify: async () => identity, recordNameSource });
+    const outcome = await connectBrandDevice(deps, getBrand("roku"), { id: "r1", ipAddress: "192.168.1.9" });
+    if (outcome.kind !== "added") throw new Error("expected added");
+    expect(outcome.device).toMatchObject({ name: "Living Room Roku", model: "Ultra 4800", config: { uuid: "U-1", serial: "S-1", hwaddr: "aa:bb:cc:dd:ee:ff" } });
+    expect(recordNameSource).toHaveBeenCalledWith("r1", "device");
+  });
+
+  test("a typed name always wins and is recorded as user-named", async () => {
+    const { driver } = fakeDriver();
+    const recordNameSource = jest.fn();
+    const deps = makeDeps(driver, { identify: async () => identity, recordNameSource });
+    const outcome = await connectBrandDevice(deps, getBrand("roku"), { id: "r1", ipAddress: "192.168.1.9", name: "Dad's Roku" });
+    expect(outcome.kind === "added" && outcome.device.name).toBe("Dad's Roku");
+    expect(recordNameSource).toHaveBeenCalledWith("r1", "user");
+  });
+
+  test("the driver's own reported name feeds the same resolver and beats the hostname", async () => {
+    const { driver } = fakeDriver();
+    const deps = makeDeps(driver, { readReportedName: () => "Kitchen Roku" });
+    const outcome = await connectBrandDevice(deps, getBrand("roku"), { ...TARGET, hints: { hostname: "Roku-Ultra-XX" } });
+    expect(outcome.kind === "added" && outcome.device.name).toBe("Kitchen Roku");
+  });
+
+  test("falls back to the cleaned hostname, then the brand default, when nothing is reported", async () => {
+    const { driver } = fakeDriver();
+    const withHostname = await connectBrandDevice(makeDeps(driver), getBrand("lg"), { ...TARGET, hints: { hostname: "LGwebOSTV.lan" } });
+    expect(withHostname.kind === "added" && withHostname.device.name).toBe("LG TV");
+    const bare = await connectBrandDevice(makeDeps(driver), getBrand("roku"), TARGET);
+    expect(bare.kind === "added" && bare.device.name).toBe("Roku");
+  });
+
+  test("a failed identify never blocks the add", async () => {
+    const { driver } = fakeDriver();
+    const outcome = await connectBrandDevice(makeDeps(driver, { identify: () => Promise.reject(new Error("pi down")) }), getBrand("roku"), TARGET);
+    expect(outcome.kind).toBe("added");
+  });
+});

@@ -15,6 +15,9 @@ import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
+import { findDuplicateDevice } from "./src/discovery/deviceIdentityMatch";
+import { NameSourceKind } from "./src/discovery/deviceIdentity";
+import { setNameSource } from "./src/discovery/deviceNameSource";
 import { findMacByIp } from "./src/discovery/familyCommandCenterDeviceLookup";
 import { applyDownloadedUpdateAsync, checkAndDownloadUpdateAsync } from "./src/runtime/appUpdates";
 import { Device } from "./src/core/types/Device";
@@ -251,12 +254,8 @@ export default function App() {
   // navigation after an add is each tab's own concern (DevicesTabScreen opens the remote screen;
   // FeederTabScreen has nothing to navigate to, it just re-renders once the feeder device exists).
   function handleDeviceAdded(device: Device): Device {
-    const hwaddr = typeof device.config?.hwaddr === "string" ? device.config.hwaddr : undefined;
-    const duplicate = hwaddr
-      ? runtime.deviceRegistry
-          .list()
-          .find((d) => d.id !== device.id && typeof d.config?.hwaddr === "string" && d.config.hwaddr.toLowerCase() === hwaddr.toLowerCase())
-      : undefined;
+    // ADR-HEARTH-156: matches on MAC, UUID or serial, not just MAC.
+    const duplicate = findDuplicateDevice(device, runtime.deviceRegistry.list());
     // ADR-HEARTH-140: a device added on this phone stays private until its Share switch is turned on.
     const withShareFlag: Device = device.shared === undefined ? { ...device, shared: false } : device;
     const toStore: Device = duplicate ? { ...withShareFlag, id: duplicate.id, name: duplicate.name, roomId: duplicate.roomId, shared: duplicate.shared } : withShareFlag;
@@ -287,7 +286,8 @@ export default function App() {
   // ADR-HEARTH-104: returns the updated device instead of touching screen state itself — the
   // Devices tab (the only caller that needs to keep an open remote screen's header in sync) does
   // that with the returned value; the Feeder tab has no equivalent screen to sync.
-  async function handleRenameDevice(device: Device, newName: string): Promise<Device> {
+  async function handleRenameDevice(device: Device, newName: string, source: NameSourceKind = "user"): Promise<Device> {
+    void setNameSource(device.id, source); // ADR-HEARTH-156: a name typed in Hearth is never auto-suggested over
     const updated: Device = { ...device, name: newName };
     if (typeof updated.config?.hwaddr !== "string" && typeof updated.config?.ipAddress === "string") {
       const hwaddr = await findMacByIp(updated.config.ipAddress);

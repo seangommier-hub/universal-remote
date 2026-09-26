@@ -1,4 +1,4 @@
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "./familyCommandCenterDeviceLookup";
+import { findCurrentIpByIdentity, findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "./familyCommandCenterDeviceLookup";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 jest.mock("./familyCommandCenterConfig");
@@ -132,5 +132,36 @@ describe("findCurrentIpByName", () => {
     mockLoadConfig.mockResolvedValue(null);
 
     expect(await findCurrentIpByName("LGwebOSTV.lan")).toBeUndefined();
+  });
+});
+
+describe("findCurrentIpByIdentity (ADR-HEARTH-156)", () => {
+  const inventory = {
+    ok: true,
+    json: async () => ({
+      devices: [
+        { hwaddr: "aa:bb:cc:dd:ee:01", ip: "192.168.1.50", name: "Den TV", uuid: null },
+        { hwaddr: "aa:bb:cc:dd:ee:02", ip: "192.168.1.61", name: "lgwebostv", uuid: "UUID-7" },
+      ],
+    }),
+  };
+
+  beforeEach(() => {
+    mockLoadConfig.mockReset();
+    mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "t" });
+    global.fetch = jest.fn().mockResolvedValue(inventory);
+  });
+
+  test("uses the MAC when there is one", async () => {
+    expect(await findCurrentIpByIdentity({ hwaddr: "AA:BB:CC:DD:EE:01", uuid: "UUID-7" }, "x")).toBe("192.168.1.50");
+  });
+
+  test("falls back to the UUID when there is no MAC", async () => {
+    expect(await findCurrentIpByIdentity({ uuid: "uuid-7" }, "x")).toBe("192.168.1.61");
+  });
+
+  test("falls back to the saved name when there is neither, or the UUID is unknown", async () => {
+    expect(await findCurrentIpByIdentity({}, "Den TV")).toBe("192.168.1.50");
+    expect(await findCurrentIpByIdentity({ uuid: "nope" }, "Den TV")).toBe("192.168.1.50");
   });
 });

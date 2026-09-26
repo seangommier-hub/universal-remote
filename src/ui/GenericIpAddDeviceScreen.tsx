@@ -6,8 +6,11 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { AddFlowFailedError, AddFlowNeedsFccError, connectBrandDeviceOrThrow } from "../discovery/addDeviceFlow";
 import { BrandEntry } from "../discovery/brandRegistry";
+import { setNameSource } from "../discovery/deviceNameSource";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { PairingPrompt, pairingPromptFor } from "../discovery/pairingCopy";
+import { NameSourceKind } from "../discovery/deviceIdentity";
+import { identifyDeviceByIp } from "../discovery/identifyDevice";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
@@ -16,6 +19,7 @@ import { FCC_REQUIRED_MESSAGE } from "./DiscoveredDeviceRow";
 import { PairingProgressCard } from "./PairingProgressCard";
 import { theme } from "./theme";
 import { usePairingSession } from "./usePairingSession";
+import { useIdentifiedName } from "./useIdentifiedName";
 
 interface GenericIpAddDeviceScreenProps {
   brand: BrandEntry;
@@ -37,8 +41,9 @@ function promptForBrand(brand: BrandEntry): PairingPrompt {
 /** The add screen for every brand whose only input is an IP address (ADR-HEARTH-148); connecting runs through the shared time-boxed pairing card (ADR-HEARTH-155). */
 export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAdded, initialIpAddress, onOpenFccSetup }: GenericIpAddDeviceScreenProps) {
   const insets = useSafeAreaInsets();
-  const [name, setName] = useState(brand.defaultName);
+  const [name, setName] = useState("");
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
+  const identified = useIdentifiedName(ipAddress, brand.id);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const pairing = usePairingSession();
   const guide = setupGuideForBrand(brand.id);
@@ -47,10 +52,16 @@ export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAd
   if (showSetupGuide && guide) return <DeviceSetupGuideScreen guide={guide} onDone={() => setShowSetupGuide(false)} />;
 
   function handleConnect() {
-    const dependencies = { driverRegistry, readReportedName: () => undefined, hasFccConfig: async () => (await loadFamilyCommandCenterConfig()) !== null };
+    const dependencies = {
+      driverRegistry,
+      readReportedName: () => undefined,
+      hasFccConfig: async () => (await loadFamilyCommandCenterConfig()) !== null,
+      identify: identifyDeviceByIp,
+      recordNameSource: (id: string, source: NameSourceKind) => void setNameSource(id, source),
+    };
     pairing.start<Device>({
       totalMs: prompt.timeoutMs,
-      run: () => connectBrandDeviceOrThrow(dependencies, brand, { id: `${brand.id}-${Date.now()}`, ipAddress: ipAddress.trim(), name }),
+      run: () => connectBrandDeviceOrThrow(dependencies, brand, { id: `${brand.id}-${Date.now()}`, ipAddress: ipAddress.trim(), name: name.trim() || undefined }),
       onDone: onAdded,
       discard: (device) => driverRegistry.get(brand.driverId)?.disconnect(device).catch(() => {}),
     });
@@ -78,7 +89,7 @@ export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAd
         {guide && <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />}
 
         <Text style={styles.label}>Name</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={brand.defaultName} placeholderTextColor={theme.textTertiary} editable={!busy} accessibilityLabel="Device name" />
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={identified.name ?? brand.defaultName} placeholderTextColor={theme.textTertiary} editable={!busy} accessibilityLabel="Device name" />
 
         <Text style={styles.label}>IP address</Text>
         <TextInput

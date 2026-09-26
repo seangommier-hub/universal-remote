@@ -15,6 +15,8 @@ interface LanDevice {
   hwaddr: string;
   ip: string;
   name: string | null;
+  /** Present when the Pi learned the device's self-reported UUID (ADR-HEARTH-156). */
+  uuid?: string | null;
 }
 
 async function fetchLanDevices(): Promise<LanDevice[] | undefined> {
@@ -74,4 +76,17 @@ export async function findMacByIp(ip: string): Promise<string | undefined> {
 export async function findCurrentIpByName(name: string): Promise<string | undefined> {
   const devices = await fetchLanDevices();
   return devices?.find((device) => device.name?.toLowerCase() === name.toLowerCase())?.ip;
+}
+
+/** Looks up a device's current IP by the UUID it reported about itself (ADR-HEARTH-156); undefined when unknown. */
+export async function findCurrentIpByUuid(uuid: string): Promise<string | undefined> {
+  const devices = await fetchLanDevices();
+  return devices?.find((device) => device.uuid?.toLowerCase() === uuid.toLowerCase())?.ip;
+}
+
+/** Re-locates a device after an IP change by the best identity it has: MAC, then UUID, then saved name (ADR-HEARTH-156). */
+export async function findCurrentIpByIdentity(config: Record<string, unknown> | undefined, name: string): Promise<string | undefined> {
+  if (typeof config?.hwaddr === "string") return findCurrentIpByMac(config.hwaddr);
+  if (typeof config?.uuid === "string") return (await findCurrentIpByUuid(config.uuid)) ?? findCurrentIpByName(name);
+  return findCurrentIpByName(name);
 }
