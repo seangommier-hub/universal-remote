@@ -1017,6 +1017,7 @@ describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
   test("connects on the third fast attempt once the TV answers, then stops retrying", async () => {
     await driver.executeCommand(offDevice, powerOn);
     expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(true);
 
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
     await failLatestAttempt();
@@ -1027,6 +1028,7 @@ describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
     await answerLatestAttempt();
     expect((await driver.getState(offDevice)).connection).toBe("connected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
 
     const socketsWhenConnected = MockWebSocket.instances.length;
     expect(socketsWhenConnected).toBe(3);
@@ -1042,6 +1044,7 @@ describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
     }
     expect(MockWebSocket.instances.length).toBe(burstAttempts);
     expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
 
     // The normal backoff (2s first step) owns retrying now: nothing in the first second, one attempt after it.
     await jest.advanceTimersByTimeAsync(1000);
@@ -1054,7 +1057,9 @@ describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
     await driver.executeCommand(offDevice, powerOn);
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
     await failLatestAttempt();
+    expect((await driver.getState(offDevice)).values.waking).toBe(true);
     await driver.disconnect(offDevice);
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
 
     await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
     expect(MockWebSocket.instances.length).toBe(1);

@@ -9,7 +9,7 @@ import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
-import { WakeBurstController } from "../../shared/wakeBurst";
+import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "SonyBraviaDriver";
 const VOLUME_STEP = 2;
@@ -137,7 +137,7 @@ export class SonyBraviaDriver implements DeviceDriver {
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
   // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
-  private wakeBursts = new WakeBurstController();
+  private wakeBursts = new WakeBurstController((deviceId, active) => this.setState(deviceId, withWaking(this.states.get(deviceId), active)));
   // Real-hardware finding (2026-09-09): a scheduled reconnect's refreshState() can still be
   // in flight when disconnect() runs (e.g. the user removes the device mid-retry) — clearing
   // the timer only stops a retry that hasn't *started* yet, not one already awaiting a response.

@@ -67,4 +67,18 @@ describe("WakeBurstController", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
   });
+  it("reports activity true on start and false on answer, exhaustion and stop", async () => {
+    const changes: Array<[string, boolean]> = [];
+    const burst = new WakeBurstController((id, active) => changes.push([id, active]));
+
+    burst.start("a", jest.fn().mockResolvedValue(undefined), jest.fn(), INTERVAL, WINDOW);
+    await jest.advanceTimersByTimeAsync(INTERVAL);
+    burst.start("b", jest.fn().mockRejectedValue(new Error("down")), jest.fn(), INTERVAL, WINDOW);
+    await jest.advanceTimersByTimeAsync(WINDOW * 2);
+    burst.start("c", jest.fn().mockRejectedValue(new Error("down")), jest.fn(), INTERVAL, WINDOW);
+    burst.stop("c");
+    burst.stop("c");
+
+    expect(changes).toEqual([["a", true], ["a", false], ["b", true], ["b", false], ["c", true], ["c", false]]);
+  });
 });

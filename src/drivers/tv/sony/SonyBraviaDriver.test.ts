@@ -375,6 +375,7 @@ describe("SonyBraviaDriver reconnect burst after Wake-on-LAN", () => {
   test("connects on the third fast attempt once the TV answers, then stops retrying", async () => {
     await driver.executeCommand(offDevice, powerCommand);
     expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(true);
 
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
@@ -384,6 +385,7 @@ describe("SonyBraviaDriver reconnect burst after Wake-on-LAN", () => {
     resetRelayNecessityCacheForTests(); // a failed direct call marks the address relay-only for the session; a real reboot is not modelled by that memory
     await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
     expect((await driver.getState(offDevice)).connection).toBe("connected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
 
     const callsWhenConnected = powerStatusCalls();
     await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
@@ -397,6 +399,7 @@ describe("SonyBraviaDriver reconnect burst after Wake-on-LAN", () => {
     await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS);
     expect(powerStatusCalls()).toBe(callsAfterWake + burstAttempts);
     expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
 
     await jest.advanceTimersByTimeAsync(1000);
     expect(powerStatusCalls()).toBe(callsAfterWake + burstAttempts);

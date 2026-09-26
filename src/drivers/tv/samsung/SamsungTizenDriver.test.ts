@@ -119,6 +119,16 @@ describe("SamsungTizenDriver", () => {
     expect(result.state?.lastAction).toBe("power");
   });
 
+  test("power without a live connection marks the device as waking until it is disconnected (ADR-HEARTH-164)", async () => {
+    const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.60", hwaddr: "AA:BB:CC:DD:EE:FF" } };
+
+    await driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "power" });
+    expect((await driver.getState(offDevice)).values.waking).toBe(true);
+
+    await driver.disconnect(offDevice);
+    expect((await driver.getState(offDevice)).values.waking).toBe(false);
+  });
+
   test("power without a live connection and no known MAC fails clearly rather than silently no-opping", async () => {
     const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.60" } };
     mockLoadConfig.mockResolvedValue(null); // Family Command Center unconfigured -- findMacByIp can't fall back either

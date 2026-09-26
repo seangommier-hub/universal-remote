@@ -10,7 +10,7 @@ import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyC
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 import { withBackoffJitter } from "../../shared/backoffJitter";
-import { WakeBurstController } from "../../shared/wakeBurst";
+import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "LgWebOsDriver";
 // A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
@@ -160,7 +160,7 @@ export class LgWebOsDriver implements DeviceDriver {
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
   // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
-  private wakeBursts = new WakeBurstController();
+  private wakeBursts = new WakeBurstController((deviceId, active) => this.setState(deviceId, withWaking(this.states.get(deviceId), active)));
   // Real-hardware finding (2026-09-09), traced during a same-night review (not yet reproduced
   // live, but the sequence is concrete): connect() can now be triggered from several independent
   // places (startup, AppState foreground resume, opening the remote screen, a scheduled

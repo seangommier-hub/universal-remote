@@ -20,7 +20,7 @@ export function DeviceConnectionStatus({ stateStore, deviceId }: { stateStore: S
 
   const label = describeDeviceStatus({
     connection: state.connection,
-    wakeBurstActive: false,
+    wakeBurstActive: state.values.waking === true,
     connectivityMode,
     fccReachable: connectivityMode === "unknown" ? undefined : true,
     secondsSinceLastSeen: Math.max(0, Math.round((Date.now() - state.lastUpdated) / MS_PER_SECOND)),

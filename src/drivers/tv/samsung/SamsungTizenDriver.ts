@@ -9,7 +9,7 @@ import { logger } from "../../../core/logging/logger";
 import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
-import { WakeBurstController } from "../../shared/wakeBurst";
+import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -133,7 +133,7 @@ export class SamsungTizenDriver implements DeviceDriver {
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
   // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
-  private wakeBursts = new WakeBurstController();
+  private wakeBursts = new WakeBurstController((deviceId, active) => this.setState(deviceId, withWaking(this.states.get(deviceId), active)));
   // See LgWebOsDriver.ts's identical generation-counter comment — same race (multiple
   // independent connect() call sites for one device; a stale or superseded attempt could
   // otherwise resurrect state or kill a healthy newer connection) applies equally here.

@@ -480,7 +480,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const statusLine = describeDeviceStatus({
     connection: state.connection,
     knownPower,
-    wakeBurstActive: false,
+    wakeBurstActive: state.values.waking === true,
     lastError: reconnectError || undefined,
     connectivityMode,
     fccReachable: connectivityMode === "unknown" ? undefined : true,
