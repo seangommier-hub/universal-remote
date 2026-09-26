@@ -19,6 +19,8 @@ import { BroadlinkIrDriver } from "../drivers/irHub/broadlink/BroadlinkIrDriver"
 import { SquirrelFeederDriver } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { AppleTvDriver } from "../drivers/tv/appletv/AppleTvDriver";
 import { SwitchBotVacuumDriver } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
+import { isDemoMode } from "../demo/demoMode";
+import { swapInDemoDrivers } from "../demo/demoRuntime";
 
 export interface HearthRuntime {
   deviceRegistry: DeviceRegistry;
@@ -55,6 +57,8 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new SquirrelFeederDriver());
   driverRegistry.register(new AppleTvDriver());
   driverRegistry.register(new SwitchBotVacuumDriver());
+
+  if (isDemoMode()) swapInDemoDrivers(driverRegistry);
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
 

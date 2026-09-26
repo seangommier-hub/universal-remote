@@ -22,9 +22,10 @@ import { ActivityEditorScreen } from "./ActivityEditorScreen";
 import { PostAddResult, PostAddScreen } from "./PostAddScreen";
 import type { useActivities } from "./useActivities";
 import { isShared } from "../runtime/sharedDevices";
+import { demoStartingScreen } from "../demo/demoScreenRoute";
 import { theme } from "./theme";
 
-type Screen =
+export type DevicesScreen =
   | { name: "list" }
   | { name: "remote"; device: Device }
   | { name: "post-add"; device: Device; mode: "post-add" | "setup-checks" }
@@ -77,7 +78,7 @@ export function DevicesTabScreen({
   onDeviceUpdatedInPlace,
   onRemoveDevice,
 }: DevicesTabScreenProps) {
-  const [screen, setScreen] = useState<Screen>({ name: "list" });
+  const [screen, setScreen] = useState<DevicesScreen>(() => demoStartingScreen(devices) ?? { name: "list" });
   // Real gap found live (2026-09-21): the header's "Connect Family Command Center" button always
   // opened the QR-scan screen, meant for *first-time* pairing (a camera view + a "manual entry"
   // text link buried inside it) -- the only way this app ever exposed the settings screen at all.

@@ -918,7 +918,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
           because neither has a confirmed equivalent, not because this row forgot them. */}
       {has(device, "launchApp") && (
-        <View style={styles.card}>
+        <View style={[styles.card, styles.compactCard]}>
           <View style={styles.streamingRow}>
             {STREAMING_APPS.map((app) => (
               <StreamingAppTile
@@ -949,7 +949,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       {/* Real-device ask (2026-09-10): "the inputs should be above the card above" — reordered
           ahead of the utility row (Mute/Back/Home/Menu/...) rather than after it. */}
       {has(device, "inputSelection") && (
-        <View style={styles.card}>
+        <View style={[styles.card, styles.compactCard]}>
           {/* Real-device ask (2026-09-10): "change the arrangement of the inputs to be fewer
               rows" — the old styles.row (plain flexWrap, no column count) let the number of
               buttons per row vary with each label's own width, so a TV reporting several inputs
@@ -1259,7 +1259,9 @@ const styles = StyleSheet.create({
   // is what actually controls the gap between it and the bottom of the scrollable content
   // (the ScrollView's own contentContainerStyle padding applies equally above the first card too,
   // not extra room specific to this one).
-  utilityCard: { paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm },
+  // ADR-HEARTH-157: measured 22px of overflow on the LG remote (4 inputs, iPhone 17 frame) - the "next levers" ADR-HEARTH-135 named: streaming/input card padding, plus the utility card bottom margin that the scroll content padding already covers.
+  compactCard: { padding: theme.spacing.sm },
+  utilityCard: { paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.lg },
   cardLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,

@@ -25,6 +25,10 @@ import { useActivities } from "./src/ui/useActivities";
 import { ActivityRunModal } from "./src/ui/ActivityRunModal";
 import { FeederTabScreen } from "./src/ui/FeederTabScreen";
 import { theme } from "./src/ui/theme";
+import { isDemoMode } from "./src/demo/demoMode";
+import { DemoGate } from "./src/demo/DemoGate";
+import { loadDemoDevices } from "./src/demo/demoRuntime";
+import { IphoneSafeAreaEmulation } from "./src/web/IphoneSafeAreaEmulation";
 
 const Tab = createBottomTabNavigator();
 
@@ -47,7 +51,7 @@ function saveDeviceQuietly(device: Device): void {
   });
 }
 
-export default function App() {
+function HearthApp() {
   const runtime = useMemo(() => createHearthRuntime(), []);
   const [ready, setReady] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -175,7 +179,7 @@ export default function App() {
       // instead of a silent permanent hang.
       let persisted: Device[] = [];
       try {
-        persisted = await loadDevices();
+        persisted = isDemoMode() ? loadDemoDevices() : await loadDevices();
         persisted.forEach((device) => {
           refreshCapabilities(device);
           runtime.deviceRegistry.add(device);
@@ -350,10 +354,12 @@ export default function App() {
   if (!ready) {
     return (
       <SafeAreaProvider>
-        <View style={styles.loading}>
-          <ActivityIndicator color={theme.accentEnd} size="large" />
-          <StatusBar style="light" />
-        </View>
+        <IphoneSafeAreaEmulation>
+          <View style={styles.loading}>
+            <ActivityIndicator color={theme.accentEnd} size="large" />
+            <StatusBar style="light" />
+          </View>
+        </IphoneSafeAreaEmulation>
       </SafeAreaProvider>
     );
   }
@@ -366,6 +372,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
+        <IphoneSafeAreaEmulation>
         <NavigationContainer>
           <Tab.Navigator
             screenOptions={{
@@ -416,8 +423,18 @@ export default function App() {
         </NavigationContainer>
         <ActivityRunModal lastRun={activities.lastRun} devices={devices} stateStore={runtime.stateStore} onRetryFailed={activities.retryFailed} onDismiss={activities.dismissRun} />
         <StatusBar style="light" />
+        </IphoneSafeAreaEmulation>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/** App root: the real app, held back in demo mode until demo storage is seeded (ADR-HEARTH-157). */
+export default function App() {
+  return (
+    <DemoGate>
+      <HearthApp />
+    </DemoGate>
   );
 }
 
