@@ -1,15 +1,14 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
-import { AddFlowDependencies, AddTarget, AddOutcome, connectBrandDevice } from "../discovery/addDeviceFlow";
+import { addTargetFor } from "../discovery/addAllRunner";
+import { AddOutcome, connectBrandDevice } from "../discovery/addDeviceFlow";
 import { BrandEntry, BrandField, BrandId, getBrand } from "../discovery/brandRegistry";
 import { NetworkDevice } from "../discovery/discoverAll";
 import { DiscoveryRow, reidentify } from "../discovery/discoveryRows";
-import { setNameSource } from "../discovery/deviceNameSource";
-import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
-import { identifyDeviceByIp } from "../discovery/identifyDevice";
+import { useAddFlowDeps } from "./useAddFlowDeps";
 
 /** What one row is currently showing besides its normal state. */
 export interface RowUiState {
@@ -33,11 +32,6 @@ interface Options {
   rescan: () => Promise<NetworkDevice[]>;
 }
 
-function hintsFromRow(row: DiscoveryRow): NonNullable<AddTarget["hints"]> {
-  const { friendlyName, hostname, vendor, model } = row.device;
-  return { friendlyName, hostname, vendor, model };
-}
-
 /** Shared "one button per row" behaviour for the Discover screen and the home Suggested list (ADR-HEARTH-148). */
 export function useAddDiscoveredDevice(options: Options) {
   const { driverRegistry, stateStore, onAdded, onOpenBrandScreen, onIdentified, rescan } = options;
@@ -45,19 +39,7 @@ export function useAddDiscoveredDevice(options: Options) {
   const [chosenBrand, setChosenBrand] = useState<Record<string, BrandId>>({});
   const [pickerRow, setPickerRow] = useState<DiscoveryRow | null>(null);
 
-  const deps = useMemo<AddFlowDependencies>(
-    () => ({
-      driverRegistry,
-      readReportedName: (id) => {
-        const value = stateStore.get(id).values.deviceName;
-        return typeof value === "string" ? value : undefined;
-      },
-      hasFccConfig: async () => (await loadFamilyCommandCenterConfig()) !== null,
-      identify: identifyDeviceByIp,
-      recordNameSource: (id, source) => void setNameSource(id, source),
-    }),
-    [driverRegistry, stateStore]
-  );
+  const deps = useAddFlowDeps(driverRegistry, stateStore);
 
   const setUi = useCallback((id: string, next: Partial<RowUiState>) => {
     setUiById((current) => ({ ...current, [id]: { ...IDLE, ...next } }));
@@ -79,8 +61,7 @@ export function useAddDiscoveredDevice(options: Options) {
   const startAdd = useCallback(
     async (row: DiscoveryRow, brand: BrandEntry, fieldValues?: Record<string, string>) => {
       setUi(row.device.id, { busy: true });
-      const target = { id: row.device.id, ipAddress: row.device.ip, hwaddr: row.device.mac, fieldValues, hints: hintsFromRow(row) };
-      applyOutcome(row, brand, await connectBrandDevice(deps, brand, target));
+      applyOutcome(row, brand, await connectBrandDevice(deps, brand, addTargetFor(row, fieldValues)));
     },
     [applyOutcome, deps, setUi]
   );

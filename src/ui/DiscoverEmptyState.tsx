@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
+import { ACTION_LABEL, AdviceAction, adviceForEmptyScan } from "../discovery/discoverEmptyAdvice";
 import { DiscoverScreenState } from "../discovery/discoverySections";
 import { CapabilityButton } from "./CapabilityButton";
-import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { theme } from "./theme";
 
 const ICON_SIZE = 36;
@@ -13,47 +13,57 @@ export type EmptyKind = Exclude<DiscoverScreenState, "list">;
 interface DiscoverEmptyStateProps {
   kind: EmptyKind;
   failure: NetworkFailureDiagnosis | null;
+  /** Shown under the spinner while the first scan runs, e.g. "Scanning... " with a patience note. */
+  scanningText: string;
   onRetry: () => void;
+  /** Opens Family Command Center setup. */
   onOpenSettings: () => void;
+  /** Opens the phone's own Settings page for Hearth (Local Network permission lives there). */
+  onOpenPhoneSettings: () => void;
 }
 
-const COPY: Record<Exclude<EmptyKind, "scanning">, { icon: keyof typeof Ionicons.glyphMap; title: string; body: string | null }> = {
-  "all-added": { icon: "checkmark-circle-outline", title: "Nothing new found", body: "Your devices are all added." },
-  "none-found": { icon: "search-outline", title: "Nothing found right now", body: "Make sure your devices are on and this phone is on your home Wi-Fi." },
-  unreachable: { icon: "cloud-offline-outline", title: "Can't reach your home network", body: null },
-  "not-configured": { icon: "home-outline", title: "Set up Family Command Center first", body: "It scans your network so Hearth can find every device." },
-};
-
-/** The one calm message shown when there is no list: scanning, all added, nothing found, unreachable, or not set up. */
-export function DiscoverEmptyState({ kind, failure, onRetry, onOpenSettings }: DiscoverEmptyStateProps) {
+/** The one message shown when there is no list: it says why (permission, Wi-Fi, Pi) and puts a button on the likeliest fix (ADR-HEARTH-167). */
+export function DiscoverEmptyState({ kind, failure, scanningText, onRetry, onOpenSettings, onOpenPhoneSettings }: DiscoverEmptyStateProps) {
   if (kind === "scanning") {
     return (
       <View style={styles.centered} accessibilityRole="progressbar" accessibilityLabel="Scanning your network">
         <ActivityIndicator color={theme.accentEnd} size="large" />
-        <Text style={styles.body}>Scanning your network...</Text>
+        <Text style={styles.body}>{scanningText}</Text>
       </View>
     );
   }
-  const copy = COPY[kind];
+  const advice = adviceForEmptyScan(kind, failure);
+  const handlers: Record<AdviceAction, () => void> = { "open-phone-settings": onOpenPhoneSettings, "scan-again": onRetry, "setup-fcc": onOpenSettings };
   return (
-    <View style={styles.centered}>
-      <Ionicons name={copy.icon} size={ICON_SIZE} color={theme.textTertiary} />
+    <ScrollView contentContainerStyle={styles.centered}>
+      <Ionicons name={advice.icon} size={ICON_SIZE} color={theme.textTertiary} />
       <Text style={styles.title} accessibilityRole="header">
-        {copy.title}
+        {advice.title}
       </Text>
-      {copy.body && <Text style={styles.body}>{copy.body}</Text>}
-      {kind === "unreachable" && failure && <NetworkFailureNotice diagnosis={failure} />}
-      {kind === "not-configured" ? (
-        <CapabilityButton label="Set up Family Command Center" variant="accent" onPress={onOpenSettings} />
-      ) : (
-        <CapabilityButton label="Scan again" variant="accent" onPress={onRetry} />
+      {advice.body && <Text style={styles.body}>{advice.body}</Text>}
+      {advice.reasons.length > 0 && (
+        <View style={styles.reasons}>
+          {advice.reasons.map((reason) => (
+            <Text key={reason} style={styles.reason}>
+              {"•"} {reason}
+            </Text>
+          ))}
+        </View>
       )}
-    </View>
+      <View style={styles.actions}>
+        {advice.actions.map((action, index) => (
+          <CapabilityButton key={action} label={ACTION_LABEL[action]} variant={index === 0 ? "accent" : "ghost"} onPress={handlers[action]} />
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md, paddingVertical: theme.spacing.xxl },
+  centered: { flexGrow: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md, paddingVertical: theme.spacing.xxl },
   title: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", textAlign: "center" },
   body: { color: theme.textSecondary, fontSize: theme.type.label, textAlign: "center", paddingHorizontal: theme.spacing.xl },
+  reasons: { alignSelf: "stretch", gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md },
+  reason: { color: theme.textSecondary, fontSize: theme.type.label, lineHeight: 20 },
+  actions: { alignItems: "center", gap: theme.spacing.sm, marginTop: theme.spacing.sm },
 });

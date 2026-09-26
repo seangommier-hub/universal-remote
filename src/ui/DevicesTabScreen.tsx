@@ -228,6 +228,8 @@ export function DevicesTabScreen({
           devices={devices}
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleAdded}
+          onAddedQuietly={(device) => void onDeviceAdded(device)}
+          onScanQr={() => setScreen({ name: "fcc-scan" })}
           onOpenSettings={openFccSetup}
           onOpenBrandScreen={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
         />
@@ -236,6 +238,7 @@ export function DevicesTabScreen({
         <ScanFamilyCommandCenterQrScreen
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "discover" })}
+          onInvite={(invite) => setScreen({ name: "fcc-join", invite })}
           onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
         />
       )}

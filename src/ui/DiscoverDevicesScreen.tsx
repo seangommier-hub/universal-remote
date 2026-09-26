@@ -1,13 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Linking, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
+import { logger } from "../core/logging/logger";
+import { planAddAll, StepItem } from "../discovery/addAllPlan";
 import { BrandEntry, BrandId } from "../discovery/brandRegistry";
 import { DiscoveryRow } from "../discovery/discoveryRows";
 import { buildListItems, buildSections, formatScannedAgo, ListItem, pickScreenState, shouldShowSearch } from "../discovery/discoverySections";
+import { scanningText } from "../discovery/scanProgress";
+import { buildSupportRequest, SUPPORT_REQUEST_SUBJECT } from "../discovery/unsupportedReport";
+import { AddAllCard } from "./AddAllCard";
 import { BrandPickerModal } from "./BrandPickerModal";
 import { CapabilityButton } from "./CapabilityButton";
 import { DiscoverEmptyState } from "./DiscoverEmptyState";
@@ -16,6 +21,7 @@ import { DiscoveredDeviceRow } from "./DiscoveredDeviceRow";
 import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { RowActionsModal } from "./RowActionsModal";
 import { theme } from "./theme";
+import { useAddAll } from "./useAddAll";
 import { useAddDiscoveredDevice } from "./useAddDiscoveredDevice";
 import { useDeviceLabels } from "./useDeviceLabels";
 import { scanNetworkQuietly, useNetworkDevices } from "./useNetworkDevices";
@@ -27,13 +33,18 @@ interface DiscoverDevicesScreenProps {
   devices: Device[];
   onCancel: () => void;
   onAdded: (device: Device) => void;
+  /** Registers a device added by "Add all ready" without leaving this screen. */
+  onAddedQuietly: (device: Device) => void;
+  /** Opens the QR scanner (a household invite or a Family Command Center code). */
+  onScanQr: () => void;
   /** Opens Family Command Center pairing/settings — for brands that need it and for widening coverage. */
   onOpenSettings: () => void;
   /** Opens a brand's own multi-step add screen with the address prefilled (Hue, PS5, Apple TV). */
   onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
 }
 
-const CLOCK_TICK_MS = 5000;
+const CLOCK_TICK_MS = 1000;
+const LOG_SCOPE = "discover";
 const MIN_TARGET = 44;
 const SEARCH_ICON_SIZE = 18;
 
@@ -42,11 +53,12 @@ const SEARCH_ICON_SIZE = 18;
  * recognized-but-off next, everything unrecognized collapsed behind one row and grouped by kind,
  * anything the person hid under "Hidden". One primary button per row, the rest in an overflow menu.
  */
-export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onCancel, onAdded, onOpenSettings, onOpenBrandScreen }: DiscoverDevicesScreenProps) {
+export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onCancel, onAdded, onAddedQuietly, onScanQr, onOpenSettings, onOpenBrandScreen }: DiscoverDevicesScreenProps) {
   const insets = useSafeAreaInsets();
   const network = useNetworkDevices();
-  const { labels, setHidden, setBrand } = useDeviceLabels();
+  const { labels, setHidden, setBrand, markSupportRequested } = useDeviceLabels();
   const add = useAddDiscoveredDevice({ driverRegistry, stateStore, onAdded, onOpenBrandScreen, onIdentified: network.replaceDevice, rescan: scanNetworkQuietly });
+  const addAll = useAddAll({ driverRegistry, stateStore, onAddedQuietly });
   const [query, setQuery] = useState("");
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
@@ -59,6 +71,20 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onC
   const items = useMemo(() => buildListItems(sections, { otherExpanded, hiddenExpanded, searching }), [sections, otherExpanded, hiddenExpanded, searching]);
   const screenState = pickScreenState({ status: network.status, deviceCount: network.devices.length, sections, failure: network.failure, fccConfigured: network.fccConfigured });
   const isScanning = network.status === "scanning";
+  const plan = useMemo(() => (searching ? { auto: [], steps: [] } : planAddAll(sections.ready, network.fccConfigured === true)), [searching, sections.ready, network.fccConfigured]);
+  const scanText = scanningText({ foundCount: network.devices.length, elapsedMs: network.scanStartedAt === null ? 0 : now - network.scanStartedAt });
+
+  const requestSupport = (row: DiscoveryRow) => {
+    Share.share({ title: SUPPORT_REQUEST_SUBJECT, message: buildSupportRequest(row) })
+      .then((result) => {
+        if (result.action !== Share.dismissedAction) markSupportRequested(row.device);
+      })
+      .catch((error) => logger.warn(LOG_SCOPE, "Could not open the share sheet for a support request", { message: String(error) }));
+  };
+  const openPhoneSettings = () => {
+    Linking.openSettings().catch((error) => logger.warn(LOG_SCOPE, "Could not open the phone's Settings", { message: String(error) }));
+  };
+  const startStep = (item: StepItem) => add.press(item.row);
 
   const pickForIdentify = (brand: BrandEntry) => {
     if (add.pickerRow) setBrand(add.pickerRow.device, brand.id);
@@ -79,14 +105,17 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onC
     if (item.type === "no-match") return <NoMatchNotice />;
     return (
       <View style={styles.rowGap}>
-        <DiscoveredDeviceRow row={item.row} ui={add.uiFor(item.row.device.id)} onPrimary={add.press} onSubmitFields={add.submitFields} onOpenFccSetup={onOpenSettings} onMore={setActionsRow} />
+        <DiscoveredDeviceRow row={item.row} ui={add.uiFor(item.row.device.id)} onPrimary={add.press} onSubmitFields={add.submitFields} onOpenFccSetup={onOpenSettings} onMore={setActionsRow} onRequestSupport={requestSupport} />
       </View>
     );
   };
 
   const listHeader = (
     <View style={styles.listHeader}>
-      <ScanStatusLine scanning={isScanning} scannedAt={network.scannedAt} now={now} />
+      <ScanStatusLine scanning={isScanning} scanningText={scanText} scannedAt={network.scannedAt} now={now} onRescan={() => void network.rescan()} />
+      {plan.auto.length + plan.steps.length + (addAll.state.phase === "idle" ? 0 : 1) > 0 && (
+        <AddAllCard plan={plan} run={addAll.state} onAddAll={() => void addAll.start(plan.auto)} onDismissRun={addAll.dismiss} onStartStep={startStep} />
+      )}
       {shouldShowSearch(sections) || searching ? <SearchBox value={query} onChange={setQuery} /> : null}
       {network.failure && screenState === "list" ? <NetworkFailureNotice diagnosis={network.failure} /> : null}
     </View>
@@ -113,8 +142,13 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onC
           keyboardShouldPersistTaps="handled"
         />
       ) : (
-        <DiscoverEmptyState kind={screenState} failure={network.failure} onRetry={() => void network.rescan()} onOpenSettings={onOpenSettings} />
+        <DiscoverEmptyState kind={screenState} failure={network.failure} scanningText={scanText} onRetry={() => void network.rescan()} onOpenSettings={onOpenSettings} onOpenPhoneSettings={openPhoneSettings} />
       )}
+
+      <Pressable style={styles.qrLink} onPress={onScanQr} accessibilityRole="button" accessibilityLabel="Scan an invite or setup QR code">
+        <Ionicons name="qr-code-outline" size={SEARCH_ICON_SIZE} color={theme.accentEnd} />
+        <Text style={styles.qrLinkLabel}>Have a QR code or invite? Scan it</Text>
+      </Pressable>
 
       <RowActionsModal
         row={actionsRow}
@@ -138,13 +172,26 @@ function useClock(): number {
   return now;
 }
 
-function ScanStatusLine({ scanning, scannedAt, now }: { scanning: boolean; scannedAt: number | null; now: number }) {
-  const text = scanning ? "Scanning..." : formatScannedAgo(scannedAt, now);
+interface ScanStatusLineProps {
+  scanning: boolean;
+  scanningText: string;
+  scannedAt: number | null;
+  now: number;
+  onRescan: () => void;
+}
+
+function ScanStatusLine({ scanning, scanningText: liveText, scannedAt, now, onRescan }: ScanStatusLineProps) {
+  const text = scanning ? liveText : formatScannedAgo(scannedAt, now);
   return (
     <View style={styles.statusLine} accessibilityLiveRegion="polite">
       {scanning && <ActivityIndicator size="small" color={theme.accentEnd} />}
-      <Text style={styles.statusText}>{text}</Text>
-      {!scanning && <Text style={styles.statusHint}>Pull down to scan again</Text>}
+      <Text style={styles.statusText} numberOfLines={1}>{text}</Text>
+      {!scanning && (
+        <Pressable style={styles.rescan} onPress={onRescan} accessibilityRole="button" accessibilityLabel="Scan again" hitSlop={8}>
+          <Ionicons name="refresh" size={SEARCH_ICON_SIZE} color={theme.accentEnd} />
+          <Text style={styles.rescanLabel}>Scan again</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -176,8 +223,11 @@ const styles = StyleSheet.create({
   listHeader: { gap: theme.spacing.sm, marginBottom: theme.spacing.xs },
   rowGap: { marginBottom: theme.spacing.sm },
   statusLine: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, minHeight: theme.spacing.xl },
-  statusText: { color: theme.textSecondary, fontSize: theme.type.label },
-  statusHint: { color: theme.textTertiary, fontSize: theme.type.label },
+  statusText: { flexShrink: 1, color: theme.textSecondary, fontSize: theme.type.label },
+  rescan: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minHeight: MIN_TARGET, paddingLeft: theme.spacing.md },
+  rescanLabel: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "700" },
+  qrLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: theme.spacing.sm, minHeight: MIN_TARGET, marginBottom: theme.spacing.sm },
+  qrLinkLabel: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "600" },
   search: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, minHeight: MIN_TARGET, paddingHorizontal: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderSubtle },
   searchInput: { flex: 1, color: theme.textPrimary, fontSize: theme.type.body, minHeight: MIN_TARGET },
 });

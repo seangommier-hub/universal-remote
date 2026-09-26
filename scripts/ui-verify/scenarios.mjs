@@ -2,6 +2,9 @@
 // no-vertical-scroll assertion is enforced (only the remote pages are tuned to fit, ADR-HEARTH-135).
 
 const TAB_SETTLE_MS = 400;
+const ADD_ALL_MIDWAY_MS = 900;
+const ADD_ALL_FINISHED_MS = 3600;
+const SCROLL_STEP_PX = 700;
 
 export const SCENARIOS = [
   { name: "devices-home", screen: "list", assertFit: false },
@@ -27,6 +30,50 @@ export const SCENARIOS = [
   { name: "remote-samsung", screen: "remote:samsung", assertFit: true },
   { name: "remote-roku-offline", screen: "remote:roku", assertFit: false },
   { name: "discover", screen: "discover", assertFit: false, settleMs: 2500 },
+  {
+    name: "discover-add-all-running",
+    screen: "discover",
+    assertFit: false,
+    settleMs: 2500,
+    steps: async (page) => {
+      await page.getByText("Add all 4", { exact: true }).click();
+      await page.waitForTimeout(ADD_ALL_MIDWAY_MS);
+    },
+  },
+  {
+    name: "discover-add-all-done",
+    screen: "discover",
+    assertFit: false,
+    settleMs: 2500,
+    steps: async (page) => {
+      await page.getByText("Add all 4", { exact: true }).click();
+      await page.waitForTimeout(ADD_ALL_FINISHED_MS);
+    },
+  },
+  {
+    name: "discover-unrecognized",
+    screen: "discover",
+    assertFit: false,
+    settleMs: 2500,
+    steps: async (page) => {
+      await page.getByText(/other devices? — show/).first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+      await page.mouse.move(200, 500);
+      await page.mouse.wheel(0, SCROLL_STEP_PX);
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "brand-picker-search",
+    screen: "list",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Add a Device", { exact: true }).first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+      await page.getByLabel("Search brands").fill("sammsung");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "activity-editor", screen: "activity-editor", assertFit: false },
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
   { name: "post-add", screen: "post-add:lg", assertFit: false },
