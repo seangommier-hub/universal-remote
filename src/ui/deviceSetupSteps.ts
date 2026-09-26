@@ -1,3 +1,5 @@
+import { BrandId } from "../discovery/brandRegistry";
+
 /**
  * Step-by-step setup instructions for the brands whose Add flow needs real, required action on
  * the device itself before (or during) pairing — not just informational copy. Sean, directly
@@ -114,3 +116,18 @@ export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
     "Make sure the Xbox is fully plugged into power — power-on only works from standby, not a fully unplugged console.",
   ],
 };
+
+const SETUP_GUIDES_BY_BRAND: Partial<Record<BrandId, DeviceSetupGuide>> = {
+  sony: SONY_SETUP_GUIDE,
+  samsung: SAMSUNG_SETUP_GUIDE,
+  lg: LG_SETUP_GUIDE,
+  roku: ROKU_SETUP_GUIDE,
+  smartthings: SMARTTHINGS_SETUP_GUIDE,
+  kasa: KASA_SETUP_GUIDE,
+  xbox: XBOX_SETUP_GUIDE,
+};
+
+/** The "Setup This Device" guide for a brand, if it has one. */
+export function setupGuideForBrand(brand: BrandId): DeviceSetupGuide | undefined {
+  return SETUP_GUIDES_BY_BRAND[brand];
+}

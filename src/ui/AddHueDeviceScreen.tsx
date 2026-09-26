@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
-import { HueBridgeClient, HuePairingPendingError } from "../drivers/lighting/hue/HueBridgeClient";
+import { HueBridgeClient } from "../drivers/lighting/hue/HueBridgeClient";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
 import { findMacByIp } from "../discovery/familyCommandCenterDeviceLookup";
+import { HuePairingCancelledError, HUE_LINK_BUTTON_PROMPT, pairHueWithPolling } from "../discovery/huePairing";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -15,6 +16,8 @@ interface AddHueDeviceScreenProps {
   driverRegistry: DriverRegistry;
   onCancel: () => void;
   onAdded: (device: Device) => void;
+  /** Pre-fills the bridge address when reached from a discovered row (ADR-HEARTH-148). */
+  initialIpAddress?: string;
 }
 
 type Phase =
@@ -31,23 +34,34 @@ type Phase =
  * one bridge with many lights; Hearth models one `Device` per light, so pairing the bridge and
  * adding a light are two distinct steps here.
  */
-export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHueDeviceScreenProps) {
+export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddHueDeviceScreenProps) {
   const insets = useSafeAreaInsets();
-  const [bridgeIpAddress, setBridgeIpAddress] = useState("");
+  const [bridgeIpAddress, setBridgeIpAddress] = useState(initialIpAddress ?? "");
   const [phase, setPhase] = useState<Phase>({ name: "pairing" });
+
+  // ADR-HEARTH-148: pairing keeps polling until the link button is pressed; leaving the screen or
+  // tapping Cancel stops it.
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
 
   async function handlePair() {
     const client = new HueBridgeClient({ bridgeIpAddress: bridgeIpAddress.trim() });
     setPhase({ name: "pending-link-press" });
     try {
-      const username = await client.pair("hearth#mobile-app");
+      const username = await pairHueWithPolling({
+        pair: () => client.pair("hearth#mobile-app"),
+        onWaitingForButton: () => setPhase({ name: "pending-link-press" }),
+        isCancelled: () => cancelledRef.current,
+      });
       const lights = await client.listLights(username);
       setPhase({ name: "picking-light", username, lights });
     } catch (err) {
-      if (err instanceof HuePairingPendingError) {
-        setPhase({ name: "pairing" });
-        return;
-      }
+      if (err instanceof HuePairingCancelledError) return;
       setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });
     }
   }
@@ -117,7 +131,7 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHue
 
         {phase.name === "pending-link-press" && (
           <View style={styles.hintCard}>
-            <Text style={styles.hint}>Waiting for the bridge's link button to be pressed…</Text>
+            <Text style={styles.hint}>{HUE_LINK_BUTTON_PROMPT} — waiting…</Text>
           </View>
         )}
 
@@ -144,7 +158,15 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded }: AddHue
         )}
 
         <View style={styles.row}>
-          <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={phase.name === "connecting"} />
+          <CapabilityButton
+            label="Cancel"
+            variant="ghost"
+            onPress={() => {
+              cancelledRef.current = true;
+              onCancel();
+            }}
+            disabled={phase.name === "connecting"}
+          />
           {phase.name !== "picking-light" && (
             <CapabilityButton
               label={phase.name === "pending-link-press" ? "Pairing..." : "Pair"}

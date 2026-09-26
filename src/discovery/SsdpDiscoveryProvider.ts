@@ -39,13 +39,7 @@
 
 import dgram from "react-native-udp";
 import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/DiscoveryProvider";
-import { DeviceCategory } from "../core/types/Device";
-import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
-import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
-import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
-import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
-import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
-import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
+import { BrandId, getBrand } from "./brandRegistry";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 import { fccFetch } from "../core/network/fccRequest";
 
@@ -58,27 +52,19 @@ const SCAN_WINDOW_MS = (SEARCH_MX_SECONDS + 1) * 1000;
 
 interface SearchTarget {
   st: string;
-  manufacturer: string;
-  category: DeviceCategory;
-  driverId: string;
+  brandId: BrandId;
   // Only for the generic MediaRenderer target (Yamaha) — requires the response itself to also
   // mention the manufacturer, since the ST alone doesn't identify the brand.
   requireServerMatch?: RegExp;
 }
 
 const SEARCH_TARGETS: SearchTarget[] = [
-  { st: "roku:ecp", manufacturer: "Roku", category: "streaming", driverId: ROKU_ECP_DRIVER_ID },
-  { st: "urn:lge-com:service:webos-second-screen:1", manufacturer: "LG", category: "tv", driverId: LG_WEBOS_DRIVER_ID },
-  { st: "urn:samsung.com:device:RemoteControlReceiver:1", manufacturer: "Samsung", category: "tv", driverId: SAMSUNG_TIZEN_DRIVER_ID },
-  { st: "urn:schemas-sony-com:service:IRCC:1", manufacturer: "Sony", category: "tv", driverId: SONY_BRAVIA_DRIVER_ID },
-  {
-    st: "urn:schemas-upnp-org:device:MediaRenderer:1",
-    manufacturer: "Yamaha",
-    category: "tv",
-    driverId: YAMAHA_MUSICCAST_DRIVER_ID,
-    requireServerMatch: /yamaha/i,
-  },
-  { st: "urn:schemas-upnp-org:device:ZonePlayer:1", manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID },
+  { st: "roku:ecp", brandId: "roku" },
+  { st: "urn:lge-com:service:webos-second-screen:1", brandId: "lg" },
+  { st: "urn:samsung.com:device:RemoteControlReceiver:1", brandId: "samsung" },
+  { st: "urn:schemas-sony-com:service:IRCC:1", brandId: "sony" },
+  { st: "urn:schemas-upnp-org:device:MediaRenderer:1", brandId: "yamaha", requireServerMatch: /yamaha/i },
+  { st: "urn:schemas-upnp-org:device:ZonePlayer:1", brandId: "sonos" },
 ];
 
 /** Extracts one HTTP-style header value from a raw SSDP response ("KEY: value\r\n..."). Exported for direct unit testing. */
@@ -108,12 +94,13 @@ function classify(st: string | undefined, server: string): SearchTarget | undefi
 }
 
 function toDiscoveredDevice(target: SearchTarget, ipAddress: string): DiscoveredDevice {
+  const brand = getBrand(target.brandId);
   return {
-    id: `ssdp-${ipAddress}-${target.driverId}`,
-    name: `${target.manufacturer} (${ipAddress})`,
-    category: target.category,
-    manufacturer: target.manufacturer,
-    driverId: target.driverId,
+    id: `ssdp-${ipAddress}-${brand.driverId}`,
+    name: `${brand.manufacturer} (${ipAddress})`,
+    category: brand.category,
+    manufacturer: brand.manufacturer,
+    driverId: brand.driverId,
     metadata: { ipAddress },
   };
 }

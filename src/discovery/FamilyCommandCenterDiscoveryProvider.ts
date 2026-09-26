@@ -1,15 +1,8 @@
 import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/DiscoveryProvider";
 import { DeviceCategory } from "../core/types/Device";
-import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
-import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
-import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
-import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
-import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
-import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
-import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
-import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "../core/network/fccErrors";
 import { fccFetch, isFccTimeout } from "../core/network/fccRequest";
+import { matchBrandByText } from "./brandRegistry";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -44,53 +37,14 @@ interface LanDevice {
   category: string | null;
 }
 
-// Matched against BOTH the device's DHCP hostname and its MAC vendor string
-// -- this household's own data showed vendor was blank for some devices
-// whose hostname was still identifying (e.g. "SonyTV"), and vice versa.
-// Order matters only in that the first match wins; brands are distinct
-// enough in practice that this hasn't needed to.
-const BRAND_MATCHERS: { pattern: RegExp; manufacturer: string; category: DeviceCategory; driverId: string }[] = [
-  { pattern: /sony/i, manufacturer: "Sony", category: "tv", driverId: SONY_BRAVIA_DRIVER_ID },
-  { pattern: /samsung/i, manufacturer: "Samsung", category: "tv", driverId: SAMSUNG_TIZEN_DRIVER_ID },
-  { pattern: /\blg\b|webos/i, manufacturer: "LG", category: "tv", driverId: LG_WEBOS_DRIVER_ID },
-  { pattern: /roku/i, manufacturer: "Roku", category: "streaming", driverId: ROKU_ECP_DRIVER_ID },
-  { pattern: /yamaha/i, manufacturer: "Yamaha", category: "tv", driverId: YAMAHA_MUSICCAST_DRIVER_ID },
-  // Unlike Xbox/SmartThings above, KasaPlugDriver's connect() needs only config.ipAddress (see
-  // KasaPlugDriver.ts's requireConfig) -- exactly what this screen's "Connect" tile already
-  // builds from discovery data alone, so auto-matching is safe here the same way it is for every
-  // TV brand. "TP-Link"/"TP-LINK TECHNOLOGIES" is that vendor's real, standard MAC OUI string
-  // (unlike the other entries above, this one isn't yet confirmed against a live device on this
-  // specific household's network -- no Kasa plug has shown up in a real scan as of 2026-09-15) --
-  // a mismatch fails safe to "Unknown" with manual add still available, same as any brand here.
-  { pattern: /tp-?link|\bkasa\b/i, manufacturer: "TP-Link", category: "outlet", driverId: KASA_PLUG_DRIVER_ID },
-  // "Sonos, Inc." is that vendor's real, standard MAC OUI string; SonosDriver's connect() needs
-  // only config.ipAddress (SonosClient's local SOAP/UPnP surface has no auth), same "safe to
-  // auto-match" reasoning as every entry above except Xbox/SmartThings.
-  { pattern: /sonos/i, manufacturer: "Sonos", category: "audio", driverId: SONOS_DRIVER_ID },
-  // Denon/Marantz OUI vendor strings ("Denon", "D&M Holdings", "Marantz") plus a plain hostname
-  // match — DenonDriver's connect() needs only config.ipAddress (DenonClient's legacy
-  // formiPhoneApp surface has no auth), same "safe to auto-match" reasoning as every entry above
-  // except Xbox/SmartThings.
-  { pattern: /denon|marantz|d&m holdings/i, manufacturer: "Denon", category: "tv", driverId: DENON_DRIVER_ID },
-];
-
-// Real household data (2026-09-13): this household's own router DHCP hostnames literally contain
-// "XboxOne" — but XboxDriver is deliberately NOT added to BRAND_MATCHERS above. Every other entry
-// there drives this screen's "Connect" button, which builds config from discovery data alone
-// (ipAddress/hwaddr) and calls driver.connect() directly — for Xbox that config can never include
-// a Live ID (nothing on the network exposes it, see XboxDriver.ts), so connect() would always throw
-// a confusing "missing liveId" error the tile gives no way to fix. Left classified as "Unknown" —
-// which the ADR-HEARTH-062 "Add manually as..." link already handles correctly for every tile,
-// known brand or not, with the IP pre-filled into AddXboxDeviceScreen's own Live ID prompt. See
-// ADR-HEARTH-064.
+// ADR-HEARTH-148: brand matching (hostname + MAC vendor text) now lives in brandRegistry.ts, the
+// single source for every brand. Xbox is recognized there too: its row asks for the Live ID inline
+// instead of failing on a connect that can never succeed (superseding ADR-HEARTH-064's exclusion).
 
 function classify(device: LanDevice): { manufacturer: string; category: DeviceCategory; driverId: string } {
   const haystack = `${device.name ?? ""} ${device.vendor ?? ""}`;
-  for (const matcher of BRAND_MATCHERS) {
-    if (matcher.pattern.test(haystack)) {
-      return { manufacturer: matcher.manufacturer, category: matcher.category, driverId: matcher.driverId };
-    }
-  }
+  const brand = matchBrandByText(haystack);
+  if (brand) return { manufacturer: brand.manufacturer, category: brand.category, driverId: brand.driverId };
   // No recognized brand -- still surfaced (never silently dropped), just
   // with an empty driverId so the UI can show it as "seen on your network,
   // not yet supported" rather than pretending it doesn't exist.

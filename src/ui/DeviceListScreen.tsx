@@ -1,47 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps, useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ComponentProps, useEffect, useState } from "react";
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
-import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
-import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
-import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
 import { useConnectivityMode } from "./useConnectivityMode";
-import { scanAllProviders } from "../discovery/scanAllProviders";
+import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
+import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-export type AddableBrand = "sony" | "samsung" | "lg" | "roku" | "hue" | "smartthings" | "yamaha" | "xbox" | "kasa" | "sonos" | "ps5" | "denon" | "chromecast" | "broadlink" | "appletv" | "switchbot";
-
 type IconName = ComponentProps<typeof Ionicons>["name"];
-
-const ADD_DEVICE_OPTIONS: { brand: AddableBrand; label: string; icon: IconName }[] = [
-  { brand: "sony", label: "Sony TV", icon: "tv-outline" },
-  { brand: "samsung", label: "Samsung TV", icon: "tv-outline" },
-  { brand: "lg", label: "LG TV", icon: "tv-outline" },
-  { brand: "roku", label: "Roku", icon: "play-circle-outline" },
-  { brand: "yamaha", label: "Yamaha Receiver", icon: "musical-notes-outline" },
-  { brand: "hue", label: "Philips Hue", icon: "bulb-outline" },
-  { brand: "smartthings", label: "Sync from SmartThings", icon: "flash-outline" },
-  { brand: "xbox", label: "Xbox", icon: "game-controller-outline" },
-  { brand: "kasa", label: "TP-Link Kasa Plug", icon: "flash-outline" },
-  { brand: "sonos", label: "Sonos Speaker", icon: "musical-notes-outline" },
-  { brand: "ps5", label: "PS5", icon: "game-controller-outline" },
-  { brand: "denon", label: "Denon / Marantz", icon: "musical-notes-outline" },
-  { brand: "chromecast", label: "Chromecast", icon: "tv-outline" },
-  { brand: "broadlink", label: "IR/RF Hub (Broadlink)", icon: "radio-outline" },
-  { brand: "appletv", label: "Apple TV", icon: "tv-outline" },
-  { brand: "switchbot", label: "SwitchBot Robot Vacuum", icon: "hardware-chip-outline" },
-];
 
 const CATEGORY_ICON: Record<string, IconName> = {
   tv: "tv-outline",
@@ -52,57 +29,22 @@ const CATEGORY_ICON: Record<string, IconName> = {
   vacuum: "hardware-chip-outline",
 };
 
-// Mirrors DiscoverDevicesScreen.tsx's identical list — the brands with a real "manufacturer +
-// IP, no other credential" manual-add shape (Hue needs a separate bridge-IP device, SmartThings
-// is cloud-linked with no IP-based add, neither fits this "pick a brand for this one IP" flow;
-// PS5 is excluded too — its own credential comes from the PlayStation-App capture dance, not from
-// an IP alone, so pre-filling just the IP from a discovered-but-unrecognized row wouldn't help.
-// Apple TV is excluded for the identical reason — pairing needs an interactive on-screen PIN step,
-// not just an IP (see AddAppleTvDeviceScreen.tsx).
-// Broadlink fits cleanly — IP only, no pairing step at all (see AddBroadlinkHubScreen.tsx).
-const MANUAL_ADD_BRANDS: { brand: AddableBrand; label: string }[] = [
-  { brand: "sony", label: "Sony TV" },
-  { brand: "samsung", label: "Samsung TV" },
-  { brand: "lg", label: "LG TV" },
-  { brand: "roku", label: "Roku" },
-  { brand: "yamaha", label: "Yamaha Receiver" },
-  { brand: "xbox", label: "Xbox" },
-  { brand: "sonos", label: "Sonos Speaker" },
-  { brand: "denon", label: "Denon / Marantz" },
-  { brand: "chromecast", label: "Chromecast" },
-  { brand: "broadlink", label: "IR/RF Hub (Broadlink)" },
-];
-
-// ADR-HEARTH-094: which of the Family Command Center dashboard's own DEVICE_CATEGORIES
-// (device-labels.ts on the Pi) are worth suggesting even when Hearth can't auto-recognize the
-// brand. "computer"/"phone"/"other" are deliberately excluded — a household member explicitly
-// labeled those as NOT smart-home devices, and showing them here would be exactly the clutter
-// this whole feature exists to avoid.
-const HOUSEHOLD_PLAUSIBLE_CATEGORIES = ["tv", "smart_speaker", "smart_device"];
-
 interface DeviceListScreenProps {
   devices: Device[];
   /** Real gap found in review (2026-09-10), during a live "why is it not connecting" troubleshooting session: this screen never showed connection status at all — every device looked identical whether connected, disconnected, or mid-reconnect, so there was no way to tell at a glance whether something needed attention without tapping in and waiting out the full reconnect timeout. Each row now subscribes to its own live state. */
   stateStore: StateStore;
-  /** Needed to actually connect a "Suggested from your network" tile on tap (ADR-HEARTH-092) — the same driver lookup DiscoverDevicesScreen already uses for its own Connect buttons. */
+  /** Needed to connect a "Suggested from your network" row on tap (ADR-HEARTH-092/148). */
   driverRegistry: DriverRegistry;
   /** Drives the now-playing widget's back/playPause/home buttons (ADR-HEARTH-093). */
   commandEngine: CommandEngine;
   onSelect: (device: Device) => void;
-  onAddDevice: (brand: AddableBrand) => void;
-  /** ADR-HEARTH-094: opens a specific brand's manual-add form with its IP pre-filled — for a "Suggested" tile the household has labeled but Hearth can't auto-recognize the brand of, mirroring DiscoverDevicesScreen's identical onAddManually. */
-  onAddDeviceWithIp: (brand: AddableBrand, ipAddress: string) => void;
+  onAddDevice: (brand: BrandId) => void;
+  /** ADR-HEARTH-148: opens a brand's own multi-step add screen with the discovered address prefilled (Hue, PS5, Apple TV). */
+  onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
   /** A quick-add from the inline "Suggested from your network" section (ADR-HEARTH-092) — routed through the same handler as every other add path (App.tsx's handleDeviceAdded), so duplicate prevention and persistence work identically regardless of which screen the add started from. */
   onQuickAdd: (device: Device) => void;
   onDiscover: () => void;
-  /** Opens Family Command Center pairing (first-time setup) or its settings (already configured)
-   * directly from the home screen — previously only reachable by first triggering "Discover
-   * devices" and hitting its not-configured error state, three taps deep for what's meant to be a
-   * one-time setup step. Real gap found live (2026-09-21): once already configured, this used to
-   * still open the QR-scan pairing screen every time — camera-scanning to reach settings you
-   * already have isn't something a user would ever find on their own ("there is no settings
-   * there"). `fccConfigured` (below) lets the caller route straight to settings instead once
-   * there's something to edit. */
+  /** Opens Family Command Center pairing (first-time) or its settings (already configured) — also where a "requires Family Command Center" row sends the user. */
   onConnectFamilyCommandCenter: () => void;
   /** Whether Family Command Center is already configured — see `onConnectFamilyCommandCenter`'s own comment for why this changes the header button's destination, icon, and label. */
   fccConfigured: boolean;
@@ -123,10 +65,7 @@ interface DeviceListScreenProps {
   onRename: (device: Device) => void;
   /** Opens the "teach a button" flow for a Broadlink IR/RF hub device (see TeachBroadlinkCommandScreen.tsx) — offered from the same long-press menu, but only for that one driver, since every other device's capabilities come from a fixed protocol rather than something taught after the fact. */
   onTeachCommands: (device: Device) => void;
-  /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056) — a horizontal row of chips
-   * kept deliberately compact (not a full section/grid) so it doesn't compete with the device list
-   * for vertical space on the home screen, the same "one screen" pressure every other layout
-   * decision here has had to account for. */
+  /** Scenes: manually-triggered multi-device macros (ADR-HEARTH-056), kept as a compact chip row. */
   scenes: Scene[];
   onRunScene: (scene: Scene) => void;
   onCreateScene: () => void;
@@ -162,7 +101,7 @@ export function DeviceListScreen({
   commandEngine,
   onSelect,
   onAddDevice,
-  onAddDeviceWithIp,
+  onOpenBrandScreen,
   onQuickAdd,
   onDiscover,
   onConnectFamilyCommandCenter,
@@ -194,105 +133,12 @@ export function DeviceListScreen({
   const [showAddPicker, setShowAddPicker] = useState(false);
   const nowPlaying = useNowPlaying(devices, stateStore);
 
-  // "Suggested from your network" (ADR-HEARTH-092, expanded by ADR-HEARTH-094/095): runs BOTH
-  // SSDP (native, zero-Pi-dependency — ADR-HEARTH-095, Sean: "the pi5 and command center are a
-  // symbiotic supplement to Hearth," not something discovery should be gated behind) and Family
-  // Command Center concurrently via scanAllProviders, merged. A household with neither configured
-  // (no FCC set up, SSDP's multicast entitlement not yet granted on iOS) just sees no section at
-  // all, never an error, since this is a bonus convenience, not a required step. Shown here: a
-  // recognized brand (instant one-tap connect), OR an unrecognized device the household has
-  // already labeled on the FCC dashboard as a plausible smart-home category
-  // (HOUSEHOLD_PLAUSIBLE_CATEGORIES) — for those, "Add" opens the same brand-picker
-  // ADR-HEARTH-062 already established, since there's no driver to instant-connect with. Anything
-  // else (no recognized brand AND no plausible label) stays excluded — too uncertain to suggest
-  // without becoming noise — but remains visible, honestly labeled, through the full Discover
-  // screen's "Scan your network for more" link.
-  const [suggested, setSuggested] = useState<DiscoveredDevice[]>([]);
-  const [quickAddingId, setQuickAddingId] = useState<string | null>(null);
-  const [quickAddError, setQuickAddError] = useState<{ id: string; message: string } | null>(null);
-  const [manualAddTarget, setManualAddTarget] = useState<DiscoveredDevice | null>(null);
-
-  const knownHwaddrs = devices.map((d) => (typeof d.config?.hwaddr === "string" ? d.config.hwaddr.toLowerCase() : null)).filter((h): h is string => h !== null);
-  // Real bug found live (2026-09-19): every manual "Add Device" screen (AddLgDeviceScreen etc.)
-  // stores only `{ ipAddress }` in config, never `hwaddr` — that field is only ever populated by
-  // this screen's own handleQuickAdd below. A device paired through manual entry (the only path
-  // that currently works for LG, which needs Family Command Center's relay to connect at all) can
-  // never match the hwaddr-only check above, so it kept reappearing here as "suggested" forever
-  // even after being successfully added. IP is a weaker identity than hwaddr (it can change), but
-  // it's what every manual-add screen actually has, so it's a real fallback, not a guess.
-  const knownIps = devices.map((d) => (typeof d.config?.ipAddress === "string" ? d.config.ipAddress : null)).filter((ip): ip is string => ip !== null);
-
-  useEffect(() => {
-    let cancelled = false;
-    scanAllProviders([new SsdpDiscoveryProvider(), new FamilyCommandCenterDiscoveryProvider()]).then((found) => {
-      if (cancelled) return;
-      setSuggested(
-        found.filter((d) => {
-          const alreadyPaired = knownHwaddrs.includes(String(d.metadata?.hwaddr ?? "").toLowerCase());
-          if (alreadyPaired) return false;
-          const alreadyPairedByIp = knownIps.includes(String(d.metadata?.ipAddress ?? ""));
-          if (alreadyPairedByIp) return false;
-          const householdCategory = String(d.metadata?.householdCategory ?? "");
-          return d.driverId.length > 0 || HOUSEHOLD_PLAUSIBLE_CATEGORIES.includes(householdCategory);
-        })
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-scanning on every knownHwaddrs/
-    // knownIps identity change (a new array every render) would re-fire this on every keystroke elsewhere
-    // in the app; devices.length is a cheap enough proxy for "the paired list actually changed".
-  }, [devices.length]);
-
-  async function handleQuickAdd(discovered: DiscoveredDevice) {
-    const driver = driverRegistry.get(discovered.driverId);
-    if (!driver) return;
-    const ipAddress = discovered.metadata?.ipAddress;
-    const hwaddr = discovered.metadata?.hwaddr;
-    const device: Device = {
-      id: discovered.id,
-      name: discovered.name,
-      category: discovered.category,
-      manufacturer: discovered.manufacturer,
-      driverId: discovered.driverId,
-      capabilities: driver.getCapabilities(),
-      config: { ipAddress, hwaddr },
-    };
-    setQuickAddingId(discovered.id);
-    setQuickAddError(null);
-    try {
-      await driver.connect(device);
-      // Suggested name (ADR-HEARTH-085): prefer the device's own real, self-reported name over
-      // the generic DHCP hostname when a driver fetched one at connect time.
-      const suggestedName = stateStore.get(device.id).values.deviceName;
-      const named: Device = typeof suggestedName === "string" && suggestedName.trim() ? { ...device, name: suggestedName.trim() } : device;
-      setSuggested((current) => current.filter((d) => d.id !== discovered.id));
-      onQuickAdd(named);
-    } catch (err) {
-      setQuickAddError({ id: discovered.id, message: err instanceof Error ? err.message : String(err) });
-      driver.disconnect(device).catch(() => {});
-    } finally {
-      setQuickAddingId(null);
-    }
-  }
-
   function showSceneActions(scene: Scene) {
     Alert.alert(scene.name, undefined, [
       { text: "Cancel", style: "cancel" },
       { text: "Edit", onPress: () => onEditScene(scene) },
       { text: "Delete", style: "destructive", onPress: () => onRemoveScene(scene) },
     ]);
-  }
-
-  // ADR-HEARTH-094: mirrors DiscoverDevicesScreen.tsx's identical handlePickBrand — a labeled-but-
-  // unrecognized suggestion has no driverId to instant-connect with, so "Add" routes here instead,
-  // pre-filling the IP into whichever brand's own manual-add form the user picks.
-  function handlePickBrand(brand: AddableBrand) {
-    if (!manualAddTarget) return;
-    const ipAddress = String(manualAddTarget.metadata?.ipAddress ?? "");
-    setManualAddTarget(null);
-    onAddDeviceWithIp(brand, ipAddress);
   }
 
   function handleRemovePress(device: Device) {
@@ -434,54 +280,14 @@ export function DeviceListScreen({
         />
       )}
 
-      {/* ADR-HEARTH-092: runs silently in the background — nothing renders here at all for a
-          household that hasn't configured Family Command Center (ADR-HEARTH-089's opt-in choice),
-          or once every found device is already paired. */}
-      {suggested.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>Suggested From Your Network</Text>
-          <View style={styles.list}>
-            {suggested.map((item) => {
-              const isAdding = quickAddingId === item.id;
-              const isRecognized = item.driverId.length > 0;
-              return (
-                <View key={item.id} style={styles.card}>
-                  <View style={styles.cardIcon}>
-                    <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />
-                  </View>
-                  <View style={styles.cardBody}>
-                    <Text style={styles.deviceName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.deviceMeta} numberOfLines={1}>
-                      {item.manufacturer}
-                    </Text>
-                    {!isRecognized && (
-                      <Text style={styles.quickAddHint} numberOfLines={1}>
-                        Labeled on your network — pick a brand to add
-                      </Text>
-                    )}
-                    {quickAddError?.id === item.id && (
-                      <Text style={styles.quickAddError} numberOfLines={1}>
-                        Couldn't connect: {quickAddError.message}
-                      </Text>
-                    )}
-                  </View>
-                  <Pressable
-                    style={({ pressed }) => [styles.quickAddButton, pressed && styles.cardPressed]}
-                    onPress={() => (isRecognized ? handleQuickAdd(item) : setManualAddTarget(item))}
-                    disabled={isAdding}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${item.name}`}
-                  >
-                    {isAdding ? <ActivityIndicator color={theme.background} size="small" /> : <Text style={styles.quickAddLabel}>Add</Text>}
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        </>
-      )}
+      <SuggestedDevicesSection
+        driverRegistry={driverRegistry}
+        stateStore={stateStore}
+        devices={devices}
+        onAdded={onQuickAdd}
+        onOpenBrandScreen={onOpenBrandScreen}
+        onOpenFccSetup={onConnectFamilyCommandCenter}
+      />
 
       <Pressable
         style={({ pressed }) => [styles.addButton, pressed && styles.cardPressed]}
@@ -502,13 +308,13 @@ export function DeviceListScreen({
         <Pressable style={styles.modalBackdrop} onPress={() => setShowAddPicker(false)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Add a device</Text>
-            {ADD_DEVICE_OPTIONS.map((option) => (
+            {addPickerBrands().map((option) => (
               <Pressable
-                key={option.brand}
+                key={option.id}
                 style={({ pressed }) => [styles.modalOptionRow, pressed && styles.modalOptionPressed]}
                 onPress={() => {
                   setShowAddPicker(false);
-                  onAddDevice(option.brand);
+                  onAddDevice(option.id);
                 }}
               >
                 <Ionicons name={option.icon} size={18} color={theme.accentEnd} />
@@ -516,23 +322,6 @@ export function DeviceListScreen({
               </Pressable>
             ))}
             <Pressable style={styles.modalCancel} onPress={() => setShowAddPicker(false)}>
-              <Text style={styles.modalCancelLabel}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={manualAddTarget !== null} transparent animationType="fade" onRequestClose={() => setManualAddTarget(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setManualAddTarget(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Add {manualAddTarget?.name}</Text>
-            <Text style={styles.modalBody}>Pick the actual brand — the IP address shown for this device carries over.</Text>
-            {MANUAL_ADD_BRANDS.map(({ brand, label }) => (
-              <Pressable key={brand} style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]} onPress={() => handlePickBrand(brand)}>
-                <Text style={styles.modalOptionLabel}>{label}</Text>
-              </Pressable>
-            ))}
-            <Pressable style={styles.modalCancel} onPress={() => setManualAddTarget(null)}>
               <Text style={styles.modalCancelLabel}>Cancel</Text>
             </Pressable>
           </Pressable>
@@ -662,18 +451,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: theme.spacing.md,
   },
-  quickAddButton: {
-    backgroundColor: theme.accentEnd,
-    borderRadius: theme.radius.md,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
-    minWidth: 64,
-    alignItems: "center",
-  },
-  quickAddLabel: { color: theme.background, fontWeight: "600", fontSize: theme.type.label },
-  quickAddError: { color: theme.statusError, fontSize: theme.type.caption, marginTop: theme.spacing.xs },
-  quickAddHint: { color: theme.textTertiary, fontSize: theme.type.caption, marginTop: theme.spacing.xs, fontStyle: "italic" },
-  modalBody: { color: theme.textSecondary, fontSize: theme.type.label, marginBottom: theme.spacing.sm },
   modalOptionRow: {
     flexDirection: "row",
     alignItems: "center",
