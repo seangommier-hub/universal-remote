@@ -7,14 +7,18 @@ import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { SQUIRREL_FEEDER_DRIVER_ID } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
+import { LIFX_LIGHT_DRIVER_ID } from "../drivers/lighting/lifx/LifxLightDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { PS5_DRIVER_ID } from "../drivers/gaming/ps5/Ps5Driver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
 import { SAMSUNG_TIZEN_DRIVER_ID } from "../drivers/tv/samsung/SamsungTizenDriver";
+import { SHELLY_RELAY_DRIVER_ID } from "../drivers/outlet/shelly/ShellyRelayDriver";
 import { SMARTTHINGS_OUTLET_DRIVER_ID } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SWITCHBOT_VACUUM_DRIVER_ID } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
+import { VIZIO_SMARTCAST_DRIVER_ID } from "../drivers/tv/vizio/VizioSmartCastDriver";
+import { WIZ_LIGHT_DRIVER_ID } from "../drivers/lighting/wiz/WizLightDriver";
 import { XBOX_DRIVER_ID } from "../drivers/gaming/xbox/XboxDriver";
 import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 
@@ -39,7 +43,11 @@ export type BrandId =
   | "broadlink"
   | "feeder"
   | "smartthings"
-  | "switchbot";
+  | "switchbot"
+  | "vizio"
+  | "wiz"
+  | "lifx"
+  | "shelly";
 
 /** Kept for existing imports: every brand can be the target of an add flow. */
 export type AddableBrand = BrandId;
@@ -115,6 +123,10 @@ export const BRAND_REGISTRY: BrandEntry[] = [
     id: "lg", label: "LG TV", driverId: LG_WEBOS_DRIVER_ID, manufacturer: "LG", category: "tv", icon: "tv-outline", defaultName: "LG TV",
     needsFcc: true, hint: "Accept the Allow prompt on the TV within 30 seconds.", vendorPattern: /\blg\b|webos/i, inAddPicker: true,
   }),
+  {
+    id: "vizio", label: "Vizio TV", driverId: VIZIO_SMARTCAST_DRIVER_ID, manufacturer: "Vizio", category: "tv", icon: "tv-outline", defaultName: "Vizio TV",
+    addMode: "custom-screen", fields: [], needsFcc: true, needsIp: true, hint: "Pairs with a PIN shown on the TV; works through Family Command Center.", vendorPattern: /vizio/i, inAddPicker: true,
+  },
   ipOnly({
     id: "roku", label: "Roku", driverId: ROKU_ECP_DRIVER_ID, manufacturer: "Roku", category: "streaming", icon: "play-circle-outline", defaultName: "Roku",
     needsFcc: false, hint: "Works for Roku players and Roku TVs — no pairing.", vendorPattern: /roku/i, inAddPicker: true,
@@ -134,6 +146,10 @@ export const BRAND_REGISTRY: BrandEntry[] = [
   ipOnly({
     id: "kasa", label: "TP-Link Kasa Plug", driverId: KASA_PLUG_DRIVER_ID, manufacturer: "TP-Link", category: "outlet", icon: "flash-outline", defaultName: "Kasa Plug",
     needsFcc: false, hint: "Older Kasa firmware only — no pairing.", vendorPattern: /tp-?link|\bkasa\b/i, inAddPicker: true,
+  }),
+  ipOnly({
+    id: "shelly", label: "Shelly Relay", driverId: SHELLY_RELAY_DRIVER_ID, manufacturer: "Shelly", category: "outlet", icon: "flash-outline", defaultName: "Shelly Relay",
+    needsFcc: false, hint: "Shelly plugs and relays, first or newer generation — no pairing, but the Shelly's own login must be off.", vendorPattern: /shelly|allterco/i, inAddPicker: true,
   }),
   ipOnly({
     id: "chromecast", label: "Chromecast", driverId: CHROMECAST_DRIVER_ID, manufacturer: "Google", category: "streaming", icon: "tv-outline", defaultName: "Chromecast",
@@ -159,6 +175,14 @@ export const BRAND_REGISTRY: BrandEntry[] = [
     id: "appletv", label: "Apple TV", driverId: APPLE_TV_DRIVER_ID, manufacturer: "Apple", category: "streaming", icon: "tv-outline", defaultName: "Apple TV",
     addMode: "custom-screen", fields: [], needsFcc: true, needsIp: true, hint: "Pairs with a PIN shown on the TV.", vendorPattern: /apple ?tv/i, inAddPicker: true,
   },
+  ipOnly({
+    id: "wiz", label: "Wiz Bulb", driverId: WIZ_LIGHT_DRIVER_ID, manufacturer: "Wiz", category: "lighting", icon: "bulb-outline", defaultName: "Wiz light",
+    needsFcc: true, hint: "On, brightness and colour, through Family Command Center — no pairing.", vendorPattern: /wiz|wiz[-_][0-9a-f]{6}/i, inAddPicker: true,
+  }),
+  ipOnly({
+    id: "lifx", label: "LIFX Bulb", driverId: LIFX_LIGHT_DRIVER_ID, manufacturer: "LIFX", category: "lighting", icon: "bulb-outline", defaultName: "LIFX light",
+    needsFcc: true, hint: "On, brightness and colour, through Family Command Center — no pairing.", vendorPattern: /lifx/i, inAddPicker: true,
+  }),
   {
     id: "hue", label: "Philips Hue", driverId: HUE_LIGHT_DRIVER_ID, manufacturer: "Philips", category: "lighting", icon: "bulb-outline", defaultName: "Hue light",
     addMode: "custom-screen", fields: [], needsFcc: false, needsIp: true, hint: "Press the link button on the bridge, then pick a light.", vendorPattern: /philips.?hue|signify|hue bridge/i, inAddPicker: true,

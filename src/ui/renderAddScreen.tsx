@@ -8,6 +8,7 @@ import { AddPs5DeviceScreen } from "./AddPs5DeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./AddSmartThingsOutletsScreen";
 import { AddSonyDeviceScreen } from "./AddSonyDeviceScreen";
 import { AddSwitchBotVacuumScreen } from "./AddSwitchBotVacuumScreen";
+import { AddVizioDeviceScreen } from "./AddVizioDeviceScreen";
 import { AddXboxDeviceScreen } from "./AddXboxDeviceScreen";
 import { GenericIpAddDeviceScreen } from "./GenericIpAddDeviceScreen";
 
@@ -33,6 +34,8 @@ export function renderAddScreen(brandId: BrandId, props: AddScreenProps): ReactE
       return <AddXboxDeviceScreen {...screenProps} />;
     case "appletv":
       return <AddAppleTvDeviceScreen {...screenProps} />;
+    case "vizio":
+      return <AddVizioDeviceScreen {...screenProps} />;
     case "ps5":
       return <AddPs5DeviceScreen {...screenProps} />;
     case "hue":

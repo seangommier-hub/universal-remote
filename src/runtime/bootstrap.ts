@@ -19,6 +19,10 @@ import { BroadlinkIrDriver } from "../drivers/irHub/broadlink/BroadlinkIrDriver"
 import { SquirrelFeederDriver } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { AppleTvDriver } from "../drivers/tv/appletv/AppleTvDriver";
 import { SwitchBotVacuumDriver } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
+import { LifxLightDriver } from "../drivers/lighting/lifx/LifxLightDriver";
+import { ShellyRelayDriver } from "../drivers/outlet/shelly/ShellyRelayDriver";
+import { VizioSmartCastDriver } from "../drivers/tv/vizio/VizioSmartCastDriver";
+import { WizLightDriver } from "../drivers/lighting/wiz/WizLightDriver";
 import { isDemoMode } from "../demo/demoMode";
 import { swapInDemoDrivers } from "../demo/demoRuntime";
 
@@ -57,6 +61,10 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new SquirrelFeederDriver());
   driverRegistry.register(new AppleTvDriver());
   driverRegistry.register(new SwitchBotVacuumDriver());
+  driverRegistry.register(new VizioSmartCastDriver());
+  driverRegistry.register(new WizLightDriver());
+  driverRegistry.register(new LifxLightDriver());
+  driverRegistry.register(new ShellyRelayDriver());
 
   if (isDemoMode()) swapInDemoDrivers(driverRegistry);
 

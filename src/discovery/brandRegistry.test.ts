@@ -38,7 +38,7 @@ describe("brand registry consistency", () => {
 
   test("brands that need Family Command Center match the drivers that only work through it", () => {
     const needsFcc = BRAND_REGISTRY.filter((b) => b.needsFcc).map((b) => b.id).sort();
-    expect(needsFcc).toEqual(["appletv", "broadlink", "chromecast", "lg", "ps5"]);
+    expect(needsFcc).toEqual(["appletv", "broadlink", "chromecast", "lg", "lifx", "ps5", "vizio", "wiz"]);
   });
 });
 
@@ -52,6 +52,24 @@ describe("brand lookups", () => {
     expect(matchBrandByText("XboxOne")?.id).toBe("xbox");
     expect(matchBrandByText("Apple TV")?.id).toBe("appletv");
     expect(matchBrandByText("Chromecast-Ultra")?.id).toBe("chromecast");
+  });
+
+  test("hostnames of the vizio, wiz, lifx and shelly brands are recognized", () => {
+    expect(matchBrandByText("VIZIO-V505-H19")?.id).toBe("vizio");
+    expect(matchBrandByText("wiz_1a2b3c")?.id).toBe("wiz");
+    expect(matchBrandByText("LIFX Bulb 1A2B3C")?.id).toBe("lifx");
+    expect(matchBrandByText("shelly1pm-84CCA8")?.id).toBe("shelly");
+    expect(matchBrandByText("ShellyPlus1 Allterco Robotics")?.id).toBe("shelly");
+  });
+
+  test("a Wiz bulb whose vendor is Signify is a Wiz, not a Hue", () => {
+    expect(matchBrandByText("wiz_1a2b3c Signify Netherlands")?.id).toBe("wiz");
+    expect(matchBrandByText("Hue Bridge Signify")?.id).toBe("hue");
+  });
+
+  test("the Vizio TV pairs on its own screen and the other new brands need only an address", () => {
+    expect(getBrand("vizio").addMode).toBe("custom-screen");
+    for (const id of ["wiz", "lifx", "shelly"] as const) expect(getBrand(id).addMode).toBe("ip-only");
   });
 
   test("an unknown hostname matches nothing", () => {

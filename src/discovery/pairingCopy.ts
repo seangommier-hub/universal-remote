@@ -37,6 +37,11 @@ const PAIRING_PROMPTS: Partial<Record<PairingPromptId, PairingPrompt>> = {
     instruction: "A 4-digit PIN is showing on the Apple TV screen. Type it in below.",
     timeoutMs: APPLE_TV_PAIRING_POLL_INTERVAL_MS * APPLE_TV_PAIRING_POLL_MAX_ATTEMPTS,
   },
+  vizio: {
+    heading: "Look at your Vizio TV",
+    instruction: "A PIN is showing on the TV screen. Type it in below.",
+    timeoutMs: null,
+  },
   hue: {
     heading: "Look at your Hue bridge",
     instruction: "Press the round link button on top of the bridge now. Hearth keeps checking until it feels the press.",
@@ -95,6 +100,7 @@ const HTTP_403_PATTERN = /\bHTTP 403\b|\berror 403\b|\bforbidden\b/i;
 const HTTP_401_403_PATTERN = /\bHTTP 40[13]\b|\berror 40[13]\b|\bforbidden\b/i;
 const PIN_PATTERN = /\bpin\b|invalid|incorrect|wrong|mismatch|rejected/i;
 const PS5_CODE_PATTERN = /\bcode\b|\bpin\b|invalid|incorrect|wrong|mismatch|rejected/i;
+const VIZIO_REFUSED_PATTERN = /blocked|refused/i;
 const REDIRECT_PATTERN = /redirect|sign.?in|login|oauth|\burl\b/i;
 
 function messageOf(error: unknown): string {
@@ -139,6 +145,12 @@ function describeAppleTvFailure(message: string): PairingFailureCopy | null {
   return null;
 }
 
+function describeVizioFailure(message: string): PairingFailureCopy | null {
+  if (TIMEOUT_PATTERN.test(message)) return copy("timeout", "PIN not confirmed in time", "The Vizio TV didn't answer in time. Try again and type the new PIN shown on the TV.");
+  if (PIN_PATTERN.test(message) || VIZIO_REFUSED_PATTERN.test(message)) return copy("wrong-pin", "That PIN didn't work", "The Vizio TV didn't accept that PIN. Try again and type the new PIN now showing on the TV.");
+  return null;
+}
+
 function describePs5Failure(message: string): PairingFailureCopy | null {
   if (TIMEOUT_PATTERN.test(message)) return copy("timeout", "PS5 pairing timed out", "Nothing finished in time. Try again, and enter the PS5's 8-digit code promptly.");
   if (REDIRECT_PATTERN.test(message)) return copy("bad-redirect", "Sign-in wasn't recognized", "Hearth couldn't use that PlayStation sign-in. Sign in again, then copy the whole address from the blank page.");
@@ -163,6 +175,8 @@ function brandSpecificFailure(brandId: BrandId, label: string, error: unknown, m
       return describeRokuFailure(message);
     case "appletv":
       return describeAppleTvFailure(message);
+    case "vizio":
+      return describeVizioFailure(message);
     case "ps5":
       return describePs5Failure(message);
     case "hue":

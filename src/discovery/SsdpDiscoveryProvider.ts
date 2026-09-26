@@ -20,6 +20,13 @@
 //  - Sonos: `urn:schemas-upnp-org:device:ZonePlayer:1`, verified directly against SoCo
 //    (github.com/SoCo/SoCo), the de facto reference implementation for Sonos local control —
 //    confirmed in its own `discovery.py`.
+//  - Vizio SmartCast (ADR-HEARTH-165): SmartCast TVs answer the generic DIAL search target, so the
+//    response must also mention "vizio" in its SERVER header. Lower confidence than the targets
+//    above and not yet seen on a real TV; the reliable Vizio signal is the Pi's mDNS
+//    `_viziocast._tcp` sweep or the hostname matching in brandRegistry.ts.
+//  - Wiz, LIFX and Shelly do not answer SSDP at all (UDP JSON, UDP binary, mDNS `_shelly._tcp`
+//    respectively), so they are recognised by hostname/MAC vendor here and by the Pi's
+//    /discover/all sweep, never by an M-SEARCH.
 //
 // M-SEARCH responses arrive as unicast UDP sent directly back to this socket's own port — no
 // multicast group membership (addMembership) is needed, only for the outbound send to
@@ -65,6 +72,7 @@ const SEARCH_TARGETS: SearchTarget[] = [
   { st: "urn:schemas-sony-com:service:IRCC:1", brandId: "sony" },
   { st: "urn:schemas-upnp-org:device:MediaRenderer:1", brandId: "yamaha", requireServerMatch: /yamaha/i },
   { st: "urn:schemas-upnp-org:device:ZonePlayer:1", brandId: "sonos" },
+  { st: "urn:dial-multiscreen-org:service:dial:1", brandId: "vizio", requireServerMatch: /vizio/i },
 ];
 
 /** Extracts one HTTP-style header value from a raw SSDP response ("KEY: value\r\n..."). Exported for direct unit testing. */
