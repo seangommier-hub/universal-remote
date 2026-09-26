@@ -13,6 +13,10 @@ import { XboxDriver } from "../gaming/xbox/XboxDriver";
 import { BroadlinkIrDriver } from "../irHub/broadlink/BroadlinkIrDriver";
 import { HueLightDriver } from "../lighting/hue/HueLightDriver";
 import { HomeAssistantDriver } from "../homeAssistant/HomeAssistantDriver";
+import { LifxLightDriver } from "../lighting/lifx/LifxLightDriver";
+import { WizLightDriver } from "../lighting/wiz/WizLightDriver";
+import { ShellyRelayDriver } from "../outlet/shelly/ShellyRelayDriver";
+import { VizioSmartCastDriver } from "../tv/vizio/VizioSmartCastDriver";
 import { KasaPlugDriver } from "../outlet/kasa/KasaPlugDriver";
 import { SmartThingsOutletDriver } from "../outlet/smartthings/SmartThingsOutletDriver";
 import { ChromecastDriver } from "../streaming/chromecast/ChromecastDriver";
@@ -124,6 +128,25 @@ const smartThingsResponder: Responder = (url, init) => (init?.method === "POST" 
 const homeAssistantResponder: Responder = (url, init) =>
   init?.method === "POST" ? { json: [] } : url.includes("/api/states/") ? { json: { entity_id: "switch.lamp", state: "on", attributes: { friendly_name: "Lamp" } } } : { json: [] };
 
+const vizioResponder: Responder = (_url, init) => {
+  const { path } = JSON.parse(bodyOf(init) || "{}") as { path?: string };
+  const ok = (body: unknown): FakeReply => ({ json: { status: 200, body: JSON.stringify({ STATUS: { RESULT: "SUCCESS" }, ...(body as object) }) } });
+  if (path === "/state/device/power_mode") return ok({ ITEMS: [{ VALUE: 1 }] });
+  if (path?.endsWith("/volume")) return ok({ ITEMS: [{ VALUE: 20 }] });
+  if (path?.endsWith("/mute")) return ok({ ITEMS: [{ VALUE: "Off" }] });
+  if (path?.endsWith("/current_input")) return ok({ ITEMS: [{ VALUE: "HDMI-1", HASHVAL: 7 }] });
+  return ok({});
+};
+
+const wizResponder: Responder = () => ({ json: { result: { state: true, dimming: 60, r: 255, g: 0, b: 0, mac: "aabbccddeeff", success: true } } });
+
+const lifxResponder: Responder = (url) => (url.includes("/lifx/state") ? { json: { power: true, hue: 120, saturation: 100, brightness: 80, label: "Desk" } } : { json: {} });
+
+const shellyResponder: Responder = (url) => {
+  if (url.includes("/shelly")) return { json: { gen: 2, model: "SNSW-001X16EU", mac: "AABBCCDDEEFF" } };
+  return { json: { output: true } };
+};
+
 const anyCommand = (capability: Command["capability"]): Command => ({ deviceId: "contract", capability });
 
 export const DRIVER_ADAPTERS: DriverAdapter[] = [
@@ -153,6 +176,10 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
         reason: "no retry after a failed connect and no ADR records that as intended (Hue and the feeder do have one); the same gap was fixed for Kasa and Apple TV",
       },
     } },
+  { name: "VizioSmartCastDriver", createDriver: () => new VizioSmartCastDriver(), createDevice: device("vizio-1", { ipAddress: "192.168.1.88", port: 7345, authToken: "token" }), responder: vizioResponder, usesFcc: true, command: anyCommand("volumeUp"), exemptions: {} },
+  { name: "WizLightDriver", createDriver: () => new WizLightDriver(), createDevice: device("wiz-1", { ipAddress: "192.168.1.89" }), responder: wizResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
+  { name: "LifxLightDriver", createDriver: () => new LifxLightDriver(), createDevice: device("lifx-1", { ipAddress: "192.168.1.91" }), responder: lifxResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
+  { name: "ShellyRelayDriver", createDriver: () => new ShellyRelayDriver(), createDevice: device("shelly-1", { ipAddress: "192.168.1.92" }), responder: shellyResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },
   { name: "HueLightDriver", createDriver: () => new HueLightDriver(), createDevice: device("hue-1", { bridgeIpAddress: "192.168.1.2", username: "u", lightId: "1" }), responder: hueResponder, usesFcc: false, command: anyCommand("power"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: hangingRequestBug(4, "SwitchBotClient (SwitchBotClient.ts:93/99/104)", ["connectHangRejects", "commandWhileHungRejects"]) },

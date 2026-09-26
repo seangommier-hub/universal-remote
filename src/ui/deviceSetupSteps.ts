@@ -106,6 +106,36 @@ export const KASA_SETUP_GUIDE: DeviceSetupGuide = {
   ],
 };
 
+export const VIZIO_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Vizio TV",
+  steps: [
+    "Make sure the TV is on (not in standby) and on the same Wi-Fi network as your phone.",
+    "Family Command Center must already be connected — Vizio TVs are reached through it.",
+    "Enter the TV's IP address below and tap Pair.",
+    "A PIN appears on the TV screen. Type it into Hearth and tap Finish Pairing.",
+  ],
+};
+
+export const WIZ_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Wiz bulb",
+  steps: [
+    "Use the Wiz app first to put the bulb on your Wi-Fi.",
+    "In the Wiz app, open Settings > Security and turn on \"Allow local communication\" if it is off.",
+    "Find the bulb's IP address in your router's device list.",
+    "Enter that address below. Wiz bulbs are reached through Family Command Center.",
+  ],
+};
+
+export const SHELLY_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up your Shelly",
+  steps: [
+    "Use the Shelly app first to put the device on your Wi-Fi.",
+    "Open the Shelly's own settings and make sure its login (restrict access) is turned off. Hearth cannot sign in yet.",
+    "Find the device's IP address in your router's device list or the Shelly app.",
+    "Enter that address below — no password needed.",
+  ],
+};
+
 export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
   title: "Set up your Xbox",
   steps: [
@@ -138,6 +168,9 @@ const SETUP_GUIDES_BY_BRAND: Partial<Record<BrandId, DeviceSetupGuide>> = {
   kasa: KASA_SETUP_GUIDE,
   xbox: XBOX_SETUP_GUIDE,
   homeassistant: HOME_ASSISTANT_SETUP_GUIDE,
+  vizio: VIZIO_SETUP_GUIDE,
+  wiz: WIZ_SETUP_GUIDE,
+  shelly: SHELLY_SETUP_GUIDE,
 };
 
 /** The "Setup This Device" guide for a brand, if it has one. */
