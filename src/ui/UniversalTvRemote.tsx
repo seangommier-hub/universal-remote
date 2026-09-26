@@ -9,6 +9,7 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { describeReconnectFailure } from "./describeReconnectFailure";
+import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
 import { theme } from "./theme";
@@ -190,6 +191,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // reference screen — see useResponsiveScale.ts for why this is the
   // right axis to scale (and font size/spacing deliberately are not).
   const scale = useResponsiveScale();
+  const isAway = useConnectivityMode() === "away";
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
   // (the "196 = 196, arrows land tangent to the disc" math in the styles
   // below is derived from it) -- this is that same value scaled for the
@@ -524,6 +526,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           )}
           <Text style={styles.deviceMeta} numberOfLines={1}>
             {device.manufacturer} {device.model}
+            {isAway ? " · Remote" : ""}
           </Text>
         </View>
         {has(device, "power") && (

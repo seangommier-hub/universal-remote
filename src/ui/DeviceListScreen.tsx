@@ -11,6 +11,7 @@ import { Scene } from "../core/types/Scene";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
+import { useConnectivityMode } from "./useConnectivityMode";
 import { scanAllProviders } from "../discovery/scanAllProviders";
 import { CapabilityButton } from "./CapabilityButton";
 import { NowPlayingWidget } from "./NowPlayingWidget";
@@ -181,6 +182,7 @@ export function DeviceListScreen({
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
+  const connectivityMode = useConnectivityMode();
   // Android's Alert.alert silently drops any button past the 3rd (the same bug already found and
   // fixed in DiscoverDevicesScreen.tsx's brand picker, 2026-09-12) — with Cancel + Rename + Edit
   // address + Remove this is 4, so a custom modal replaces Alert.alert here for the same reason.
@@ -307,7 +309,7 @@ export function DeviceListScreen({
             Hearth
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>
-            One home. One remote.
+            {connectivityMode === "away" ? "Remote — away from home" : "One home. One remote."}
           </Text>
         </View>
         <Pressable

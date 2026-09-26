@@ -1,4 +1,5 @@
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // Course correction (ADR-HEARTH-042's 2026-09-11 update): a WEBHOOK_SMART_APP doesn't use a
 // browser OAuth flow, so Hearth's phone never holds a SmartThings access token at all — SmartThings
@@ -44,22 +45,14 @@ async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then SmartThings outlets can sync.");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FCC_REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${config.baseUrl}${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", ...init?.headers },
-      signal: controller.signal,
-    });
+    response = await fccFetch(config, path, init, FCC_REQUEST_TIMEOUT_MS);
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (isFccTimeout(err)) {
       throw new SmartThingsApiError(`Family Command Center didn't respond within ${FCC_REQUEST_TIMEOUT_MS / 1000} seconds`, 0);
     }
     throw err;
-  } finally {
-    clearTimeout(timeout);
   }
   if (!response.ok) {
     throw new SmartThingsApiError(`Family Command Center returned ${response.status}`, response.status);

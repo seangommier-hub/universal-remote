@@ -1,4 +1,5 @@
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // TP-Link Kasa's local control protocol is a raw TCP socket with its own binary framing (port
 // 9999, legacy XOR "encryption" -- see family-command-center's kasa-client.ts for the full,
@@ -36,22 +37,14 @@ async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then Kasa plugs can be controlled.");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FCC_REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${config.baseUrl}${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", ...init?.headers },
-      signal: controller.signal,
-    });
+    response = await fccFetch(config, path, init, FCC_REQUEST_TIMEOUT_MS);
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (isFccTimeout(err)) {
       throw new KasaApiError(`Family Command Center didn't respond within ${FCC_REQUEST_TIMEOUT_MS / 1000} seconds`, 0);
     }
     throw err;
-  } finally {
-    clearTimeout(timeout);
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null);

@@ -1,4 +1,5 @@
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+import { fccFetch } from "../core/network/fccRequest";
 
 // Real-hardware finding (2026-09-10): a device's saved IP goes stale the moment it moves to a
 // different WiFi network/VLAN — common in real households (confirmed with Sean directly: "i have
@@ -20,20 +21,13 @@ async function fetchLanDevices(): Promise<LanDevice[] | undefined> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) return undefined;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS);
   try {
-    const response = await fetch(`${config.baseUrl}/api/integrations/hearth/devices`, {
-      headers: { Authorization: `Bearer ${config.token}` },
-      signal: controller.signal,
-    });
+    const response = await fccFetch(config, "/api/integrations/hearth/devices", {}, LOOKUP_TIMEOUT_MS);
     if (!response.ok) return undefined;
     const { devices } = (await response.json()) as { devices: LanDevice[] };
     return devices;
   } catch {
     return undefined;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

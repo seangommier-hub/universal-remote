@@ -4,7 +4,7 @@ import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
-import { fetchWithTimeout } from "../../../core/network/fetchWithTimeout";
+import { fccFetch } from "../../../core/network/fccRequest";
 
 // Real-hardware research (2026-09-13): Xbox's SmartGlass protocol has a genuine, documented,
 // UNAUTHENTICATED power-on mechanism -- a UDP broadcast packet, reverse-engineered from the
@@ -88,9 +88,8 @@ export class XboxDriver implements DeviceDriver {
       throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
     }
 
-    const response = await fetchWithTimeout(`${config.baseUrl}/api/integrations/hearth/xbox/poweron`, {
+    const response = await fccFetch(config, "/api/integrations/hearth/xbox/poweron", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
       body: JSON.stringify({ liveId, ipAddress }),
     });
     if (!response.ok) {

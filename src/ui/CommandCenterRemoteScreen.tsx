@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { shouldPreferPublicRoute } from "../core/network/fccConnectivity";
 import { buildPublicVncRelayUrl, buildVncRelayUrl } from "../discovery/familyCommandCenterVncRelay";
 import { RfbButton, RfbClient, RfbServerInfo } from "../drivers/inputRelay/vnc/RfbClient";
 import { charToKeysym, Keysym } from "../drivers/inputRelay/vnc/keysym";
@@ -71,7 +72,9 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
       // configured — mirrors httpRelayFallback.ts/wsRelayFallback.ts's identical direct-then-relay
       // shape for the TV drivers, just with one fewer leg (this screen never attempts a "direct"
       // connection to the Pi's display server at all — see this file's own class doc comment).
-      let client = new RfbClient(buildVncRelayUrl(config));
+      // ADR-HEARTH-147: while away from home the LAN relay can never answer, so the public one goes first.
+      const publicFirstUrl = shouldPreferPublicRoute() ? buildPublicVncRelayUrl(config) : undefined;
+      let client = new RfbClient(publicFirstUrl ?? buildVncRelayUrl(config));
       try {
         const info = await client.connect();
         if (cancelled) {
@@ -84,7 +87,7 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
         setStatus("connected");
         return;
       } catch (lanErr) {
-        const publicUrl = buildPublicVncRelayUrl(config);
+        const publicUrl = publicFirstUrl ? buildVncRelayUrl(config) : buildPublicVncRelayUrl(config);
         if (!publicUrl) {
           if (!cancelled) {
             setStatus("error");

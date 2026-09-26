@@ -20,7 +20,7 @@
 // protocol regardless of brand, so this lives here rather than being duplicated per driver.
 
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
-import { fetchWithTimeout } from "./fetchWithTimeout";
+import { fccFetch } from "./fccRequest";
 
 /** Sends a real Wake-on-LAN magic packet for the given MAC address via Family Command Center. No
  * acknowledgment exists in this protocol — "the packet was sent" is the most honest claim
@@ -30,9 +30,8 @@ export async function sendWakeOnLan(macAddress: string): Promise<void> {
   if (!config) {
     throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
   }
-  const response = await fetchWithTimeout(`${config.baseUrl}/api/integrations/hearth/wake-on-lan`, {
+  const response = await fccFetch(config, "/api/integrations/hearth/wake-on-lan", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
     body: JSON.stringify({ macAddress }),
   });
   if (!response.ok) {
