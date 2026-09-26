@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 import { FccUnreachableError } from "../core/network/fccErrors";
+import { readBoundedJson, validateRedeemedPairing } from "./redeemResponse";
 
 // Client for the household invite endpoints on Family Command Center (ADR-HEARTH-149).
 
@@ -49,8 +50,8 @@ export async function createPairInvite(baseUrl: string, token: string): Promise<
   return (await response.json()) as CreatedInvite;
 }
 
-/** Trades a code for the household's address and token; sends no credentials. */
-export async function redeemPairCode(serverUrl: string, code: string): Promise<RedeemedPairing> {
+/** Trades a code for the household's address and token; sends no credentials, and rejects any answer that points at an untrusted host. */
+export async function redeemPairCode(serverUrl: string, code: string, savedUrls: readonly string[] = []): Promise<RedeemedPairing> {
   const response = await send(`${trimTrailingSlash(serverUrl)}${REDEEM_PATH}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -59,5 +60,5 @@ export async function redeemPairCode(serverUrl: string, code: string): Promise<R
   if (response.status === HTTP_TOO_MANY_REQUESTS) throw new PairLockedOutError("Locked out");
   if (response.status === HTTP_BAD_REQUEST) throw new PairCodeInvalidError("Invalid code");
   if (!response.ok) throw new Error(`Server returned ${response.status}.`);
-  return (await response.json()) as RedeemedPairing;
+  return validateRedeemedPairing(await readBoundedJson(response), savedUrls);
 }

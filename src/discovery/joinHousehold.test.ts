@@ -8,7 +8,7 @@ const LAN = "http://192.168.1.5:3210";
 const PUBLIC = "https://hearth-relay.carddna.app";
 
 function response(status: number, body?: unknown) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body };
+  return { ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body ?? {}) };
 }
 
 describe("candidateServers", () => {
