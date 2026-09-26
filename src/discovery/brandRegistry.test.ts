@@ -42,6 +42,17 @@ describe("brand registry consistency", () => {
   });
 });
 
+describe("Home Assistant brand", () => {
+  test("is an account-style custom-screen brand in the add picker with a plain-language hint", () => {
+    const brand = getBrand("homeassistant");
+    expect(brand.addMode).toBe("custom-screen");
+    expect(brand.needsIp).toBe(false);
+    expect(addPickerBrands().map((b) => b.id)).toContain("homeassistant");
+    expect(brand.hint).toMatch(/long-lived access token/i);
+    expect(brandsForAddress("homeassistant.local", null).map((b) => b.id)).not.toContain("homeassistant");
+  });
+});
+
 describe("brand lookups", () => {
   test("a PlayStation vendor string is the PS5, not a Sony TV", () => {
     expect(matchBrandByText("PS5-123 Sony Interactive Entertainment")?.id).toBe("ps5");

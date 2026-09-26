@@ -3,6 +3,7 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { BrandId, getBrand } from "../discovery/brandRegistry";
 import { AddAppleTvDeviceScreen } from "./AddAppleTvDeviceScreen";
+import { AddHomeAssistantScreen } from "./AddHomeAssistantScreen";
 import { AddHueDeviceScreen } from "./AddHueDeviceScreen";
 import { AddPs5DeviceScreen } from "./AddPs5DeviceScreen";
 import { AddSmartThingsOutletsScreen } from "./AddSmartThingsOutletsScreen";
@@ -41,6 +42,8 @@ export function renderAddScreen(brandId: BrandId, props: AddScreenProps): ReactE
       return <AddSwitchBotVacuumScreen {...screenProps} />;
     case "smartthings":
       return <AddSmartThingsOutletsScreen {...screenProps} />;
+    case "homeassistant":
+      return <AddHomeAssistantScreen {...screenProps} />;
     default:
       return <GenericIpAddDeviceScreen brand={getBrand(brandId)} {...screenProps} onOpenFccSetup={onOpenFccSetup} />;
   }

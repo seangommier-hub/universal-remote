@@ -117,6 +117,18 @@ export const XBOX_SETUP_GUIDE: DeviceSetupGuide = {
   ],
 };
 
+export const HOME_ASSISTANT_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up Home Assistant",
+  steps: [
+    "Make sure your phone is on the same Wi-Fi as Home Assistant (or use an address that reaches it from anywhere).",
+    "Open Home Assistant in a browser or its app and tap your profile picture (bottom-left).",
+    "Open the Security tab and scroll to Long-lived access tokens.",
+    "Tap Create Token, name it \"Hearth\", and copy the token right away — Home Assistant only shows it once.",
+    "Back here, enter your Home Assistant address (usually homeassistant.local:8123 or its IP address with :8123) and paste the token.",
+    "Tap Find Devices, then choose a light, switch, media player or remote to add.",
+  ],
+};
+
 const SETUP_GUIDES_BY_BRAND: Partial<Record<BrandId, DeviceSetupGuide>> = {
   sony: SONY_SETUP_GUIDE,
   samsung: SAMSUNG_SETUP_GUIDE,
@@ -125,6 +137,7 @@ const SETUP_GUIDES_BY_BRAND: Partial<Record<BrandId, DeviceSetupGuide>> = {
   smartthings: SMARTTHINGS_SETUP_GUIDE,
   kasa: KASA_SETUP_GUIDE,
   xbox: XBOX_SETUP_GUIDE,
+  homeassistant: HOME_ASSISTANT_SETUP_GUIDE,
 };
 
 /** The "Setup This Device" guide for a brand, if it has one. */

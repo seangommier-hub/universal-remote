@@ -54,6 +54,7 @@ const PAIRING_PROMPTS: Partial<Record<PairingPromptId, PairingPrompt>> = {
   },
   sony: { heading: "Connecting to your Sony TV", instruction: "Make sure the TV is on. Hearth is checking the pre-shared key with it.", timeoutMs: null },
   xbox: { heading: "Adding your Xbox", instruction: "Hearth is saving the console. It is not woken up during setup.", timeoutMs: null },
+  homeassistant: { heading: "Adding your Home Assistant device", instruction: "Hearth is checking the access token with Home Assistant.", timeoutMs: null },
   smartthings: { heading: "Adding your outlet", instruction: "Hearth is linking the outlet through Family Command Center.", timeoutMs: null },
 };
 

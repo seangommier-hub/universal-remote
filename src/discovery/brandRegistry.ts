@@ -5,6 +5,7 @@ import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDr
 import { CHROMECAST_DRIVER_ID } from "../drivers/streaming/chromecast/ChromecastDriver";
 import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { SQUIRREL_FEEDER_DRIVER_ID } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
+import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
@@ -39,12 +40,13 @@ export type BrandId =
   | "broadlink"
   | "feeder"
   | "smartthings"
-  | "switchbot";
+  | "switchbot"
+  | "homeassistant";
 
 /** Kept for existing imports: every brand can be the target of an add flow. */
 export type AddableBrand = BrandId;
 
-export type BrandIcon = "tv-outline" | "play-circle-outline" | "musical-notes-outline" | "bulb-outline" | "flash-outline" | "game-controller-outline" | "radio-outline" | "hardware-chip-outline";
+export type BrandIcon = "tv-outline" | "play-circle-outline" | "musical-notes-outline" | "bulb-outline" | "flash-outline" | "game-controller-outline" | "radio-outline" | "hardware-chip-outline" | "home-outline";
 
 /**
  * How adding this brand works from a discovered row:
@@ -170,6 +172,12 @@ export const BRAND_REGISTRY: BrandEntry[] = [
   {
     id: "smartthings", label: "Sync from SmartThings", driverId: SMARTTHINGS_OUTLET_DRIVER_ID, manufacturer: "SmartThings", category: "outlet", icon: "flash-outline", defaultName: "SmartThings outlet",
     addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false, hint: "Cloud-linked outlets; needs a SmartThings token.", vendorPattern: null, inAddPicker: true,
+  },
+  {
+    id: "homeassistant", label: "Sync from Home Assistant", driverId: HOME_ASSISTANT_DRIVER_ID, manufacturer: "Home Assistant", category: "other", icon: "home-outline", defaultName: "Home Assistant device",
+    addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false,
+    hint: "Adds your Home Assistant lights, switches, media players and remotes. Needs its address and a long-lived access token (Home Assistant profile > Security).",
+    vendorPattern: null, inAddPicker: true,
   },
 ];
 
