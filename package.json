@@ -59,6 +59,7 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/.expo/",
+      "/.claude/",
       "/runner/"
     ],
     "transformIgnorePatterns": [
