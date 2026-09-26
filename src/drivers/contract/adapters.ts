@@ -137,9 +137,9 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
   { name: "SonosDriver", createDriver: () => new SonosDriver(), createDevice: device("sonos-1", { ipAddress: "192.168.1.82" }), responder: sonosResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: COMMAND_FAILURE_NOT_TRACKED },
   { name: "ChromecastDriver", createDriver: () => new ChromecastDriver(), createDevice: device("cast-1", { ipAddress: "192.168.1.83" }), responder: () => ({ json: { volumeLevel: 0.3, muted: false } }), usesFcc: true, command: anyCommand("volumeUp"), exemptions: {
       ...COMMAND_FAILURE_NOT_TRACKED,
-      ...hangingRequestBug(3, "ChromecastClient.fccRequest (ChromecastClient.ts:26)", ["connectHangRejects", "commandWhileHungRejects"]),
+      ...{},
     } },
-  { name: "AppleTvDriver", createDriver: () => new AppleTvDriver(), createDevice: device("atv-1", { ipAddress: "192.168.1.90" }), responder: () => ({ json: { output: "PowerState.On" } }), usesFcc: true, command: anyCommand("select"), exemptions: hangingRequestBug(2, "AppleTvClient.fccRequest (AppleTvClient.ts:25)", ["connectHangRejects", "commandWhileHungRejects"]) },
+  { name: "AppleTvDriver", createDriver: () => new AppleTvDriver(), createDevice: device("atv-1", { ipAddress: "192.168.1.90" }), responder: () => ({ json: { output: "PowerState.On" } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
   { name: "KasaPlugDriver", createDriver: () => new KasaPlugDriver(), createDevice: device("kasa-1", { ipAddress: "192.168.1.50" }), responder: kasaResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "SmartThingsOutletDriver", createDriver: () => new SmartThingsOutletDriver(), createDevice: device("st-1", { deviceId: "st-1" }), responder: smartThingsResponder, usesFcc: true, command: anyCommand("power"), exemptions: {
       ...UNDEDUPED_CONNECT_EXEMPTIONS,
@@ -154,14 +154,14 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
   { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: hangingRequestBug(4, "SwitchBotClient (SwitchBotClient.ts:93/99/104)", ["connectHangRejects", "commandWhileHungRejects"]) },
   { name: "BroadlinkIrDriver", createDriver: () => new BroadlinkIrDriver(), createDevice: device("bl-1", { ipAddress: "192.168.1.85", codes: { power: "2600" } }), responder: () => ({ json: {} }), usesFcc: true, command: anyCommand("power"), exemptions: {
       ...NO_PROBE_DRIVER_EXEMPTIONS,
-      ...hangingRequestBug(5, "BroadlinkClient.fccRequest (BroadlinkClient.ts:18)", ["commandWhileHungRejects"]),
+      ...{},
     } },
   { name: "XboxDriver", createDriver: () => new XboxDriver(), createDevice: device("xbox-1", { liveId: "FD0000000000", ipAddress: "192.168.1.86" }), responder: () => ({ json: {} }), usesFcc: true, command: anyCommand("powerOn"), exemptions: {
       ...NO_PROBE_DRIVER_EXEMPTIONS,
-      ...hangingRequestBug(7, "XboxDriver.executeCommand (XboxDriver.ts)", ["commandWhileHungRejects"]),
+      ...{},
     } },
   { name: "Ps5Driver", createDriver: () => new Ps5Driver(), createDevice: device("ps5-1", { ipAddress: "192.168.1.87" }), responder: () => ({ json: {} }), usesFcc: true, command: anyCommand("powerOn"), exemptions: {
       ...NO_PROBE_DRIVER_EXEMPTIONS,
-      ...hangingRequestBug(6, "Ps5Client.fccRequest (Ps5Client.ts:28)", ["commandWhileHungRejects"]),
+      ...{},
     } },
 ];
