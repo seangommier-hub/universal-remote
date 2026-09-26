@@ -2,14 +2,9 @@ import { AppleTvDriver, APPLE_TV_DRIVER_ID } from "./AppleTvDriver";
 import { Device } from "../../../core/types/Device";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 
-// ADR-HEARTH-144: reconnect delays carry random jitter; pin it to zero so the exact-delay assertions below stay exact.
-const realMathRandom = Math.random; // pinned near-zero (not 0: a constant 0 recurses forever in jest internals) so jitter rounds away
-beforeAll(() => {
-  Math.random = () => 0.0001;
-});
-afterAll(() => {
-  Math.random = realMathRandom;
-});
+// ADR-HEARTH-144: reconnect delays carry random jitter; drop it so the exact-delay assertions below stay exact.
+// (Pinning Math.random instead makes jest's own source-map quicksort recurse without bound.)
+jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: number) => delayMs }));
 
 const mockSendCommand = jest.fn();
 jest.mock("./AppleTvClient", () => ({
