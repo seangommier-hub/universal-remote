@@ -11,6 +11,10 @@
 import { fccJsonRequest } from "../../../core/network/fccJsonRequest";
 import { LONG_FETCH_TIMEOUT_MS } from "../../../core/network/fetchWithTimeout";
 
+/** How often and how many times the pairing-confirmation status is polled after the PIN is submitted. */
+export const APPLE_TV_PAIRING_POLL_INTERVAL_MS = 1500;
+export const APPLE_TV_PAIRING_POLL_MAX_ATTEMPTS = 20;
+
 export type AppleTvPairingStatus = "awaiting_pin" | "success" | "error";
 
 export interface AppleTvPairingStatusResponse {

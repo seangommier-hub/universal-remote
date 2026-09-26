@@ -18,7 +18,7 @@ const LOG_SCOPE = "LgWebOsClient";
 // the signed block, with only the signature removed, and with neither, so dropping it is safe.
 const CERTIFICATE_REJECTED_PATTERN = /blacklist|certificate/i;
 
-const CONNECT_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
+export const LG_PAIRING_TIMEOUT_MS = 30000; // the TV requires a physical on-screen approval tap
 // Real gap found live (2026-09-21): unlike connect()'s own register handshake, `call()` never had
 // a timeout at all — confirmed via Family Command Center's own relay logs showing a real,
 // successful register handshake with no further activity for 20+ minutes afterward, while Sean's
@@ -245,7 +245,7 @@ export class LgWebOsClient {
           ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
           : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
         reject(new Error(message));
-      }, CONNECT_TIMEOUT_MS);
+      }, LG_PAIRING_TIMEOUT_MS);
 
       this.pending.set(registerId, {
         isRegister: true,

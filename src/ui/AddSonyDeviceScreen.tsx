@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
@@ -9,8 +9,14 @@ import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
 import { SONY_SETUP_GUIDE } from "./deviceSetupSteps";
+import { describePairingFailure, pairingPromptFor } from "../discovery/pairingCopy";
+import { PairingProgressCard } from "./PairingProgressCard";
 import { ThemedKeyboard } from "./ThemedKeyboard";
+import { usePairingSession } from "./usePairingSession";
 import { theme } from "./theme";
+
+const SONY_LABEL = "Sony TV";
+const SONY_PROMPT = pairingPromptFor("sony")!;
 
 interface AddSonyDeviceScreenProps {
   driverRegistry: DriverRegistry;
@@ -34,21 +40,16 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initial
   // the system keyboard's white background clashes with this screen's dark theme. Only this field
   // (the PSK) gets it — it's the one password-style input in the whole app right now.
   const [pskFocused, setPskFocused] = useState(false);
-  const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
-  const [errorMessage, setErrorMessage] = useState("");
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const pairing = usePairingSession();
 
   if (showSetupGuide) {
     return <DeviceSetupGuideScreen guide={SONY_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
   }
 
-  async function handleConnect() {
+  async function connectDevice(): Promise<Device> {
     const driver = driverRegistry.get(SONY_BRAVIA_DRIVER_ID);
-    if (!driver) {
-      setStatus("error");
-      setErrorMessage("Sony driver is not registered in this build.");
-      return;
-    }
+    if (!driver) throw new Error("Sony driver is not registered in this build.");
 
     const device: Device = {
       id: `sony-${Date.now()}`,
@@ -60,24 +61,33 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initial
       config: { ipAddress: ipAddress.trim(), psk: psk.trim() },
     };
 
-    setStatus("connecting");
-    setErrorMessage("");
     try {
       await driver.connect(device);
-      onAdded(device);
     } catch (err) {
-      setStatus("error");
-      setErrorMessage(err instanceof Error ? err.message : String(err));
       // See ADR-HEARTH-052 / AddLgDeviceScreen.tsx: SonyBraviaDriver.connect() (via refreshState's
       // own catch) schedules its own indefinite background reconnect loop on any failure, keyed to
       // this screen's throwaway `sony-${Date.now()}` device id. Since a failed attempt here is
       // never added/saved, nothing else ever owns or stops that loop — disconnect immediately to
       // cancel it.
       driver.disconnect(device).catch(() => {});
+      throw err;
     }
+    return device;
   }
 
-  const canSubmit = ipAddress.trim().length > 0 && psk.trim().length > 0 && status !== "connecting";
+  function handleConnect() {
+    pairing.start<Device>({
+      totalMs: SONY_PROMPT.timeoutMs,
+      run: connectDevice,
+      onDone: onAdded,
+      discard: (device) => driverRegistry.get(SONY_BRAVIA_DRIVER_ID)?.disconnect(device).catch(() => {}),
+    });
+  }
+
+  const busy = pairing.state.phase === "waiting" || pairing.state.phase === "connected";
+  const showCard = busy || pairing.state.phase === "failed";
+  const failure = pairing.state.phase === "failed" ? describePairingFailure("sony", SONY_LABEL, pairing.state.error) : null;
+  const canSubmit = ipAddress.trim().length > 0 && psk.trim().length > 0 && !busy;
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -125,26 +135,14 @@ export function AddSonyDeviceScreen({ driverRegistry, onCancel, onAdded, initial
       />
       {pskFocused && <ThemedKeyboard value={psk} onChange={setPsk} onDone={() => setPskFocused(false)} />}
 
-      {status === "error" && (
-        <View style={styles.errorCard}>
-          <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-          <Text style={styles.error}>Couldn't connect: {errorMessage}</Text>
+      {showCard && <PairingProgressCard state={pairing.state} prompt={SONY_PROMPT} failure={failure} onRetry={pairing.retry} onCancel={pairing.cancel} />}
+
+      {!showCard && (
+        <View style={styles.row}>
+          <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} />
+          <CapabilityButton label="Connect" variant="accent" onPress={handleConnect} disabled={!canSubmit} />
         </View>
       )}
-
-      <View style={styles.row}>
-        <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "connecting"} />
-        {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
-            visible label — this button rendered as a bare link glyph with no visible "Connect" /
-            "Connecting..." text at all. No icon here now. */}
-        <CapabilityButton
-          label={status === "connecting" ? "Connecting..." : "Connect"}
-          variant="accent"
-          onPress={handleConnect}
-          disabled={!canSubmit}
-        />
-      </View>
-      {status === "connecting" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
     </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -1,16 +1,20 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { HueBridgeClient } from "../drivers/lighting/hue/HueBridgeClient";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
+import { getBrand } from "../discovery/brandRegistry";
 import { findMacByIp } from "../discovery/familyCommandCenterDeviceLookup";
-import { HuePairingCancelledError, HUE_LINK_BUTTON_PROMPT, pairHueWithPolling } from "../discovery/huePairing";
+import { pairHueWithPolling } from "../discovery/huePairing";
+import { describePairingFailure, pairingPromptFor } from "../discovery/pairingCopy";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
+import { PairingProgressCard } from "./PairingProgressCard";
 import { theme } from "./theme";
+import { usePairingSession } from "./usePairingSession";
 
 interface AddHueDeviceScreenProps {
   driverRegistry: DriverRegistry;
@@ -20,50 +24,41 @@ interface AddHueDeviceScreenProps {
   initialIpAddress?: string;
 }
 
+type Lights = Record<string, { name: string }>;
+
 type Phase =
-  | { name: "pairing" }
-  | { name: "pending-link-press" }
-  | { name: "picking-light"; username: string; lights: Record<string, { name: string }> }
-  | { name: "connecting"; username: string; lightId: string }
+  | { name: "form" }
+  | { name: "picking-light"; username: string; lights: Lights }
+  | { name: "connecting" }
   | { name: "error"; message: string };
 
+const HUE_BRAND = getBrand("hue");
+const HUE_PROMPT = pairingPromptFor("hue")!;
+const HUE_APP_NAME = "hearth#mobile-app";
+
 /**
- * Pairs a Philips Hue bridge (ADR-HEARTH-032) — a two-step flow, unlike the single-form TV
- * screens: (1) pair with the bridge itself (physical link-button press, produces a `username` API
- * key good for every light on it), then (2) pick which light this `Device` represents. Hue models
- * one bridge with many lights; Hearth models one `Device` per light, so pairing the bridge and
- * adding a light are two distinct steps here.
+ * Pairs a Philips Hue bridge (ADR-HEARTH-032) — a two-step flow: (1) pair with the bridge itself
+ * (a physical link-button press, producing a `username` API key good for every light on it), then
+ * (2) pick which light this `Device` represents. Step 1 is a time-boxed pairing session
+ * (ADR-HEARTH-155): a live countdown over the same ceiling the poll uses, Cancel that stops the
+ * polling at once, and a plain-language error with Try again.
  */
 export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialIpAddress }: AddHueDeviceScreenProps) {
   const insets = useSafeAreaInsets();
   const [bridgeIpAddress, setBridgeIpAddress] = useState(initialIpAddress ?? "");
-  const [phase, setPhase] = useState<Phase>({ name: "pairing" });
+  const [phase, setPhase] = useState<Phase>({ name: "form" });
+  const pairing = usePairingSession();
 
-  // ADR-HEARTH-148: pairing keeps polling until the link button is pressed; leaving the screen or
-  // tapping Cancel stops it.
-  const cancelledRef = useRef(false);
-  useEffect(() => {
-    cancelledRef.current = false;
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
-  async function handlePair() {
+  function handlePair() {
     const client = new HueBridgeClient({ bridgeIpAddress: bridgeIpAddress.trim() });
-    setPhase({ name: "pending-link-press" });
-    try {
-      const username = await pairHueWithPolling({
-        pair: () => client.pair("hearth#mobile-app"),
-        onWaitingForButton: () => setPhase({ name: "pending-link-press" }),
-        isCancelled: () => cancelledRef.current,
-      });
-      const lights = await client.listLights(username);
-      setPhase({ name: "picking-light", username, lights });
-    } catch (err) {
-      if (err instanceof HuePairingCancelledError) return;
-      setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });
-    }
+    pairing.start<{ username: string; lights: Lights }>({
+      totalMs: HUE_PROMPT.timeoutMs,
+      run: async (context) => {
+        const username = await pairHueWithPolling({ pair: () => client.pair(HUE_APP_NAME), onWaitingForButton: () => {}, isCancelled: context.isCancelled, sleep: context.sleep });
+        return { username, lights: await client.listLights(username) };
+      },
+      onDone: ({ username, lights }) => setPhase({ name: "picking-light", username, lights }),
+    });
   }
 
   async function handleSelectLight(username: string, lightId: string, lightName: string) {
@@ -83,23 +78,24 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialI
       config: { bridgeIpAddress: bridgeIpAddress.trim(), username, lightId },
     };
 
-    setPhase({ name: "connecting", username, lightId });
+    setPhase({ name: "connecting" });
     try {
       await driver.connect(device);
       // Real-hardware finding (2026-09-10, ADR-HEARTH-017): a hwaddr on file lets the driver
       // re-locate this bridge automatically if it ever moves to a different WiFi network — best
-      // backfilled right at pairing time, the same way EditDeviceAddressScreen does for a device
-      // fixed by hand later. Best-effort: a bridge the Family Command Center doesn't know about
-      // yet just doesn't get this, same as any manually-paired device today.
+      // backfilled right at pairing time. Best-effort: a bridge the Family Command Center doesn't
+      // know about yet just doesn't get this.
       const hwaddr = await findMacByIp(bridgeIpAddress.trim());
       if (hwaddr) device.config = { ...device.config, hwaddr };
       onAdded(device);
     } catch (err) {
-      setPhase({ name: "error", message: err instanceof Error ? err.message : String(err) });
+      setPhase({ name: "error", message: describePairingFailure("hue", HUE_BRAND.label, err).message });
     }
   }
 
-  const canPair = bridgeIpAddress.trim().length > 0 && phase.name !== "pending-link-press" && phase.name !== "connecting";
+  const sessionPhase = pairing.state.phase;
+  const showCard = phase.name === "form" && (sessionPhase === "waiting" || sessionPhase === "connected" || sessionPhase === "failed");
+  const failure = pairing.state.phase === "failed" ? describePairingFailure("hue", HUE_BRAND.label, pairing.state.error) : null;
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -108,12 +104,12 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialI
           <View style={styles.iconBadge}>
             <Ionicons name="bulb-outline" size={20} color={theme.accentEnd} />
           </View>
-          <Text style={styles.title}>Add Philips Hue</Text>
+          <Text style={styles.title} accessibilityRole="header">Add Philips Hue</Text>
         </View>
         <View style={styles.hintCard}>
           <Text style={styles.hint}>
-            Find your bridge's IP address in the Hue app (Settings → My Bridge), then press the round button on top of
-            the bridge before tapping Pair.
+            Find your bridge's IP address in the Hue app (Settings → My Bridge), then tap Pair and press the round
+            button on top of the bridge.
           </Text>
         </View>
 
@@ -126,19 +122,16 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialI
           placeholderTextColor={theme.textTertiary}
           autoCapitalize="none"
           keyboardType="numbers-and-punctuation"
-          editable={phase.name !== "connecting"}
+          editable={phase.name === "form" && sessionPhase !== "waiting"}
+          accessibilityLabel="Bridge IP address"
         />
 
-        {phase.name === "pending-link-press" && (
-          <View style={styles.hintCard}>
-            <Text style={styles.hint}>{HUE_LINK_BUTTON_PROMPT} — waiting…</Text>
-          </View>
-        )}
+        {showCard && <PairingProgressCard state={pairing.state} prompt={HUE_PROMPT} failure={failure} onRetry={pairing.retry} onCancel={pairing.cancel} />}
 
         {phase.name === "error" && (
           <View style={styles.errorCard}>
             <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-            <Text style={styles.error}>Couldn't connect: {phase.message}</Text>
+            <Text style={styles.error}>{phase.message}</Text>
           </View>
         )}
 
@@ -146,39 +139,29 @@ export function AddHueDeviceScreen({ driverRegistry, onCancel, onAdded, initialI
           <View style={hueStyles.lightList}>
             <Text style={styles.label}>Choose a light</Text>
             {Object.entries(phase.lights).map(([lightId, light]) => (
-              <CapabilityButton
-                key={lightId}
-                label={light.name}
-                onPress={() => handleSelectLight(phase.username, lightId, light.name)}
-                containerStyle={hueStyles.lightButton}
-              />
+              <CapabilityButton key={lightId} label={light.name} onPress={() => handleSelectLight(phase.username, lightId, light.name)} containerStyle={hueStyles.lightButton} />
             ))}
             {Object.keys(phase.lights).length === 0 && <Text style={styles.hint}>No lights found on this bridge yet.</Text>}
           </View>
         )}
 
-        <View style={styles.row}>
-          <CapabilityButton
-            label="Cancel"
-            variant="ghost"
-            onPress={() => {
-              cancelledRef.current = true;
-              onCancel();
-            }}
-            disabled={phase.name === "connecting"}
-          />
-          {phase.name !== "picking-light" && (
-            <CapabilityButton
-              label={phase.name === "pending-link-press" ? "Pairing..." : "Pair"}
-              variant="accent"
-              onPress={handlePair}
-              disabled={!canPair}
-            />
-          )}
-        </View>
-        {(phase.name === "pending-link-press" || phase.name === "connecting") && (
-          <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />
+        {!showCard && (
+          <View style={styles.row}>
+            <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={phase.name === "connecting"} />
+            {phase.name !== "picking-light" && (
+              <CapabilityButton
+                label="Pair"
+                variant="accent"
+                onPress={() => {
+                  setPhase({ name: "form" });
+                  handlePair();
+                }}
+                disabled={bridgeIpAddress.trim().length === 0 || phase.name === "connecting"}
+              />
+            )}
+          </View>
         )}
+        {phase.name === "connecting" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
       </ScrollView>
     </KeyboardAvoidingView>
   );
