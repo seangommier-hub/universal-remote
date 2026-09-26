@@ -37,6 +37,12 @@ npm run typecheck   # tsc --noEmit
 npm test            # jest (jest-expo preset)
 ```
 
+## Distribution and updates (ADR-HEARTH-159)
+
+- Family phones: TestFlight internal group "Family" (`npx eas build -p ios --profile family --auto-submit`); builds expire after 90 days, so rebuild and resubmit before then.
+- Publish JS to every installed channel (preview at runtimes 1.1.0 and 1.2.0, plus family): `bash scripts/ship-update.sh "message"`. Never use `eas update --auto` (ADR-HEARTH-107).
+- Add a family member: `node scripts/ios-credentials/inviteFamilyMember.js <apple-id-email> "<First>" "<Last>"` (run again after they accept). Migration steps for the old ad hoc phones: `docs/TESTFLIGHT_MIGRATION.md`.
+
 ## Known limitations (current stage)
 
 - Sony, Samsung, LG, and Roku drivers are real but unvalidated against actual hardware — see `ROADMAP.md`. Roku's is the simplest and most likely to work exactly as written (official docs, no pairing/TLS).
