@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types"]
+  },
+  "include": ["./**/*.ts", "../src/core/**/*.ts", "../src/drivers/**/*.ts", "../src/runtime/bootstrap.ts", "../src/runtime/stateStoreBridge.ts"],
+  "exclude": ["**/*.test.ts", "../src/**/*.test.ts", "../src/**/*.test.tsx", "node_modules", "dist"]
+}
