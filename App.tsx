@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, AppStateStatus, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
@@ -14,16 +14,15 @@ import { startClientLogShipper } from "./src/runtime/clientLogShipper";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
-import { loadScenes, removeScene, saveScene } from "./src/runtime/scenePersistence";
-import { retrySceneActions, runScene, SceneRunResult } from "./src/runtime/sceneRunner";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
 import { findMacByIp } from "./src/discovery/familyCommandCenterDeviceLookup";
 import { applyDownloadedUpdateAsync, checkAndDownloadUpdateAsync } from "./src/runtime/appUpdates";
 import { Device } from "./src/core/types/Device";
-import { Scene } from "./src/core/types/Scene";
 import { logger } from "./src/core/logging/logger";
 import { DevicesTabScreen } from "./src/ui/DevicesTabScreen";
 import { usePairLinkListener } from "./src/ui/usePairLinkListener";
+import { useActivities } from "./src/ui/useActivities";
+import { ActivityRunModal } from "./src/ui/ActivityRunModal";
 import { FeederTabScreen } from "./src/ui/FeederTabScreen";
 import { theme } from "./src/ui/theme";
 
@@ -52,7 +51,7 @@ export default function App() {
   const runtime = useMemo(() => createHearthRuntime(), []);
   const [ready, setReady] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [scenes, setScenes] = useState<Scene[]>([]);
+  const activities = useActivities({ commandEngine: runtime.commandEngine, stateStore: runtime.stateStore });
   // ADR-HEARTH-084/086: "checking"/"error" only ever come from a manual check (DeviceListScreen's
   // header button) — the automatic launch/foreground check below stays silent unless it actually
   // finds something, so opening the app doesn't flash a banner nearly every time for nothing.
@@ -185,12 +184,6 @@ export default function App() {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error("App", "Startup failed to load persisted devices — continuing with an empty list", { message });
-      }
-      try {
-        setScenes(await loadScenes());
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.warn("App", "Could not load persisted scenes — continuing with an empty list", { message });
       }
       if (cancelled) return;
       setDevices(runtime.deviceRegistry.list());
@@ -354,57 +347,6 @@ export default function App() {
     });
   }
 
-  // ADR-HEARTH-056/058. Same in-memory-first, persist-in-background pattern as handleDeviceAdded.
-  // Upserts by id — covers both a brand-new scene and CreateSceneScreen's edit mode saving back
-  // over an existing one, the same "add or overwrite" shape scenePersistence.saveScene already uses.
-  // Navigating back to "list" afterward is the Devices tab's own concern (ADR-HEARTH-104) — scenes
-  // are only reachable from that tab.
-  function handleSceneSaved(scene: Scene) {
-    setScenes((current) => [...current.filter((s) => s.id !== scene.id), scene]);
-    saveScene(scene).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn("App", `Could not persist scene ${scene.name}`, { message });
-    });
-  }
-
-  function handleRemoveScene(scene: Scene) {
-    setScenes((current) => current.filter((s) => s.id !== scene.id));
-    removeScene(scene.id).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn("App", `Could not remove persisted scene ${scene.name}`, { message });
-    });
-  }
-
-  // Runs every action in the scene, then surfaces a plain pass/fail summary — a Scene has no
-  // dedicated screen of its own to show progress in, and it's triggered straight from the home
-  // screen's chip, so an Alert is the simplest honest feedback for "did this actually work"
-  // without building a whole results UI for what's still a v1 feature (ADR-HEARTH-056).
-  async function handleRunScene(scene: Scene): Promise<void> {
-    const result = await runScene(scene, runtime.commandEngine);
-    presentSceneResult(scene.name, result, scene.actions.length, result.succeeded);
-  }
-
-  // Real UX research (2026-09-16, ADR-HEARTH-073): Logitech Harmony's own "Help" feature — widely
-  // praised in reviews — re-sends just the specific out-of-sync step rather than re-running an
-  // entire activity from scratch. `totalActions`/`cumulativeSucceeded` are threaded through
-  // explicitly (not re-derived from `result` alone) so a retry's own alert can still say "4 of 4
-  // actions ran" against the scene's real original total, not "1 of 1" against just the retry.
-  function presentSceneResult(sceneName: string, result: SceneRunResult, totalActions: number, cumulativeSucceeded: number): void {
-    if (result.failed.length === 0) return;
-    const failureLines = result.failed.map((f) => `${f.deviceId}: ${f.message}`).join("\n");
-    Alert.alert(`${sceneName}: ${cumulativeSucceeded} of ${totalActions} actions ran`, failureLines, [
-      { text: "Dismiss", style: "cancel" },
-      {
-        text: "Retry Failed",
-        onPress: () => {
-          retrySceneActions(result.failed, runtime.commandEngine, sceneName).then((retryResult) => {
-            presentSceneResult(sceneName, retryResult, totalActions, cumulativeSucceeded + retryResult.succeeded);
-          });
-        },
-      },
-    ]);
-  }
-
   if (!ready) {
     return (
       <SafeAreaProvider>
@@ -441,7 +383,7 @@ export default function App() {
                 <DevicesTabScreen
                   runtime={runtime}
                   devices={devicesTabDevices}
-                  scenes={scenes}
+                  activities={activities}
                   updateBanner={updateBanner}
                   onCheckForUpdates={() => runUpdateCheck(true)}
                   onApplyUpdate={() => applyDownloadedUpdateAsync()}
@@ -452,9 +394,6 @@ export default function App() {
                   onAddressUpdated={handleAddressUpdated}
                   onDeviceUpdatedInPlace={handleDeviceUpdatedInPlace}
                   onRemoveDevice={handleRemoveDevice}
-                  onRunScene={handleRunScene}
-                  onSceneSaved={handleSceneSaved}
-                  onRemoveScene={handleRemoveScene}
                 />
               )}
             </Tab.Screen>
@@ -475,6 +414,7 @@ export default function App() {
             )}
           </Tab.Navigator>
         </NavigationContainer>
+        <ActivityRunModal lastRun={activities.lastRun} devices={devices} stateStore={runtime.stateStore} onRetryFailed={activities.retryFailed} onDismiss={activities.dismissRun} />
         <StatusBar style="light" />
       </SafeAreaProvider>
     </GestureHandlerRootView>
