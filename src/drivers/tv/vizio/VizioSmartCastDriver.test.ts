@@ -6,7 +6,7 @@ import { VIZIO_SMARTCAST_DRIVER_ID, VizioSmartCastDriver } from "./VizioSmartCas
 // Reconnect delays carry random jitter (ADR-HEARTH-144); drop it so timing assertions stay exact.
 jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: number) => delayMs }));
 jest.mock("./VizioClient", () => ({ ...jest.requireActual("./VizioClient"), isPoweredOn: jest.fn(), pressKey: jest.fn(), readVolume: jest.fn(), readMuted: jest.fn(), readCurrentInput: jest.fn(), switchInput: jest.fn() }));
-jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByName: jest.fn(), findMacByIp: jest.fn() }));
+jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(), findMacByIp: jest.fn() }));
 
 const mockPower = isPoweredOn as jest.Mock;
 const mockPress = pressKey as jest.Mock;

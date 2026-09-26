@@ -13,7 +13,7 @@ const mockSetRelayState = setRelayState as jest.MockedFunction<typeof setRelaySt
 
 jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({
   findCurrentIpByMac: jest.fn(),
-  findCurrentIpByName: jest.fn(),
+  findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(),
   findMacByIp: jest.fn(),
 }));
 const mockFindCurrentIpByMac = findCurrentIpByMac as jest.MockedFunction<typeof findCurrentIpByMac>;

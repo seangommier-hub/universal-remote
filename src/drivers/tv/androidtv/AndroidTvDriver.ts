@@ -5,7 +5,8 @@ import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WAKING_VALUE_KEY, WakeBurstController, withWaking } from "../../shared/wakeBurst";
 import { AndroidTvClient, AndroidTvRelayError, AndroidTvStatus } from "./AndroidTvClient";
@@ -100,14 +101,11 @@ export class AndroidTvDriver implements DeviceDriver {
       if (isNotPaired(err) || typeof currentIp !== "string") throw err;
       const hwaddr = device.config?.hwaddr;
       logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
-      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      const freshIp = await findMovedAddress(device);
       if (!freshIp || freshIp === currentIp) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp;
-      if (typeof hwaddr !== "string" && device.config) {
-        const discoveredMac = await findMacByIp(freshIp);
-        if (discoveredMac) device.config.hwaddr = discoveredMac;
-      }
+      await backfillHwaddr(device, freshIp);
       return await this.fetchStatus(device);
     }
   }

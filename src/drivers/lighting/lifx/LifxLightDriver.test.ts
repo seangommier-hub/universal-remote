@@ -4,7 +4,7 @@ import { LIFX_LIGHT_DRIVER_ID, LifxLightDriver } from "./LifxLightDriver";
 
 jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: number) => delayMs }));
 jest.mock("./LifxClient");
-jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
+jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
 
 const mockGetState = getLifxState as jest.Mock;
 const mockSetPower = setLifxPower as jest.Mock;

@@ -2,6 +2,8 @@ import { CommandEngine } from "../core/engine/CommandEngine";
 import { DeviceRegistry } from "../core/registry/DeviceRegistry";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
+import { setSelfHealContext } from "../drivers/shared/selfHealContext";
+import { brandForDriverId } from "../discovery/brandRegistry";
 import { SonyBraviaDriver } from "../drivers/tv/sony/SonyBraviaDriver";
 import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
@@ -43,6 +45,7 @@ export interface HearthRuntime {
  */
 export function createHearthRuntime(): HearthRuntime {
   const deviceRegistry = new DeviceRegistry();
+  setSelfHealContext({ savedDevices: () => deviceRegistry.list(), brandIdForDriver: (driverId) => brandForDriverId(driverId)?.id });
   const driverRegistry = new DriverRegistry();
   const stateStore = new StateStore();
 

@@ -5,7 +5,7 @@ import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { getSysInfo, KasaSysInfo, setRelayState } from "./KasaClient";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 
 const LOG_SCOPE = "KasaPlugDriver";
@@ -83,14 +83,11 @@ export class KasaPlugDriver implements DeviceDriver {
       const currentIp = device.config?.ipAddress;
       if (typeof currentIp !== "string") throw err;
       logger.warn(LOG_SCOPE, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
-      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      const freshIp = await findMovedAddress(device);
       if (!freshIp || freshIp === currentIp) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp;
-      if (typeof hwaddr !== "string" && device.config) {
-        const discoveredMac = await findMacByIp(freshIp);
-        if (discoveredMac) device.config.hwaddr = discoveredMac;
-      }
+      await backfillHwaddr(device, freshIp);
       return await this.fetchLiveState(device);
     }
   }

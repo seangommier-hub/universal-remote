@@ -6,7 +6,8 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
-import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
@@ -202,16 +203,13 @@ export class SamsungTizenDriver implements DeviceDriver {
       // See LgWebOsDriver.ts's identical comment: a device discovered before hwaddr-saving
       // existed has no MAC to look up by at all — falls back to a hostname match on this
       // device's own `name` (discovery already set it from the Center's reported hostname).
-      const freshIp = await findCurrentIpByIdentity(device.config, device.name);
+      const freshIp = await findMovedAddress(device);
       if (!freshIp || freshIp === config.ipAddress) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp;
       // Backfills the missing MAC so the *next* move is caught by the faster, more precise
       // findCurrentIpByMac instead of needing this name-fallback again.
-      if (typeof hwaddr !== "string" && device.config) {
-        const discoveredMac = await findMacByIp(freshIp);
-        if (discoveredMac) device.config.hwaddr = discoveredMac;
-      }
+      await backfillHwaddr(device, freshIp);
       const retryClient = new SamsungTizenClient({ ...config, ipAddress: freshIp });
       const token = await retryClient.connect();
       return { client: retryClient, token };

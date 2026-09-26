@@ -787,7 +787,7 @@ describe("LgWebOsDriver", () => {
       await flushMicrotasks();
       const relaySocket = MockWebSocket.latest();
       relaySocket.simulateError();
-      await flushMicrotasks(20);
+      await flushMicrotasks(60);
 
       const retrySocket = MockWebSocket.latest();
       expect(retrySocket.url).toBe("wss://192.168.1.218:3001");

@@ -6,7 +6,8 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { SonyBraviaApiError, SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
 import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findCurrentIpByMac, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
@@ -412,16 +413,13 @@ export class SonyBraviaDriver implements DeviceDriver {
       // See LgWebOsDriver.ts's identical comment: a device discovered/added before hwaddr-saving
       // existed has no MAC on file at all — falls back to a hostname match on this device's own
       // `name`, the same "safe to try, harmless if nothing matches" contract.
-      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      const freshIp = await findMovedAddress(device);
       if (!freshIp || freshIp === currentIp) throw err; // nothing better found — surface the original failure
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${currentIp} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp; // persisted by App.tsx after a successful connect(), same as every other self-healing driver
       // Backfills a missing MAC so the *next* move is caught by the faster, more precise
       // findCurrentIpByMac instead of needing this name-fallback again.
-      if (typeof hwaddr !== "string" && device.config) {
-        const discoveredMac = await findMacByIp(freshIp);
-        if (discoveredMac) device.config.hwaddr = discoveredMac;
-      }
+      await backfillHwaddr(device, freshIp);
       return await this.fetchLiveState(device);
     }
   }

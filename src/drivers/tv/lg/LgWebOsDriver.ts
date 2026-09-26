@@ -6,7 +6,8 @@ import { DeviceState, PlaybackState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
-import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 import { withBackoffJitter } from "../../shared/backoffJitter";
@@ -268,17 +269,14 @@ export class LgWebOsDriver implements DeviceDriver {
       // reacts to failure types — there's nothing to look up. Falls back to a hostname match on
       // this device's own `name`, which discovery already set from the Center's reported hostname
       // for exactly this device — same "safe to try, harmless if nothing matches" contract.
-      const freshIp = await findCurrentIpByIdentity(device.config, device.name);
+      const freshIp = await findMovedAddress(device);
       if (!freshIp || freshIp === config.ipAddress) throw err; // nothing better found — surface the original failure
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp; // persisted the same way a fresh client-key is, in doConnect
       // Backfills the MAC this device was missing, the same way EditDeviceAddressScreen.tsx
       // does for a manually-fixed device — so the *next* time this TV moves, it's re-located by
       // the faster, more precise MAC lookup instead of needing this name-fallback again.
-      if (typeof hwaddr !== "string" && device.config) {
-        const discoveredMac = await findMacByIp(freshIp);
-        if (discoveredMac) device.config.hwaddr = discoveredMac;
-      }
+      await backfillHwaddr(device, freshIp);
       const retryClient = new LgWebOsClient({ ...config, ipAddress: freshIp });
       const clientKey = await retryClient.connect();
       return { client: retryClient, clientKey };

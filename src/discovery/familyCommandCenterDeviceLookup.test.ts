@@ -1,4 +1,4 @@
-import { findCurrentIpByIdentity, findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "./familyCommandCenterDeviceLookup";
+import { findCurrentIpByBrand, findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "./familyCommandCenterDeviceLookup";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 jest.mock("./familyCommandCenterConfig");
@@ -135,33 +135,50 @@ describe("findCurrentIpByName", () => {
   });
 });
 
-describe("findCurrentIpByIdentity (ADR-HEARTH-156)", () => {
-  const inventory = {
-    ok: true,
-    json: async () => ({
-      devices: [
-        { hwaddr: "aa:bb:cc:dd:ee:01", ip: "192.168.1.50", name: "Den TV", uuid: null },
-        { hwaddr: "aa:bb:cc:dd:ee:02", ip: "192.168.1.61", name: "lgwebostv", uuid: "UUID-7" },
-      ],
-    }),
+describe("findCurrentIpByBrand (ADR-HEARTH-169)", () => {
+  const row = (ip: string, brand: string | null, extra: Record<string, unknown> = {}) => ({ ip, brand, confidence: "certain", online: true, ...extra });
+  const respondWith = (devices: unknown[]) => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 200, json: async () => ({ devices }) });
   };
 
   beforeEach(() => {
     mockLoadConfig.mockReset();
     mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "t" });
-    global.fetch = jest.fn().mockResolvedValue(inventory);
+    global.fetch = jest.fn();
   });
 
-  test("uses the MAC when there is one", async () => {
-    expect(await findCurrentIpByIdentity({ hwaddr: "AA:BB:CC:DD:EE:01", uuid: "UUID-7" }, "x")).toBe("192.168.1.50");
+  test("returns the IP when exactly one device of that brand is discovered", async () => {
+    respondWith([row("192.168.1.50", "sony"), row("192.168.1.60", "lg")]);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBe("192.168.1.50");
   });
 
-  test("falls back to the UUID when there is no MAC", async () => {
-    expect(await findCurrentIpByIdentity({ uuid: "uuid-7" }, "x")).toBe("192.168.1.61");
+  test("returns undefined when two devices of that brand are discovered", async () => {
+    respondWith([row("192.168.1.50", "sony"), row("192.168.1.51", "sony")]);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBeUndefined();
   });
 
-  test("falls back to the saved name when there is neither, or the UUID is unknown", async () => {
-    expect(await findCurrentIpByIdentity({}, "Den TV")).toBe("192.168.1.50");
-    expect(await findCurrentIpByIdentity({ uuid: "nope" }, "Den TV")).toBe("192.168.1.50");
+  test("ignores a candidate whose IP another saved device already uses", async () => {
+    respondWith([row("192.168.1.50", "sony")]);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: ["192.168.1.50"] })).toBeUndefined();
+  });
+
+  test("an excluded second candidate leaves the remaining one unique", async () => {
+    respondWith([row("192.168.1.50", "sony"), row("192.168.1.51", "sony")]);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: ["192.168.1.51"] })).toBe("192.168.1.50");
+  });
+
+  test("ignores offline and hidden rows", async () => {
+    respondWith([row("192.168.1.50", "sony", { online: false }), row("192.168.1.51", "sony", { hidden: true })]);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBeUndefined();
+  });
+
+  test("returns undefined when the Family Command Center is unreachable", async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error("network down"));
+    expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBeUndefined();
+  });
+
+  test("returns undefined when the Family Command Center is not configured", async () => {
+    mockLoadConfig.mockResolvedValue(null);
+    expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBeUndefined();
   });
 });

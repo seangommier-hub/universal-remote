@@ -4,7 +4,7 @@ import { Command, CommandResult } from "../../core/types/Command";
 import { Device } from "../../core/types/Device";
 import { DeviceState } from "../../core/types/DeviceState";
 import { logger } from "../../core/logging/logger";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../discovery/familyCommandCenterDeviceLookup";
+import { findMovedAddress, backfillHwaddr } from "./selfHeal";
 import { withBackoffJitter } from "./backoffJitter";
 
 // ADR-HEARTH-165: the shared skeleton of every driver that talks to its device one request at a
@@ -125,13 +125,11 @@ export abstract class PerRequestDriver implements DeviceDriver {
   private async lookUpMovedAddress(device: Device, currentIp: string): Promise<string | null> {
     logger.warn(this.logScope, `${device.name} failed to reach ${currentIp} — checking Family Command Center for its current address`);
     const hwaddr = device.config?.hwaddr;
-    return (typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name)) ?? null;
+    return (await findMovedAddress(device)) ?? null;
   }
 
   private async rememberMac(device: Device, freshIp: string): Promise<void> {
-    if (typeof device.config?.hwaddr === "string" || !device.config) return;
-    const discoveredMac = await findMacByIp(freshIp);
-    if (discoveredMac) device.config.hwaddr = discoveredMac;
+    await backfillHwaddr(device, freshIp);
   }
 
   private async refreshState(device: Device): Promise<void> {

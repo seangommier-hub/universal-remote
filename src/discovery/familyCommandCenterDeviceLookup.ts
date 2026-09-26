@@ -1,5 +1,6 @@
-import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 import { fccFetch } from "../core/network/fccRequest";
+import type { BrandId } from "./brandRegistry";
 
 // Real-hardware finding (2026-09-10): a device's saved IP goes stale the moment it moves to a
 // different WiFi network/VLAN — common in real households (confirmed with Sean directly: "i have
@@ -84,9 +85,45 @@ export async function findCurrentIpByUuid(uuid: string): Promise<string | undefi
   return devices?.find((device) => device.uuid?.toLowerCase() === uuid.toLowerCase())?.ip;
 }
 
-/** Re-locates a device after an IP change by the best identity it has: MAC, then UUID, then saved name (ADR-HEARTH-156). */
-export async function findCurrentIpByIdentity(config: Record<string, unknown> | undefined, name: string): Promise<string | undefined> {
-  if (typeof config?.hwaddr === "string") return findCurrentIpByMac(config.hwaddr);
-  if (typeof config?.uuid === "string") return (await findCurrentIpByUuid(config.uuid)) ?? findCurrentIpByName(name);
-  return findCurrentIpByName(name);
+// Deliberately reads the endpoint directly instead of importing discoverAll.ts: that module pulls in
+// the brand registry, which imports every driver — a cycle for the drivers that import this file.
+const DISCOVER_ALL_PATH = "/api/integrations/hearth/discover/all";
+
+interface DiscoverAllRow {
+  ip: string;
+  brand?: string | null;
+  labelBrand?: string | null;
+  online?: boolean;
+  hidden?: boolean;
+}
+
+async function fetchDiscoverAllRows(config: FamilyCommandCenterConfig): Promise<DiscoverAllRow[] | undefined> {
+  try {
+    const response = await fccFetch(config, DISCOVER_ALL_PATH, {}, LOOKUP_TIMEOUT_MS);
+    if (!response.ok) return undefined;
+    const { devices } = (await response.json()) as { devices?: DiscoverAllRow[] };
+    return Array.isArray(devices) ? devices.filter((row) => typeof row?.ip === "string") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface BrandLookupOptions {
+  /** IPs already claimed by other saved devices; a candidate at one of these is never returned. */
+  excludeIps: string[];
+}
+
+/**
+ * Last-resort re-location (ADR-HEARTH-169): the one online device of `brandId` the Family Command
+ * Center sees that no other saved device already uses. Returns `undefined` when there are zero or
+ * two-plus such candidates (never guesses between them) or when the Center is unconfigured/unreachable.
+ */
+export async function findCurrentIpByBrand(brandId: BrandId, options: BrandLookupOptions): Promise<string | undefined> {
+  const config = await loadFamilyCommandCenterConfig();
+  if (!config) return undefined;
+  const rows = await fetchDiscoverAllRows(config);
+  if (!rows) return undefined;
+  const claimed = new Set(options.excludeIps);
+  const candidates = rows.filter((row) => !row.hidden && row.online !== false && (row.labelBrand ?? row.brand) === brandId && !claimed.has(row.ip));
+  return candidates.length === 1 ? candidates[0].ip : undefined;
 }

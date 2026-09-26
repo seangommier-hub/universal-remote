@@ -4,7 +4,7 @@ import { WIZ_LIGHT_DRIVER_ID, WizLightDriver } from "./WizLightDriver";
 
 jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: number) => delayMs }));
 jest.mock("./WizClient", () => ({ ...jest.requireActual("./WizClient"), getPilot: jest.fn(), setPilot: jest.fn() }));
-jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
+jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
 
 const mockGetPilot = getPilot as jest.Mock;
 const mockSetPilot = setPilot as jest.Mock;

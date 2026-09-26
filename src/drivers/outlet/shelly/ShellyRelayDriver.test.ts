@@ -4,7 +4,7 @@ import { SHELLY_RELAY_DRIVER_ID, ShellyRelayDriver } from "./ShellyRelayDriver";
 
 jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: number) => delayMs }));
 jest.mock("./ShellyClient");
-jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
+jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({ findCurrentIpByMac: jest.fn(), findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(async () => null), findMacByIp: jest.fn() }));
 
 const mockIdentify = identifyShelly as jest.Mock;
 const mockRead = readRelay as jest.Mock;

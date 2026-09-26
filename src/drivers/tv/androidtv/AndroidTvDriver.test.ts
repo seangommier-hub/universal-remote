@@ -21,7 +21,7 @@ jest.mock("./AndroidTvClient", () => {
 
 jest.mock("../../../discovery/familyCommandCenterDeviceLookup", () => ({
   findCurrentIpByMac: jest.fn(),
-  findCurrentIpByName: jest.fn(),
+  findCurrentIpByBrand: jest.fn(async () => undefined), findCurrentIpByName: jest.fn(),
   findMacByIp: jest.fn(),
 }));
 jest.mock("../../../core/network/wakeOnLan", () => ({ sendWakeOnLan: jest.fn() }));
