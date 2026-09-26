@@ -5,6 +5,7 @@ import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { SwitchBotClient, SwitchBotConfig } from "./SwitchBotClient";
+import { withBackoffJitter } from "../../shared/backoffJitter";
 
 const LOG_SCOPE = "SwitchBotVacuumDriver";
 export const SWITCHBOT_VACUUM_DRIVER_ID = "switchbot-vacuum";
@@ -97,7 +98,7 @@ export class SwitchBotVacuumDriver implements DeviceDriver {
 
   private scheduleReconnect(device: Device, attempt = 1): void {
     if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       try {

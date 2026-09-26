@@ -3,6 +3,7 @@ import { Device } from "../../../core/types/Device";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { WAKE_BURST_INTERVAL_MS, WAKE_BURST_WINDOW_MS } from "../../shared/wakeBurst";
 
 jest.mock("../../../core/network/wakeOnLan");
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
@@ -42,6 +43,10 @@ describe("SonyBraviaDriver", () => {
     mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
     mockLoadConfig.mockReset(); // defaults to unconfigured — matches every existing test's "no relay/self-heal lookup" world unless a test opts in
     resetRelayNecessityCacheForTests();
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(device); // cancels any Wake-on-LAN reconnect burst (ADR-HEARTH-144) so its timer cannot leak into the next test
   });
 
   test("declares REST-API capabilities plus IRCC-IP nav/select/back/home (ADR-HEARTH-071) — but not menu or textEntry, which neither protocol supports", () => {
@@ -324,5 +329,90 @@ describe("SonyBraviaDriver", () => {
     await driver.executeCommand(device, { deviceId: device.id, capability: "home" });
 
     expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABgAw==</IRCCCode>");
+  });
+});
+
+// ADR-HEARTH-144: after a Wake-on-LAN packet the driver retries reaching the TV on a fast fixed
+// cadence instead of waiting out the slow backoff.
+describe("SonyBraviaDriver reconnect burst after Wake-on-LAN", () => {
+  const offDevice: Device = { ...device, config: { ...device.config, hwaddr: "11:22:33:44:55:66" } };
+  const powerCommand = { deviceId: offDevice.id, capability: "power" as const };
+  const burstAttempts = WAKE_BURST_WINDOW_MS / WAKE_BURST_INTERVAL_MS;
+  let tvIsUp: boolean;
+  let driver: SonyBraviaDriver;
+
+  let warnSpy: jest.SpyInstance;
+
+  // Each failed reach attempt logs one "Failed to reach" warning; counting them measures attempts even though a failed direct call makes later ones skip fetch (relay-only memory).
+  function powerStatusCalls(): number {
+    return warnSpy.mock.calls.filter(([message]) => String(message).includes("Failed to reach")).length;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    tvIsUp = false;
+    global.fetch = jest.fn(async (_url: unknown, init?: { body?: string }) => {
+      if (!tvIsUp) throw new Error("network unreachable");
+      const body = String(init?.body);
+      if (body.includes("getPowerStatus")) return powerStatusResponse("active");
+      if (body.includes("getVolumeInformation")) return volumeInfoResponse(12, false);
+      if (body.includes("getCurrentExternalInputsStatus")) return externalInputsResponse([]);
+      return systemInformationResponse("Living Room Sony");
+    }) as unknown as typeof fetch;
+    mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
+    mockLoadConfig.mockReset();
+    resetRelayNecessityCacheForTests();
+    driver = new SonyBraviaDriver();
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(offDevice);
+    warnSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  test("connects on the third fast attempt once the TV answers, then stops retrying", async () => {
+    await driver.executeCommand(offDevice, powerCommand);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    tvIsUp = true;
+    resetRelayNecessityCacheForTests(); // a failed direct call marks the address relay-only for the session; a real reboot is not modelled by that memory
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    expect((await driver.getState(offDevice)).connection).toBe("connected");
+
+    const callsWhenConnected = powerStatusCalls();
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
+    expect(powerStatusCalls()).toBe(callsWhenConnected);
+  });
+
+  test("a TV that never answers ends the burst after the window and falls back to slow backoff, not a fast loop", async () => {
+    await driver.executeCommand(offDevice, powerCommand);
+    const callsAfterWake = powerStatusCalls();
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS);
+    expect(powerStatusCalls()).toBe(callsAfterWake + burstAttempts);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(powerStatusCalls()).toBe(callsAfterWake + burstAttempts);
+    await jest.advanceTimersByTimeAsync(1500);
+    expect(powerStatusCalls()).toBe(callsAfterWake + burstAttempts + 1);
+  });
+
+  test("disconnect() during the burst cancels it", async () => {
+    await driver.executeCommand(offDevice, powerCommand);
+    const callsAfterWake = powerStatusCalls();
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await driver.disconnect(offDevice);
+    const callsAtDisconnect = powerStatusCalls();
+    expect(callsAtDisconnect).toBe(callsAfterWake + 1);
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
+    expect(powerStatusCalls()).toBe(callsAtDisconnect);
   });
 });

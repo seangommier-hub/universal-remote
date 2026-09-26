@@ -4,6 +4,15 @@ import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
+// ADR-HEARTH-144: reconnect delays carry random jitter; pin it to zero so the exact-delay assertions below stay exact.
+const realMathRandom = Math.random; // pinned near-zero (not 0: a constant 0 recurses forever in jest internals) so jitter rounds away
+beforeAll(() => {
+  Math.random = () => 0.0001;
+});
+afterAll(() => {
+  Math.random = realMathRandom;
+});
+
 jest.mock("../../../discovery/familyCommandCenterConfig");
 jest.mock("../../../core/network/wakeOnLan");
 const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
@@ -37,6 +46,10 @@ describe("SamsungTizenDriver", () => {
     mockLoadConfig.mockReset();
     mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
     global.fetch = jest.fn();
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(device); // cancels any Wake-on-LAN reconnect burst (ADR-HEARTH-144) so its timer cannot leak into the next test
   });
 
   test("declares nav/menu capabilities but not inputSelection or setVolume (protocol can't do either)", () => {
