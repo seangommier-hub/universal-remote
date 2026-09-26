@@ -306,6 +306,7 @@ export function DeviceListScreen({
         onAdded={onQuickAdd}
         onOpenBrandScreen={onOpenBrandScreen}
         onOpenFccSetup={onConnectFamilyCommandCenter}
+        onSeeAll={onDiscover}
       />
 
       <Pressable

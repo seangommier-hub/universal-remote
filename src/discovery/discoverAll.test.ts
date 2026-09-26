@@ -16,7 +16,7 @@ import { FamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 const CONFIG: FamilyCommandCenterConfig = { baseUrl: "http://pi.local:3210", token: "t", publicBaseUrl: "https://pi.example.com" };
 
 function device(overrides: Partial<NetworkDevice> = {}): NetworkDevice {
-  return { id: "d1", ip: "192.168.1.10", mac: null, hostname: null, vendor: null, brand: null, model: null, confidence: "unknown", evidence: [], online: true, ...overrides };
+  return { id: "d1", ip: "192.168.1.10", mac: null, hostname: null, vendor: null, brand: null, model: null, confidence: "unknown", evidence: [], online: true, kind: null, friendlyName: null, hidden: false, labelBrand: null, ...overrides };
 }
 
 function deps(overrides: Partial<DiscoverAllDependencies>): DiscoverAllDependencies {
@@ -141,5 +141,29 @@ describe("fetchDiscoverAll", () => {
     global.fetch = jest.fn().mockResolvedValue(response(401));
     await expect(fetchDiscoverAll(CONFIG)).rejects.toThrow(/rejected/);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("parseNetworkDevice new fields (ADR-HEARTH-153)", () => {
+  test("reads kind, friendlyName, hidden and labelBrand", () => {
+    expect(parseNetworkDevice({ ip: "10.0.0.7", kind: "camera", friendlyName: " Front door ", hidden: true, labelBrand: "roku" })).toMatchObject({
+      kind: "camera",
+      friendlyName: "Front door",
+      hidden: true,
+      labelBrand: "roku",
+    });
+  });
+
+  test("an older Pi that sends none of them still parses, with safe defaults", () => {
+    expect(parseNetworkDevice({ ip: "10.0.0.8" })).toMatchObject({ kind: null, friendlyName: null, hidden: false, labelBrand: null });
+  });
+
+  test("ignores an unknown kind or brand instead of trusting it", () => {
+    expect(parseNetworkDevice({ ip: "10.0.0.9", kind: "toaster", labelBrand: "toaster", hidden: "yes" })).toMatchObject({ kind: null, labelBrand: null, hidden: false });
+  });
+
+  test("merging keeps a kind and friendly name from either sighting", () => {
+    const merged = mergeNetworkDevices([device({ kind: null })], [device({ kind: "tv", friendlyName: "Den TV" })]);
+    expect(merged[0]).toMatchObject({ kind: "tv", friendlyName: "Den TV" });
   });
 });
