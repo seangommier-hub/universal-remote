@@ -3,6 +3,7 @@ import { FccTokenRejectedError, FccUnreachableError } from "../core/network/fccE
 import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 import { brandForDriverId, BrandId, isBrandId } from "./brandRegistry";
+import { DeviceKind, isDeviceKind } from "./deviceKind";
 import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 import { FamilyCommandCenterDiscoveryProvider, FAMILY_COMMAND_CENTER_DISCOVERY_ID } from "./FamilyCommandCenterDiscoveryProvider";
 import { scanAllProvidersWithDiagnostics } from "./scanAllProviders";
@@ -30,6 +31,14 @@ export interface NetworkDevice {
   confidence: DiscoveryConfidence;
   evidence: string[];
   online: boolean;
+  /** ADR-HEARTH-153: what sort of thing this is; null when the Pi predates the field. */
+  kind: DeviceKind | null;
+  /** The name a person would call it, when the Pi knows one. */
+  friendlyName: string | null;
+  /** Household-wide "not a remote device" flag. */
+  hidden: boolean;
+  /** Household-wide brand override chosen by someone with "It's a ...". */
+  labelBrand: BrandId | null;
 }
 
 export interface DiscoverAllResult {
@@ -70,6 +79,10 @@ export function parseNetworkDevice(raw: unknown): NetworkDevice | null {
     confidence: brand ? confidence : "unknown",
     evidence: Array.isArray(row.evidence) ? row.evidence.filter((e): e is string => typeof e === "string") : [],
     online: row.online !== false,
+    kind: isDeviceKind(row.kind) ? row.kind : null,
+    friendlyName: stringOrNull(row.friendlyName),
+    hidden: row.hidden === true,
+    labelBrand: isBrandId(row.labelBrand) ? row.labelBrand : null,
   };
 }
 
@@ -86,6 +99,8 @@ function fillGaps(winner: NetworkDevice, other: NetworkDevice): NetworkDevice {
     hostname: winner.hostname ?? other.hostname,
     vendor: winner.vendor ?? other.vendor,
     model: winner.model ?? other.model,
+    kind: winner.kind ?? other.kind,
+    friendlyName: winner.friendlyName ?? other.friendlyName,
     evidence: Array.from(new Set([...winner.evidence, ...other.evidence])),
   };
 }
@@ -122,6 +137,10 @@ export function networkDeviceFromDiscovered(found: DiscoveredDevice): NetworkDev
     confidence: brand ? "likely" : "unknown",
     evidence: [],
     online: true,
+    kind: null,
+    friendlyName: null,
+    hidden: false,
+    labelBrand: null,
   };
 }
 

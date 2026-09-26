@@ -3,7 +3,7 @@ import { NetworkDevice } from "./discoverAll";
 import { buildDiscoveryRows, findAddedDevice, notYetAdded, reidentify } from "./discoveryRows";
 
 function net(overrides: Partial<NetworkDevice>): NetworkDevice {
-  return { id: "n", ip: "192.168.1.10", mac: null, hostname: null, vendor: null, brand: null, model: null, confidence: "unknown", evidence: [], online: true, ...overrides };
+  return { id: "n", ip: "192.168.1.10", mac: null, hostname: null, vendor: null, brand: null, model: null, confidence: "unknown", evidence: [], online: true, kind: null, friendlyName: null, hidden: false, labelBrand: null, ...overrides };
 }
 
 function saved(config: Record<string, unknown>): Device {
@@ -32,9 +32,9 @@ describe("buildDiscoveryRows", () => {
 
   test("identified rows show brand and model; other rows show hostname, vendor and ip", () => {
     const rows = buildDiscoveryRows(devices, []);
-    expect(rows.identified.find((r) => r.device.id === "2")).toMatchObject({ title: "Roku · Ultra", subtitle: "192.168.1.20" });
-    expect(rows.other.find((r) => r.device.id === "1")).toMatchObject({ title: "printer", subtitle: "HP · 192.168.1.30" });
-    expect(rows.other.find((r) => r.device.id === "4")?.title).toBe("192.168.1.40");
+    expect(rows.identified.find((r) => r.device.id === "2")).toMatchObject({ title: "Roku · Ultra", subtitle: "192.168.1.20 · Answered as Roku" });
+    expect(rows.other.find((r) => r.device.id === "1")).toMatchObject({ title: "printer", subtitle: "192.168.1.30 · HP" });
+    expect(rows.other.find((r) => r.device.id === "4")?.title).toBe("Unknown device");
   });
 
   test("devices already added are marked Added, matched by ip or mac, not removed", () => {
