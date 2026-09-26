@@ -21,6 +21,16 @@
         "credentialsSource": "local"
       }
     },
+    "family": {
+      "extends": "production",
+      "channel": "family",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_PERSONAL_HARDWARE_ENABLED": "true"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production",
@@ -31,6 +41,14 @@
     }
   },
   "submit": {
+    "family": {
+      "ios": {
+        "ascAppId": "6813730400",
+        "ascApiKeyPath": "$EXPO_ASC_API_KEY_PATH",
+        "ascApiKeyIssuerId": "$EXPO_ASC_ISSUER_ID",
+        "ascApiKeyId": "$EXPO_ASC_KEY_ID"
+      }
+    },
     "production": {
       "ios": {
         "ascAppId": "6813730400",
