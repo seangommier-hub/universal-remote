@@ -7,7 +7,8 @@ import { StateStore } from "../core/state/StateStore";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
-import { AddSquirrelFeederDeviceScreen } from "./AddSquirrelFeederDeviceScreen";
+import { getBrand } from "../discovery/brandRegistry";
+import { GenericIpAddDeviceScreen } from "./GenericIpAddDeviceScreen";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 
@@ -50,7 +51,7 @@ export function FeederTabScreen({ devices, driverRegistry, stateStore, commandEn
   const device = devices.find((d) => d.category === "feeder");
 
   if (!device) {
-    return <AddSquirrelFeederDeviceScreen driverRegistry={driverRegistry} onAdded={onAdded} />;
+    return <GenericIpAddDeviceScreen brand={getBrand("feeder")} driverRegistry={driverRegistry} onAdded={onAdded} onOpenFccSetup={() => {}} />;
   }
 
   return <FeederStatusView device={device} stateStore={stateStore} commandEngine={commandEngine} onReconnect={onReconnect} onRemove={onRemove} />;

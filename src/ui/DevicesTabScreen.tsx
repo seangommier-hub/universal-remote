@@ -4,27 +4,13 @@ import { HearthRuntime } from "../runtime/bootstrap";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { Device } from "../core/types/Device";
 import { Scene } from "../core/types/Scene";
-import { DeviceListScreen, AddableBrand } from "./DeviceListScreen";
+import { BrandId } from "../discovery/brandRegistry";
+import { DeviceListScreen } from "./DeviceListScreen";
+import { renderAddScreen } from "./renderAddScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
 import { LightControlScreen } from "./LightControlScreen";
 import { VacuumControlScreen } from "./VacuumControlScreen";
-import { AddSonyDeviceScreen } from "./AddSonyDeviceScreen";
-import { AddSamsungDeviceScreen } from "./AddSamsungDeviceScreen";
-import { AddLgDeviceScreen } from "./AddLgDeviceScreen";
-import { AddRokuDeviceScreen } from "./AddRokuDeviceScreen";
-import { AddYamahaDeviceScreen } from "./AddYamahaDeviceScreen";
-import { AddSonosDeviceScreen } from "./AddSonosDeviceScreen";
-import { AddPs5DeviceScreen } from "./AddPs5DeviceScreen";
-import { AddDenonDeviceScreen } from "./AddDenonDeviceScreen";
-import { AddChromecastDeviceScreen } from "./AddChromecastDeviceScreen";
-import { AddBroadlinkHubScreen } from "./AddBroadlinkHubScreen";
 import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
-import { AddAppleTvDeviceScreen } from "./AddAppleTvDeviceScreen";
-import { AddXboxDeviceScreen } from "./AddXboxDeviceScreen";
-import { AddHueDeviceScreen } from "./AddHueDeviceScreen";
-import { AddSwitchBotVacuumScreen } from "./AddSwitchBotVacuumScreen";
-import { AddSmartThingsOutletsScreen } from "./AddSmartThingsOutletsScreen";
-import { AddKasaDeviceScreen } from "./AddKasaDeviceScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
@@ -37,7 +23,7 @@ import { theme } from "./theme";
 type Screen =
   | { name: "list" }
   | { name: "remote"; device: Device }
-  | { name: "add"; brand: AddableBrand; initialIpAddress?: string }
+  | { name: "add"; brand: BrandId; initialIpAddress?: string }
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
@@ -134,6 +120,10 @@ export function DevicesTabScreen({
     setScreen({ name: "list" });
   }
 
+  function openFccSetup() {
+    setScreen(fccConfigured ? { name: "fcc-settings" } : { name: "fcc-scan" });
+  }
+
   const addScreenProps = {
     driverRegistry: runtime.driverRegistry,
     onCancel: () => setScreen({ name: "list" }),
@@ -184,46 +174,7 @@ export function DevicesTabScreen({
           onBack={() => setScreen({ name: "list" })}
         />
       )}
-      {screen.name === "add" && screen.brand === "sony" && (
-        <AddSonyDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "samsung" && (
-        <AddSamsungDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "lg" && <AddLgDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />}
-      {screen.name === "add" && screen.brand === "roku" && (
-        <AddRokuDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "yamaha" && (
-        <AddYamahaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "hue" && <AddHueDeviceScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "switchbot" && <AddSwitchBotVacuumScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "smartthings" && <AddSmartThingsOutletsScreen {...addScreenProps} />}
-      {screen.name === "add" && screen.brand === "xbox" && (
-        <AddXboxDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "kasa" && (
-        <AddKasaDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "sonos" && (
-        <AddSonosDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "ps5" && (
-        <AddPs5DeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "denon" && (
-        <AddDenonDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "chromecast" && (
-        <AddChromecastDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "broadlink" && (
-        <AddBroadlinkHubScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
-      {screen.name === "add" && screen.brand === "appletv" && (
-        <AddAppleTvDeviceScreen {...addScreenProps} initialIpAddress={screen.initialIpAddress} />
-      )}
+      {screen.name === "add" && renderAddScreen(screen.brand, { ...addScreenProps, initialIpAddress: screen.initialIpAddress, onOpenFccSetup: openFccSetup })}
       {screen.name === "teach-broadlink" && (
         <TeachBroadlinkCommandScreen
           device={screen.device}
@@ -235,10 +186,11 @@ export function DevicesTabScreen({
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}
           stateStore={runtime.stateStore}
+          devices={devices}
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleAdded}
-          onOpenSettings={() => setScreen({ name: "fcc-scan" })}
-          onAddManually={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
+          onOpenSettings={openFccSetup}
+          onOpenBrandScreen={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
         />
       )}
       {screen.name === "fcc-scan" && (
@@ -299,10 +251,10 @@ export function DevicesTabScreen({
           commandEngine={runtime.commandEngine}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
-          onAddDeviceWithIp={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
+          onOpenBrandScreen={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
           onQuickAdd={handleAdded}
           onDiscover={() => setScreen({ name: "discover" })}
-          onConnectFamilyCommandCenter={() => setScreen(fccConfigured ? { name: "fcc-settings" } : { name: "fcc-scan" })}
+          onConnectFamilyCommandCenter={openFccSetup}
           fccConfigured={fccConfigured}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onCheckForUpdates={onCheckForUpdates}
