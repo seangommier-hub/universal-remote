@@ -7,6 +7,7 @@ import { logger } from "../../../core/logging/logger";
 import { YamahaMainStatus, YamahaMusicCastClient, YamahaMusicCastConfig } from "./YamahaMusicCastClient";
 import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { withBackoffJitter } from "../../shared/backoffJitter";
+import { CommandValidationError, runCommandTrackingReachability } from "../../shared/commandFailure";
 
 const LOG_SCOPE = "YamahaMusicCastDriver";
 const VOLUME_STEP = 5; // MusicCast's own volume scale commonly runs 0-100/0-161 depending on model — a fixed step in Sony's absolute-volume-units sense doesn't apply the same way, but a flat step still reads sensibly as a proportion of whatever max_volume this device reports.
@@ -127,7 +128,11 @@ export class YamahaMusicCastDriver implements DeviceDriver {
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new YamahaMusicCastClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
+    const generation = this.generations.get(device.id) ?? 0;
+    await runCommandTrackingReachability(
+      () => this.applyCommand(client, device, command),
+      () => this.markUnreachableAfterCommandFailure(device, generation)
+    );
     const state = await this.refreshState(device);
     return {
       success: true,
@@ -136,6 +141,14 @@ export class YamahaMusicCastDriver implements DeviceDriver {
       timestamp: Date.now(),
       state: state.values,
     };
+  }
+
+  /** Marks the device disconnected and starts the reconnect loop after a command failed on the wire (connection contract, ADR-HEARTH-171). */
+  private markUnreachableAfterCommandFailure(device: Device, generation: number): void {
+    if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected in the meantime
+    const current = this.states.get(device.id);
+    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+    this.scheduleReconnect(device);
   }
 
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
@@ -164,7 +177,7 @@ export class YamahaMusicCastDriver implements DeviceDriver {
       }
       case "setVolume": {
         const target = command.args?.volume;
-        if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg");
+        if (typeof target !== "number") throw new CommandValidationError("setVolume requires a numeric 'volume' arg");
         await client.setVolume(target);
         return;
       }
@@ -175,12 +188,12 @@ export class YamahaMusicCastDriver implements DeviceDriver {
       }
       case "inputSelection": {
         const input = command.args?.input;
-        if (typeof input !== "string") throw new Error("inputSelection requires a string 'input' arg");
+        if (typeof input !== "string") throw new CommandValidationError("inputSelection requires a string 'input' arg");
         await client.setInput(input);
         return;
       }
       default:
-        throw new Error(`YamahaMusicCastDriver does not implement capability: ${command.capability}`);
+        throw new CommandValidationError(`YamahaMusicCastDriver does not implement capability: ${command.capability}`);
     }
   }
 

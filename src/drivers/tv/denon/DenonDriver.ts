@@ -7,6 +7,7 @@ import { logger } from "../../../core/logging/logger";
 import { DenonClient, DenonConfig, DenonStatus } from "./DenonClient";
 import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { withBackoffJitter } from "../../shared/backoffJitter";
+import { CommandValidationError, runCommandTrackingReachability } from "../../shared/commandFailure";
 
 const LOG_SCOPE = "DenonDriver";
 const VOLUME_STEP_DB = 0.5; // Denon's own remote/app step size for a single MVUP/MVDOWN press
@@ -107,7 +108,11 @@ export class DenonDriver implements DeviceDriver {
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new DenonClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
+    const generation = this.generations.get(device.id) ?? 0;
+    await runCommandTrackingReachability(
+      () => this.applyCommand(client, device, command),
+      () => this.markUnreachableAfterCommandFailure(device, generation)
+    );
     const state = await this.refreshState(device);
     return {
       success: true,
@@ -116,6 +121,14 @@ export class DenonDriver implements DeviceDriver {
       timestamp: Date.now(),
       state: state.values,
     };
+  }
+
+  /** Marks the device disconnected and starts the reconnect loop after a command failed on the wire (connection contract, ADR-HEARTH-171). */
+  private markUnreachableAfterCommandFailure(device: Device, generation: number): void {
+    if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected in the meantime
+    const current = this.states.get(device.id);
+    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+    this.scheduleReconnect(device);
   }
 
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
@@ -144,7 +157,7 @@ export class DenonDriver implements DeviceDriver {
         return;
       case "setVolume": {
         const target = command.args?.volume;
-        if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg (the receiver's own dB scale)");
+        if (typeof target !== "number") throw new CommandValidationError("setVolume requires a numeric 'volume' arg (the receiver's own dB scale)");
         await client.setVolume(target);
         return;
       }
@@ -154,7 +167,7 @@ export class DenonDriver implements DeviceDriver {
         return;
       }
       default:
-        throw new Error(`DenonDriver does not implement capability: ${command.capability}`);
+        throw new CommandValidationError(`DenonDriver does not implement capability: ${command.capability}`);
     }
   }
 

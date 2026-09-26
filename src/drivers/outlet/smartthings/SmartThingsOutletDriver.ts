@@ -3,7 +3,14 @@ import { CapabilityId } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
+import { logger } from "../../../core/logging/logger";
+import { withBackoffJitter } from "../../shared/backoffJitter";
+import { dedupeInFlight } from "../../shared/inFlightDedupe";
 import { listOutlets, setOutletState } from "./SmartThingsClient";
+
+const LOG_SCOPE = "SmartThingsOutletDriver";
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 export const SMARTTHINGS_OUTLET_DRIVER_ID = "smartthings-outlet";
 const OUTLET_CAPABILITIES: CapabilityId[] = ["power"];
@@ -30,13 +37,22 @@ export class SmartThingsOutletDriver implements DeviceDriver {
 
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
+  private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private generations = new Map<string, number>();
+  private inFlightConnects = new Map<string, Promise<void>>();
 
   getCapabilities(): CapabilityId[] {
     return OUTLET_CAPABILITIES;
   }
 
   async connect(device: Device): Promise<void> {
+    return dedupeInFlight(this.inFlightConnects, device.id, () => this.doConnect(device));
+  }
+
+  private async doConnect(device: Device): Promise<void> {
     const outletId = requireOutletId(device);
+    const generation = this.generations.get(device.id) ?? 0;
+    this.clearReconnectTimer(device.id);
     try {
       const outlets = await listOutlets();
       const outlet = outlets.find((o) => o.id === outletId);
@@ -47,15 +63,48 @@ export class SmartThingsOutletDriver implements DeviceDriver {
       // offline) — fail safe to "off" rather than surface a third power state the rest of the
       // app's power-toggle UI was never built to render.
       const power = outlet.state === "unknown" ? "off" : outlet.state;
+      if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected while this was in flight
       this.setState(device.id, { connection: "connected", values: { power }, lastUpdated: Date.now() });
     } catch (err) {
-      const current = this.states.get(device.id);
-      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      if (generation !== (this.generations.get(device.id) ?? 0)) throw err; // its own disconnect() already set the right state
+      this.markDisconnectedAndRetry(device);
       throw err;
     }
   }
 
+  /** Marks the outlet disconnected and starts the backoff reconnect loop (connection contract, ADR-HEARTH-171). */
+  private markDisconnectedAndRetry(device: Device): void {
+    const current = this.states.get(device.id);
+    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+    this.scheduleReconnect(device);
+  }
+
+  private scheduleReconnect(device: Device, attempt = 1): void {
+    if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
+    logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
+    const timer = setTimeout(async () => {
+      try {
+        await this.connect(device);
+        logger.info(LOG_SCOPE, `${device.name} reachable again after ${attempt} attempt(s)`);
+      } catch {
+        this.scheduleReconnect(device, attempt + 1);
+      }
+    }, delay);
+    this.reconnectTimers.set(device.id, timer);
+  }
+
+  private clearReconnectTimer(deviceId: string): void {
+    const timer = this.reconnectTimers.get(deviceId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(deviceId);
+    }
+  }
+
   async disconnect(device: Device): Promise<void> {
+    this.generations.set(device.id, (this.generations.get(device.id) ?? 0) + 1);
+    this.clearReconnectTimer(device.id);
     const current = this.states.get(device.id);
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
   }
@@ -75,8 +124,7 @@ export class SmartThingsOutletDriver implements DeviceDriver {
       await setOutletState(outletId, next);
       this.setState(device.id, { connection: "connected", values: { power: next }, lastUpdated: Date.now() });
     } catch (err) {
-      const current = this.states.get(device.id);
-      this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+      this.markDisconnectedAndRetry(device);
       throw err;
     }
     const state = this.states.get(device.id)!;

@@ -24,7 +24,7 @@ device coverage, and iOS background behavior. Their reports are the source; clai
    100s idle limit and per-phone credentials.
 4. **Wake reliability:** send WoL as several packets (broadcast and unicast), poll then connect, show a
    "Waking" state; per-brand settings guidance (done in ADR-154).
-5. Fix remaining contract-suite bugs (relay-only memory that never recovers, SwitchBot timeout, driver
+5. (DONE, ADR-HEARTH-171) Fix remaining contract-suite bugs (relay-only memory that never recovers, SwitchBot timeout, driver
    retry gaps).
 
 **Tier 2: features competitors prove people want**

@@ -30,15 +30,11 @@ import { SonyBraviaDriver } from "../tv/sony/SonyBraviaDriver";
 import { YamahaMusicCastDriver } from "../tv/yamaha/YamahaMusicCastDriver";
 import { SwitchBotVacuumDriver } from "../vacuum/switchbot/SwitchBotVacuumDriver";
 import {
-  COMMAND_FAILURE_NOT_TRACKED,
   LG_COMMAND_TIMEOUT_NOT_LIVENESS,
   NO_PROBE_DRIVER_EXEMPTIONS,
   SAMSUNG_NO_LIVENESS,
-  SOCKET_TV_SHARED_BUGS,
   STATELESS_HTTP_RETRY_EXEMPTION,
-  UNDEDUPED_CONNECT_EXEMPTIONS,
   DriverExemptions,
-  hangingRequestBug,
 } from "./exemptions";
 
 export const FCC_TEST_CONFIG: FccConfig = { baseUrl: "http://fcc.test:3210", token: "contract-token" };
@@ -151,40 +147,29 @@ const shellyResponder: Responder = (url) => {
 const anyCommand = (capability: Command["capability"]): Command => ({ deviceId: "contract", capability });
 
 export const DRIVER_ADAPTERS: DriverAdapter[] = [
-  { name: "LgWebOsDriver", createDriver: () => new LgWebOsDriver(), createDevice: device("lg-1", { ipAddress: "192.168.1.70" }), socketProtocol: "lg", persistentSocket: true, usesFcc: false, command: anyCommand("volumeUp"), exemptions: { ...SOCKET_TV_SHARED_BUGS, commandFailureMarksDisconnected: LG_COMMAND_TIMEOUT_NOT_LIVENESS } },
+  { name: "LgWebOsDriver", createDriver: () => new LgWebOsDriver(), createDevice: device("lg-1", { ipAddress: "192.168.1.70" }), socketProtocol: "lg", persistentSocket: true, usesFcc: false, command: anyCommand("volumeUp"), exemptions: { commandFailureMarksDisconnected: LG_COMMAND_TIMEOUT_NOT_LIVENESS } },
   { name: "SamsungTizenDriver", createDriver: () => new SamsungTizenDriver(), createDevice: device("samsung-1", { ipAddress: "192.168.1.60" }), socketProtocol: "samsung", persistentSocket: true, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {
-      ...SOCKET_TV_SHARED_BUGS,
       commandWhileHungRejects: SAMSUNG_NO_LIVENESS,
       commandFailureMarksDisconnected: SAMSUNG_NO_LIVENESS,
       silentDeathDetected: SAMSUNG_NO_LIVENESS,
     } },
-  { name: "SonyBraviaDriver", createDriver: () => new SonyBraviaDriver(), createDevice: device("sony-1", { ipAddress: "192.168.1.50", psk: "psk" }), responder: sonyResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: COMMAND_FAILURE_NOT_TRACKED },
+  { name: "SonyBraviaDriver", createDriver: () => new SonyBraviaDriver(), createDevice: device("sony-1", { ipAddress: "192.168.1.50", psk: "psk" }), responder: sonyResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {} },
   { name: "RokuEcpDriver", createDriver: () => new RokuEcpDriver(), createDevice: device("roku-1", { ipAddress: "192.168.1.80" }), responder: rokuResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {} },
-  { name: "DenonDriver", createDriver: () => new DenonDriver(), createDevice: device("denon-1", { ipAddress: "192.168.1.81" }), responder: denonResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: COMMAND_FAILURE_NOT_TRACKED },
-  { name: "YamahaMusicCastDriver", createDriver: () => new YamahaMusicCastDriver(), createDevice: device("yamaha-1", { ipAddress: "192.168.1.60" }), responder: yamahaResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: COMMAND_FAILURE_NOT_TRACKED },
-  { name: "SonosDriver", createDriver: () => new SonosDriver(), createDevice: device("sonos-1", { ipAddress: "192.168.1.82" }), responder: sonosResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: COMMAND_FAILURE_NOT_TRACKED },
-  { name: "ChromecastDriver", createDriver: () => new ChromecastDriver(), createDevice: device("cast-1", { ipAddress: "192.168.1.83" }), responder: () => ({ json: { volumeLevel: 0.3, muted: false } }), usesFcc: true, command: anyCommand("volumeUp"), exemptions: {
-      ...COMMAND_FAILURE_NOT_TRACKED,
-      ...{},
-    } },
+  { name: "DenonDriver", createDriver: () => new DenonDriver(), createDevice: device("denon-1", { ipAddress: "192.168.1.81" }), responder: denonResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {} },
+  { name: "YamahaMusicCastDriver", createDriver: () => new YamahaMusicCastDriver(), createDevice: device("yamaha-1", { ipAddress: "192.168.1.60" }), responder: yamahaResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {} },
+  { name: "SonosDriver", createDriver: () => new SonosDriver(), createDevice: device("sonos-1", { ipAddress: "192.168.1.82" }), responder: sonosResponder, usesFcc: false, command: anyCommand("volumeUp"), exemptions: {} },
+  { name: "ChromecastDriver", createDriver: () => new ChromecastDriver(), createDevice: device("cast-1", { ipAddress: "192.168.1.83" }), responder: () => ({ json: { volumeLevel: 0.3, muted: false } }), usesFcc: true, command: anyCommand("volumeUp"), exemptions: {} },
   { name: "AppleTvDriver", createDriver: () => new AppleTvDriver(), createDevice: device("atv-1", { ipAddress: "192.168.1.90" }), responder: () => ({ json: { output: "PowerState.On" } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
   { name: "AndroidTvDriver", createDriver: () => new AndroidTvDriver(), createDevice: device("atvr-1", { ipAddress: "192.168.1.91" }), responder: () => ({ json: { isOn: true, currentApp: null } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
   { name: "KasaPlugDriver", createDriver: () => new KasaPlugDriver(), createDevice: device("kasa-1", { ipAddress: "192.168.1.50" }), responder: kasaResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
-  { name: "SmartThingsOutletDriver", createDriver: () => new SmartThingsOutletDriver(), createDevice: device("st-1", { deviceId: "st-1" }), responder: smartThingsResponder, usesFcc: true, command: anyCommand("power"), exemptions: {
-      ...UNDEDUPED_CONNECT_EXEMPTIONS,
-      retryAfterFailure: {
-        kind: "bug",
-        bug: 12,
-        reason: "no retry after a failed connect and no ADR records that as intended (Hue and the feeder do have one); the same gap was fixed for Kasa and Apple TV",
-      },
-    } },
+  { name: "SmartThingsOutletDriver", createDriver: () => new SmartThingsOutletDriver(), createDevice: device("st-1", { deviceId: "st-1" }), responder: smartThingsResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "VizioSmartCastDriver", createDriver: () => new VizioSmartCastDriver(), createDevice: device("vizio-1", { ipAddress: "192.168.1.88", port: 7345, authToken: "token" }), responder: vizioResponder, usesFcc: true, command: anyCommand("volumeUp"), exemptions: {} },
   { name: "WizLightDriver", createDriver: () => new WizLightDriver(), createDevice: device("wiz-1", { ipAddress: "192.168.1.89" }), responder: wizResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "LifxLightDriver", createDriver: () => new LifxLightDriver(), createDevice: device("lifx-1", { ipAddress: "192.168.1.91" }), responder: lifxResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "ShellyRelayDriver", createDriver: () => new ShellyRelayDriver(), createDevice: device("shelly-1", { ipAddress: "192.168.1.92" }), responder: shellyResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },
-  { name: "HueLightDriver", createDriver: () => new HueLightDriver(), createDevice: device("hue-1", { bridgeIpAddress: "192.168.1.2", username: "u", lightId: "1" }), responder: hueResponder, usesFcc: false, command: anyCommand("power"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
-  { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
-  { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: hangingRequestBug(4, "SwitchBotClient (SwitchBotClient.ts:93/99/104)", ["connectHangRejects", "commandWhileHungRejects"]) },
+  { name: "HueLightDriver", createDriver: () => new HueLightDriver(), createDevice: device("hue-1", { bridgeIpAddress: "192.168.1.2", username: "u", lightId: "1" }), responder: hueResponder, usesFcc: false, command: anyCommand("power"), exemptions: { retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
+  { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
+  { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: {} },
   { name: "HomeAssistantDriver", createDriver: () => new HomeAssistantDriver(), createDevice: device("ha-1", { baseUrl: "http://ha.test:8123", token: "contract-token", entityId: "switch.lamp" }), responder: homeAssistantResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },
   { name: "BroadlinkIrDriver", createDriver: () => new BroadlinkIrDriver(), createDevice: device("bl-1", { ipAddress: "192.168.1.85", codes: { power: "2600" } }), responder: () => ({ json: {} }), usesFcc: true, command: anyCommand("power"), exemptions: {
       ...NO_PROBE_DRIVER_EXEMPTIONS,

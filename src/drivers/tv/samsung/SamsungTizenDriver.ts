@@ -168,6 +168,7 @@ export class SamsungTizenDriver implements DeviceDriver {
     const existing = this.inFlightConnects.get(device.id);
     if (existing) return existing;
     const attempt = this.doConnect(device);
+    const attemptGeneration = this.generations.get(device.id) ?? 0; // doConnect bumps it synchronously before its first await
     this.inFlightConnects.set(device.id, attempt);
     try {
       await attempt;
@@ -176,7 +177,13 @@ export class SamsungTizenDriver implements DeviceDriver {
       // See LgWebOsDriver.ts's identical comment (ADR-HEARTH-017 update, 2026-09-10): this used
       // to just throw here, with nothing scheduling another try — a device that failed to connect
       // never got auto-retried at all, only one that connected and then dropped did.
-      this.scheduleReconnect(device);
+      // ADR-HEARTH-171: a failed first connect reports "disconnected" (never left at "unknown"), and a
+      // disconnect() that landed while this attempt was failing must not be undone by a retry loop.
+      if (this.isCurrentGeneration(device.id, attemptGeneration)) {
+        const current = this.states.get(device.id);
+        this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+        this.scheduleReconnect(device);
+      }
       throw err;
     } finally {
       if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);

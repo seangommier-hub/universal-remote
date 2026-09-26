@@ -1,3 +1,4 @@
+import { dedupeInFlight } from "../../shared/inFlightDedupe";
 import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceDriver";
 import { CapabilityId } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
@@ -26,12 +27,17 @@ export class SquirrelFeederDriver implements DeviceDriver {
 
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
+  private inFlightConnects = new Map<string, Promise<void>>();
 
   getCapabilities(): CapabilityId[] {
     return SQUIRREL_FEEDER_CAPABILITIES;
   }
 
   async connect(device: Device): Promise<void> {
+    return dedupeInFlight(this.inFlightConnects, device.id, () => this.doConnect(device));
+  }
+
+  private async doConnect(device: Device): Promise<void> {
     const config = requireConfig(device);
     try {
       await this.readStatus(device, config);

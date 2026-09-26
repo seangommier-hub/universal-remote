@@ -15,8 +15,11 @@
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import * as Crypto from "expo-crypto";
+import { fetchWithTimeout } from "../../../core/network/fetchWithTimeout";
 
 const BASE_URL = "https://api.switch-bot.com/v1.1";
+// ADR-HEARTH-171: every SwitchBot cloud call is bounded so a black-holed request rejects instead of hanging.
+const SWITCHBOT_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface SwitchBotConfig {
   token: string;
@@ -90,22 +93,22 @@ export class SwitchBotClient {
   constructor(private config: SwitchBotConfig) {}
 
   async listDevices(): Promise<SwitchBotDeviceSummary[]> {
-    const response = await fetch(`${BASE_URL}/devices`, { method: "GET", headers: buildAuthHeaders(this.config) });
+    const response = await fetchWithTimeout(`${BASE_URL}/devices`, { method: "GET", headers: buildAuthHeaders(this.config) }, SWITCHBOT_REQUEST_TIMEOUT_MS);
     const body = await parseEnvelope<{ deviceList: SwitchBotDeviceSummary[] }>(response, "listing devices");
     return body.deviceList;
   }
 
   async getStatus(deviceId: string): Promise<SwitchBotVacuumStatus> {
-    const response = await fetch(`${BASE_URL}/devices/${deviceId}/status`, { method: "GET", headers: buildAuthHeaders(this.config) });
+    const response = await fetchWithTimeout(`${BASE_URL}/devices/${deviceId}/status`, { method: "GET", headers: buildAuthHeaders(this.config) }, SWITCHBOT_REQUEST_TIMEOUT_MS);
     return parseEnvelope<SwitchBotVacuumStatus>(response, `reading device ${deviceId}`);
   }
 
   async sendCommand(deviceId: string, command: string, parameter: string | number = "default"): Promise<void> {
-    const response = await fetch(`${BASE_URL}/devices/${deviceId}/commands`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/devices/${deviceId}/commands`, {
       method: "POST",
       headers: buildAuthHeaders(this.config),
       body: JSON.stringify({ commandType: "command", command, parameter }),
-    });
+    }, SWITCHBOT_REQUEST_TIMEOUT_MS);
     await parseEnvelope<unknown>(response, `sending ${command} to ${deviceId}`);
   }
 }

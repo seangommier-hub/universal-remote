@@ -7,6 +7,7 @@ import { logger } from "../../../core/logging/logger";
 import { ChromecastClient, ChromecastStatus } from "./ChromecastClient";
 import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { withBackoffJitter } from "../../shared/backoffJitter";
+import { CommandValidationError, runCommandTrackingReachability } from "../../shared/commandFailure";
 
 const LOG_SCOPE = "ChromecastDriver";
 // A reasonable default step (5%), not a protocol-mandated value — CastV2 has no documented
@@ -108,7 +109,11 @@ export class ChromecastDriver implements DeviceDriver {
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new ChromecastClient();
     const ipAddress = requireIpAddress(device);
-    const state = await this.applyCommand(client, ipAddress, command);
+    const generation = this.generations.get(device.id) ?? 0;
+    const state = await runCommandTrackingReachability(
+      () => this.applyCommand(client, ipAddress, command),
+      () => this.markUnreachableAfterCommandFailure(device, generation)
+    );
     const current = this.states.get(device.id);
     const newState: DeviceState = {
       connection: "connected",
@@ -123,6 +128,14 @@ export class ChromecastDriver implements DeviceDriver {
       timestamp: Date.now(),
       state: newState.values,
     };
+  }
+
+  /** Marks the device disconnected and starts the reconnect loop after a command failed on the wire (connection contract, ADR-HEARTH-171). */
+  private markUnreachableAfterCommandFailure(device: Device, generation: number): void {
+    if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected in the meantime
+    const current = this.states.get(device.id);
+    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+    this.scheduleReconnect(device);
   }
 
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
@@ -144,7 +157,7 @@ export class ChromecastDriver implements DeviceDriver {
       }
       case "setVolume": {
         const target = command.args?.volume;
-        if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg (the protocol's own 0.0-1.0 scale)");
+        if (typeof target !== "number") throw new CommandValidationError("setVolume requires a numeric 'volume' arg (the protocol's own 0.0-1.0 scale)");
         return client.setVolume(ipAddress, target);
       }
       case "mute": {
@@ -152,7 +165,7 @@ export class ChromecastDriver implements DeviceDriver {
         return client.setMute(ipAddress, !current.muted);
       }
       default:
-        throw new Error(`ChromecastDriver does not implement capability: ${command.capability}`);
+        throw new CommandValidationError(`ChromecastDriver does not implement capability: ${command.capability}`);
     }
   }
 

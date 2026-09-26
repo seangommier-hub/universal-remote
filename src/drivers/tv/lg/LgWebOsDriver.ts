@@ -217,6 +217,7 @@ export class LgWebOsDriver implements DeviceDriver {
     const existing = this.inFlightConnects.get(device.id);
     if (existing) return existing;
     const attempt = this.doConnect(device);
+    const attemptGeneration = this.generations.get(device.id) ?? 0; // doConnect bumps it synchronously before its first await
     this.inFlightConnects.set(device.id, attempt);
     try {
       await attempt;
@@ -227,7 +228,13 @@ export class LgWebOsDriver implements DeviceDriver {
       // dropped) never got auto-retried at all. One shared path now covers both: the very first
       // failure, a manual "Reconnect" tap that fails, and every automatic retry after it, all
       // through this same catch.
-      this.scheduleReconnect(device);
+      // ADR-HEARTH-171: a failed first connect reports "disconnected" (never left at "unknown"), and a
+      // disconnect() that landed while this attempt was failing must not be undone by a retry loop.
+      if (this.isCurrentGeneration(device.id, attemptGeneration)) {
+        const current = this.states.get(device.id);
+        this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+        this.scheduleReconnect(device);
+      }
       throw err;
     } finally {
       if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);

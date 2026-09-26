@@ -104,8 +104,8 @@ function defineRetryCases(adapter: DriverAdapter): void {
     contractNetwork.mode = "refuse";
     const failed = await settleWithin(harness.driver.connect(harness.device), 1000);
     expect(failed.state).toBe("rejected");
-    // Isolates the driver's own retry logic from the shared HTTP layer's "direct failed once, use the
-    // relay forever" memory, which has its own regression test (relayRecovery.test.ts, bug #1).
+    // Isolates the driver's own retry logic from the shared HTTP layer's "direct failed recently, use the
+    // relay" memory (now expiring), which has its own regression test (relayRecovery.test.ts, ADR-HEARTH-171).
     resetRelayNecessityCacheForTests();
     contractNetwork.mode = "up";
     await jest.advanceTimersByTimeAsync(RETRY_WINDOW_MS);

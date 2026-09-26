@@ -17,11 +17,25 @@ import { FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
 // already established the very first time this session. A household member driving an on-screen
 // remote through several rapid button presses felt this as severe per-button lag (Sean, directly:
 // "there is sever[e] latency"). Remembered only for the lifetime of this app session (a plain
-// in-memory Set, not persisted) — once direct has failed once for a given ip:port, later calls to
-// that same address skip straight to the relay leg. Resets on app restart rather than being
+// in-memory map, not persisted) — once direct has failed for a given ip:port, later calls to
+// that same address skip straight to the relay leg until the entry expires (see RELAY_ONLY_TTL_MS). Resets on app restart rather than being
 // permanent, so a device that later moves back onto the main LAN isn't stuck paying a relay
 // round-trip forever for no reason.
-const knownRelayOnly = new Set<string>();
+// ADR-HEARTH-171: the memory expires after RELAY_ONLY_TTL_MS so a device that merely blipped (or a
+// phone that has since rejoined the LAN) is retried directly instead of staying stuck, which
+// matters most when no Family Command Center is configured and the relay leg can never help.
+const RELAY_ONLY_TTL_MS = 45_000;
+const knownRelayOnly = new Map<string, number>();
+
+function isKnownRelayOnly(key: string): boolean {
+  const expiresAt = knownRelayOnly.get(key);
+  if (expiresAt === undefined) return false;
+  if (Date.now() >= expiresAt) {
+    knownRelayOnly.delete(key);
+    return false;
+  }
+  return true;
+}
 
 function relayKey(ip: string, port: number): string {
   return `${ip}:${port}`;
@@ -152,17 +166,17 @@ async function callRelay(request: RelayableRequest): Promise<RelayableResponse> 
   return callRelayThroughFcc(config, request);
 }
 
-/** Tries a direct HTTP request first; falls back to relaying through Family Command Center if that fails. Skips the direct attempt entirely once this address has already proven direct-unreachable this session (see knownRelayOnly above). */
+/** Tries a direct HTTP request first; falls back to relaying through Family Command Center if that fails. Skips the direct attempt while this address has recently proven direct-unreachable (see knownRelayOnly above; the memory expires). */
 export async function requestWithRelayFallback(request: RelayableRequest): Promise<RelayableResponse> {
   const key = relayKey(request.ip, request.port);
-  if (knownRelayOnly.has(key) || shouldSkipDirectAttempt(request.ip)) {
+  if (isKnownRelayOnly(key) || shouldSkipDirectAttempt(request.ip)) {
     return callRelay(request);
   }
   const directUrl = `http://${request.ip}:${request.port}${request.path}`;
   try {
     return await fetchWithTimeout(directUrl, { method: request.method, headers: request.headers, body: request.body }, DIRECT_TIMEOUT_MS);
   } catch {
-    knownRelayOnly.add(key);
+    knownRelayOnly.set(key, Date.now() + RELAY_ONLY_TTL_MS);
     return callRelay(request);
   }
 }

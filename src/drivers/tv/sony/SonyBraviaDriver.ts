@@ -10,6 +10,7 @@ import { findCurrentIpByMac, findMacByIp } from "../../../discovery/familyComman
 import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
+import { CommandValidationError } from "../../shared/commandFailure";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "SonyBraviaDriver";
@@ -114,7 +115,7 @@ function isReachabilityFailure(err: unknown): boolean {
 function parseHdmiInput(input: string): string {
   const match = /^hdmi(\d+)$/i.exec(input);
   if (!match) {
-    throw new Error(`Unrecognized Sony input '${input}' — expected a value like 'hdmi1'`);
+    throw new CommandValidationError(`Unrecognized Sony input '${input}' — expected a value like 'hdmi1'`);
   }
   return `extInput:hdmi?port=${match[1]}`;
 }
@@ -268,10 +269,15 @@ export class SonyBraviaDriver implements DeviceDriver {
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
     const client = new SonyBraviaClient(requireConfig(device));
+    const generation = this.generations.get(device.id) ?? 0;
     try {
       await this.applyCommand(client, device, command);
     } catch (err) {
-      if (command.capability !== "power" || !isReachabilityFailure(err)) throw err;
+      if (err instanceof CommandValidationError || !isReachabilityFailure(err)) throw err;
+      // Connection contract (ADR-HEARTH-171): a command that fails because nothing answered marks
+      // the driver disconnected and starts the reconnect loop, whatever the capability.
+      this.markUnreachableAfterCommandFailure(device, generation);
+      if (command.capability !== "power") throw err;
       // Real gap this closes (ADR-HEARTH-102): "power"'s own getPowerStatus REST call (in
       // applyCommand above) throwing with nothing having answered at all means the TV's REST API
       // is genuinely unreachable — most likely fully off. No persistent connection to fall back on
@@ -287,6 +293,14 @@ export class SonyBraviaDriver implements DeviceDriver {
       timestamp: Date.now(),
       state: state.values,
     };
+  }
+
+  /** Marks the device disconnected and starts the reconnect loop after a command failed on the wire (connection contract, ADR-HEARTH-171). */
+  private markUnreachableAfterCommandFailure(device: Device, generation: number): void {
+    if (generation !== (this.generations.get(device.id) ?? 0)) return; // disconnected in the meantime
+    const current = this.states.get(device.id);
+    this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+    this.scheduleReconnect(device);
   }
 
   /** See LgWebOsDriver.ts/SamsungTizenDriver.ts's identical helper (ADR-HEARTH-102) — resolves the
@@ -341,7 +355,7 @@ export class SonyBraviaDriver implements DeviceDriver {
         return;
       case "setVolume": {
         const target = command.args?.volume;
-        if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg");
+        if (typeof target !== "number") throw new CommandValidationError("setVolume requires a numeric 'volume' arg");
         await client.call("audio", "setAudioVolume", [{ target: "speaker", volume: String(target) }]);
         return;
       }
@@ -352,14 +366,14 @@ export class SonyBraviaDriver implements DeviceDriver {
       }
       case "inputSelection": {
         const input = command.args?.input;
-        if (typeof input !== "string") throw new Error("inputSelection requires a string 'input' arg");
+        if (typeof input !== "string") throw new CommandValidationError("inputSelection requires a string 'input' arg");
         await client.call("avContent", "setPlayContent", [{ uri: resolveInputUri(input) }]);
         return;
       }
       case "directionalNavigation": {
         const direction = command.args?.direction as NavigationDirection | undefined;
         if (!direction || !(direction in DIRECTION_TO_IRCC_CODE)) {
-          throw new Error("directionalNavigation requires a valid 'direction' arg");
+          throw new CommandValidationError("directionalNavigation requires a valid 'direction' arg");
         }
         await new SonyIrccClient(requireConfig(device)).sendCode(DIRECTION_TO_IRCC_CODE[direction]);
         return;
@@ -374,7 +388,7 @@ export class SonyBraviaDriver implements DeviceDriver {
         await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.home);
         return;
       default:
-        throw new Error(`SonyBraviaDriver does not implement capability: ${command.capability}`);
+        throw new CommandValidationError(`SonyBraviaDriver does not implement capability: ${command.capability}`);
     }
   }
 
