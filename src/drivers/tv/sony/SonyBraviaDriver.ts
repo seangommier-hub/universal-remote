@@ -8,6 +8,8 @@ import { SonyBraviaApiError, SonyBraviaClient, SonyBraviaConfig } from "./SonyBr
 import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+import { withBackoffJitter } from "../../shared/backoffJitter";
+import { WakeBurstController } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "SonyBraviaDriver";
 const VOLUME_STEP = 2;
@@ -133,6 +135,9 @@ export class SonyBraviaDriver implements DeviceDriver {
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
+  // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
+  private wakeBursts = new WakeBurstController();
   // Real-hardware finding (2026-09-09): a scheduled reconnect's refreshState() can still be
   // in flight when disconnect() runs (e.g. the user removes the device mid-retry) — clearing
   // the timer only stops a retry that hasn't *started* yet, not one already awaiting a response.
@@ -213,8 +218,9 @@ export class SonyBraviaDriver implements DeviceDriver {
   private scheduleReconnect(device: Device, attempt = 1): void {
     // A retry already in flight for this device (e.g. two commands failed back-to-back) — don't
     // stack a second overlapping timer on top of it.
+    if (this.wakeBursts.isActive(device.id)) return;
     if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       try {
@@ -227,6 +233,18 @@ export class SonyBraviaDriver implements DeviceDriver {
     this.reconnectTimers.set(device.id, timer);
   }
 
+  /** ADR-HEARTH-144: starts the fast reconnect burst after a Wake-on-LAN packet; falls back to the normal slow backoff if the device never answers. */
+  private startWakeBurst(device: Device): void {
+    this.clearReconnectTimer(device.id);
+    this.wakeBursts.start(
+      device.id,
+      async () => {
+        if (!(this.states.get(device.id)?.connection === "connected")) await this.connect(device);
+      },
+      () => this.scheduleReconnect(device)
+    );
+  }
+
   private clearReconnectTimer(deviceId: string): void {
     const timer = this.reconnectTimers.get(deviceId);
     if (timer) {
@@ -237,6 +255,7 @@ export class SonyBraviaDriver implements DeviceDriver {
 
   async disconnect(device: Device): Promise<void> {
     this.generations.set(device.id, (this.generations.get(device.id) ?? 0) + 1);
+    this.wakeBursts.stop(device.id);
     this.clearReconnectTimer(device.id);
     const current = this.states.get(device.id);
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
@@ -283,6 +302,7 @@ export class SonyBraviaDriver implements DeviceDriver {
     }
     if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
     await sendWakeOnLan(mac);
+    this.startWakeBurst(device);
     const state: DeviceState = {
       connection: this.states.get(device.id)?.connection ?? "disconnected",
       values: { ...this.states.get(device.id)?.values, lastAction: "power" },

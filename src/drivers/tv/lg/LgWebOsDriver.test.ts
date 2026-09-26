@@ -3,6 +3,16 @@ import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../t
 import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+import { WAKE_BURST_INTERVAL_MS, WAKE_BURST_WINDOW_MS } from "../../shared/wakeBurst";
+
+// ADR-HEARTH-144: reconnect delays carry random jitter; pin it to zero so the exact-delay assertions below stay exact.
+const realMathRandom = Math.random; // pinned near-zero (not 0: a constant 0 recurses forever in jest internals) so jitter rounds away
+beforeAll(() => {
+  Math.random = () => 0.0001;
+});
+afterAll(() => {
+  Math.random = realMathRandom;
+});
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
 jest.mock("../../../core/network/wakeOnLan");
@@ -60,6 +70,10 @@ describe("LgWebOsDriver", () => {
     mockLoadConfig.mockReset(); // defaults to undefined — matches every existing test's "no relay configured" world unless a test opts in
     mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
     global.fetch = jest.fn();
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(device); // cancels any Wake-on-LAN reconnect burst (ADR-HEARTH-144) so its timer cannot leak into the next test
   });
 
   test("declares powerOff, powerOn (via Wake-on-LAN, ADR-HEARTH-102), and inputSelection but not the single-toggle 'power' (honest about what SSAP can/can't do)", () => {
@@ -954,5 +968,96 @@ describe("LgWebOsDriver explicit transport keys", () => {
 
   test("the driver declares all four", () => {
     expect(new LgWebOsDriver().getCapabilities()).toEqual(expect.arrayContaining(["play", "pause", "rewind", "fastForward"]));
+  });
+});
+
+// ADR-HEARTH-144: after a Wake-on-LAN packet the driver retries connecting on a fast fixed cadence
+// instead of waiting out the slow backoff, so the remote is usable within seconds of the TV booting.
+describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
+  const offDevice: Device = { ...device, config: { ipAddress: "192.168.1.70", hwaddr: "F8:B9:5A:43:7E:3E" } };
+  const powerOn = { deviceId: offDevice.id, capability: "powerOn" as const };
+  const burstAttempts = WAKE_BURST_WINDOW_MS / WAKE_BURST_INTERVAL_MS;
+
+  async function failLatestAttempt(): Promise<void> {
+    MockWebSocket.latest().simulateError();
+    await jest.advanceTimersByTimeAsync(0);
+  }
+
+  async function answerLatestAttempt(): Promise<void> {
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    const register = JSON.parse(socket.sentMessages[0]);
+    socket.simulateMessage({ type: "registered", id: register.id, payload: { "client-key": "wake-key" } });
+    await flushMicrotasks();
+    const replies = [{ returnValue: true, volume: 7, mute: false }, { returnValue: true, devices: [] }, { returnValue: true, launchPoints: [] }];
+    for (const payload of replies) {
+      const request = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      socket.simulateMessage({ type: "response", id: request.id, payload });
+      await flushMicrotasks();
+    }
+  }
+
+  let driver: LgWebOsDriver;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    mockSendWakeOnLan.mockReset().mockResolvedValue(undefined);
+    driver = new LgWebOsDriver();
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(offDevice);
+    jest.useRealTimers();
+  });
+
+  test("connects on the third fast attempt once the TV answers, then stops retrying", async () => {
+    await driver.executeCommand(offDevice, powerOn);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await failLatestAttempt();
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await failLatestAttempt();
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await answerLatestAttempt();
+    expect((await driver.getState(offDevice)).connection).toBe("connected");
+
+    const socketsWhenConnected = MockWebSocket.instances.length;
+    expect(socketsWhenConnected).toBe(3);
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS * 3); // stays under the 20s heartbeat, which this test never answers
+    expect(MockWebSocket.instances.length).toBe(socketsWhenConnected);
+  });
+
+  test("a TV that never answers ends the burst after the window and falls back to slow backoff, not a fast loop", async () => {
+    await driver.executeCommand(offDevice, powerOn);
+    for (let attempt = 0; attempt < burstAttempts; attempt += 1) {
+      await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+      await failLatestAttempt();
+    }
+    expect(MockWebSocket.instances.length).toBe(burstAttempts);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
+
+    // The normal backoff (2s first step) owns retrying now: nothing in the first second, one attempt after it.
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(MockWebSocket.instances.length).toBe(burstAttempts);
+    await jest.advanceTimersByTimeAsync(1500);
+    expect(MockWebSocket.instances.length).toBe(burstAttempts + 1);
+  });
+
+  test("disconnect() during the burst cancels it", async () => {
+    await driver.executeCommand(offDevice, powerOn);
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_INTERVAL_MS);
+    await failLatestAttempt();
+    await driver.disconnect(offDevice);
+
+    await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
+    expect(MockWebSocket.instances.length).toBe(1);
+    expect((await driver.getState(offDevice)).connection).toBe("disconnected");
   });
 });

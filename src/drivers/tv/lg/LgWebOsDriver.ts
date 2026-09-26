@@ -9,6 +9,8 @@ import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
+import { withBackoffJitter } from "../../shared/backoffJitter";
+import { WakeBurstController } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "LgWebOsDriver";
 // A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
@@ -156,6 +158,9 @@ export class LgWebOsDriver implements DeviceDriver {
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
+  // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
+  private wakeBursts = new WakeBurstController();
   // Real-hardware finding (2026-09-09), traced during a same-night review (not yet reproduced
   // live, but the sequence is concrete): connect() can now be triggered from several independent
   // places (startup, AppState foreground resume, opening the remote screen, a scheduled
@@ -378,6 +383,7 @@ export class LgWebOsDriver implements DeviceDriver {
   async disconnect(device: Device): Promise<void> {
     this.stopHeartbeat(device.id);
     this.bumpGeneration(device.id); // invalidates any connect() still in flight for this device
+    this.wakeBursts.stop(device.id);
     this.clearReconnectTimer(device.id);
     this.playbackUnsubscribes.get(device.id)?.();
     this.playbackUnsubscribes.delete(device.id);
@@ -395,10 +401,10 @@ export class LgWebOsDriver implements DeviceDriver {
    * dedup guard below) rather than stacking a second competing timer.
    */
   private scheduleReconnect(device: Device): void {
-    if (this.reconnectTimers.has(device.id)) return;
+    if (this.reconnectTimers.has(device.id) || this.wakeBursts.isActive(device.id)) return;
     const attempt = (this.reconnectAttempts.get(device.id) ?? 0) + 1;
     this.reconnectAttempts.set(device.id, attempt);
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} not connected — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       this.reconnectTimers.delete(device.id);
@@ -412,6 +418,18 @@ export class LgWebOsDriver implements DeviceDriver {
       }
     }, delay);
     this.reconnectTimers.set(device.id, timer);
+  }
+
+  /** ADR-HEARTH-144: starts the fast reconnect burst after a Wake-on-LAN packet; falls back to the normal slow backoff if the device never answers. */
+  private startWakeBurst(device: Device): void {
+    this.clearReconnectTimer(device.id);
+    this.wakeBursts.start(
+      device.id,
+      async () => {
+        if (!this.clients.has(device.id)) await this.connect(device);
+      },
+      () => this.scheduleReconnect(device)
+    );
   }
 
   private clearReconnectTimer(deviceId: string): void {
@@ -466,6 +484,7 @@ export class LgWebOsDriver implements DeviceDriver {
     }
     if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
     await sendWakeOnLan(mac);
+    this.startWakeBurst(device);
     const state: DeviceState = {
       connection: this.states.get(device.id)?.connection ?? "disconnected",
       values: { ...this.states.get(device.id)?.values, lastAction: "powerOn" },

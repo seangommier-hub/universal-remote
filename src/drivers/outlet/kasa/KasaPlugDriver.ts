@@ -6,6 +6,7 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { getSysInfo, KasaSysInfo, setRelayState } from "./KasaClient";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { withBackoffJitter } from "../../shared/backoffJitter";
 
 const LOG_SCOPE = "KasaPlugDriver";
 export const KASA_PLUG_DRIVER_ID = "kasa-plug";
@@ -128,7 +129,7 @@ export class KasaPlugDriver implements DeviceDriver {
 
   private scheduleReconnect(device: Device, attempt = 1): void {
     if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       try {

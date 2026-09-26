@@ -8,6 +8,8 @@ import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
+import { withBackoffJitter } from "../../shared/backoffJitter";
+import { WakeBurstController } from "../../shared/wakeBurst";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -129,6 +131,9 @@ export class SamsungTizenDriver implements DeviceDriver {
   private states = new Map<string, DeviceState>();
   private listeners = new Map<string, Set<StateChangeListener>>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // ADR-HEARTH-144: after a Wake-on-LAN packet, retry connecting on a fast fixed cadence for a short
+  // window instead of waiting out the slow backoff. While active it owns reconnecting for the device.
+  private wakeBursts = new WakeBurstController();
   // See LgWebOsDriver.ts's identical generation-counter comment — same race (multiple
   // independent connect() call sites for one device; a stale or superseded attempt could
   // otherwise resurrect state or kill a healthy newer connection) applies equally here.
@@ -273,10 +278,10 @@ export class SamsungTizenDriver implements DeviceDriver {
 
   /** See LgWebOsDriver.ts's identical method and comment — one shared retry path for a connect() that fails outright and a connection dropping after it succeeded, with a dedup guard against stacking a second competing timer. */
   private scheduleReconnect(device: Device): void {
-    if (this.reconnectTimers.has(device.id)) return;
+    if (this.reconnectTimers.has(device.id) || this.wakeBursts.isActive(device.id)) return;
     const attempt = (this.reconnectAttempts.get(device.id) ?? 0) + 1;
     this.reconnectAttempts.set(device.id, attempt);
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} not connected — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       this.reconnectTimers.delete(device.id);
@@ -291,6 +296,18 @@ export class SamsungTizenDriver implements DeviceDriver {
     this.reconnectTimers.set(device.id, timer);
   }
 
+  /** ADR-HEARTH-144: starts the fast reconnect burst after a Wake-on-LAN packet; falls back to the normal slow backoff if the device never answers. */
+  private startWakeBurst(device: Device): void {
+    this.clearReconnectTimer(device.id);
+    this.wakeBursts.start(
+      device.id,
+      async () => {
+        if (!this.clients.has(device.id)) await this.connect(device);
+      },
+      () => this.scheduleReconnect(device)
+    );
+  }
+
   private clearReconnectTimer(deviceId: string): void {
     const timer = this.reconnectTimers.get(deviceId);
     if (timer) {
@@ -301,6 +318,7 @@ export class SamsungTizenDriver implements DeviceDriver {
 
   async disconnect(device: Device): Promise<void> {
     this.bumpGeneration(device.id);
+    this.wakeBursts.stop(device.id);
     this.clearReconnectTimer(device.id);
     this.clients.get(device.id)?.close();
     this.clients.delete(device.id);
@@ -381,6 +399,7 @@ export class SamsungTizenDriver implements DeviceDriver {
     }
     if (device.config && typeof hwaddr !== "string") device.config.hwaddr = mac;
     await sendWakeOnLan(mac);
+    this.startWakeBurst(device);
     const state: DeviceState = {
       connection: this.states.get(device.id)?.connection ?? "disconnected",
       values: { ...this.states.get(device.id)?.values, lastAction: "power" },

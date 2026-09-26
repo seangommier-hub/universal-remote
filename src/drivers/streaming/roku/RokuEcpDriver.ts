@@ -8,6 +8,7 @@ import { RokuEcpClient, RokuEcpConfig, RokuDeviceInfo } from "./RokuEcpClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { sendCharacterSequence } from "../../../core/util/sendCharacterSequence";
 import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { withBackoffJitter } from "../../shared/backoffJitter";
 
 const LOG_SCOPE = "RokuEcpDriver";
 export const ROKU_ECP_DRIVER_ID = "roku-ecp";
@@ -208,7 +209,7 @@ export class RokuEcpDriver implements DeviceDriver {
 
   private scheduleReconnect(device: Device, attempt = 1): void {
     if (attempt === 1 && this.reconnectTimers.has(device.id)) return;
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
+    const delay = withBackoffJitter(Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS));
     logger.warn(LOG_SCOPE, `${device.name} unreachable — retrying in ${delay / 1000}s (attempt ${attempt})`);
     const timer = setTimeout(async () => {
       try {
