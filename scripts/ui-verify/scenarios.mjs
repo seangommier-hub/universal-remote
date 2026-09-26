@@ -1,13 +1,26 @@
-// Each scenario: a file-safe name, the demo ?screen= value, optional in-page steps, and whether the
+// Each scenario: a file-safe name, the demo ?screen= value, an optional extra query string, optional in-page steps, and whether the
 // no-vertical-scroll assertion is enforced (only the remote pages are tuned to fit, ADR-HEARTH-135).
 
 const TAB_SETTLE_MS = 400;
 const ADD_ALL_MIDWAY_MS = 900;
 const ADD_ALL_FINISHED_MS = 3600;
 const SCROLL_STEP_PX = 700;
+const OFFLINE_SETTLE_MS = 4000;
 
 export const SCENARIOS = [
   { name: "devices-home", screen: "list", assertFit: false },
+  { name: "offline-banner-fcc", screen: "list", query: "&offline=fcc", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
+  { name: "offline-banner-device", screen: "list", query: "&offline=device", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
+  {
+    name: "offline-banner-dismissed",
+    screen: "list", query: "&offline=fcc",
+    assertFit: false,
+    settleMs: OFFLINE_SETTLE_MS,
+    steps: async (page) => {
+      await page.getByLabel("Dismiss").first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
   {
     name: "remote-lg-keypad",

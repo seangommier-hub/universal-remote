@@ -22,6 +22,7 @@ import { NowPlayingWidget } from "./NowPlayingWidget";
 import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
 import { useNameSuggestion } from "./useNameSuggestion";
+import { OfflineAlertBanner } from "./OfflineAlertBanner";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
@@ -68,6 +69,8 @@ interface DeviceListScreenProps {
   onDismissUpdateBanner: () => void;
   /** Unpairs a device (disconnects it, removes it from the registry and from persisted storage) — triggered by a long-press, confirmed first since it's not reversible from this screen. */
   onRemove: (device: Device) => void;
+  /** Retries connecting a device now; used by the offline banner's Retry (ADR-HEARTH-172). */
+  onReconnect: (device: Device) => Promise<void>;
   /** Opens a small form to correct a device's saved IP address without a full remove-and-re-add — real-hardware need (2026-09-10): a device's IP can go stale (moved to a different WiFi network) and the fastest fix shouldn't be "unpair everything and start over." Offered from the same long-press menu as Remove. */
   onEditAddress: (device: Device) => void;
   /** Opens a small form to rename a device — the action already existed (tap a device's own name inside its remote screen), but that's not discoverable from here, so it's offered from the same long-press menu as Edit address/Remove (ADR-HEARTH-085). */
@@ -113,6 +116,7 @@ export function DeviceListScreen({
   onApplyUpdate,
   onDismissUpdateBanner,
   onRemove,
+  onReconnect,
   onEditAddress,
   onRename,
   onTeachCommands,
@@ -202,6 +206,7 @@ export function DeviceListScreen({
           scrollEnabled disabled for exactly this reason (nesting a scrolling VirtualizedList
           inside a ScrollView is a real, documented RN bug class, not just a style choice). */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <OfflineAlertBanner devices={devices} stateStore={stateStore} driverRegistry={driverRegistry} commandEngine={commandEngine} fccConfigured={fccConfigured} onReconnect={onReconnect} />
       {updateBanner && <UpdateBanner status={updateBanner.status} onApply={onApplyUpdate} onDismiss={onDismissUpdateBanner} />}
 
       {/* Real bug found live (2026-09-12): a horizontal FlatList's data-item cells rendered at a

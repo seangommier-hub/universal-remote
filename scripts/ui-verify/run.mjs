@@ -28,7 +28,7 @@ async function runScenario(browser, baseUrl, scenario) {
   const page = await context.newPage();
   const problems = [];
   page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
-  await page.goto(`${baseUrl}/?demo=1&screen=${encodeURIComponent(scenario.screen)}`);
+  await page.goto(`${baseUrl}/?demo=1&screen=${encodeURIComponent(scenario.screen)}${scenario.query ?? ""}`);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(scenario.settleMs ?? DEFAULT_SETTLE_MS);
   if (scenario.steps) await scenario.steps(page).catch((error) => problems.push(`step failed: ${String(error.message).split("\n")[0]}`));

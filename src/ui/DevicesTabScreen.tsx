@@ -316,6 +316,7 @@ export function DevicesTabScreen({
           onApplyUpdate={onApplyUpdate}
           onDismissUpdateBanner={onDismissUpdateBanner}
           onRemove={onRemoveDevice}
+          onReconnect={onReconnect}
           onEditAddress={(device) => setScreen({ name: "edit-address", device })}
           onRename={(device) => setScreen({ name: "rename-device", device })}
           onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}

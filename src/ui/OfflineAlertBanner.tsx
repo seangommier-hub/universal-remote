@@ -1,0 +1,68 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { CommandEngine } from "../core/engine/CommandEngine";
+import { DriverRegistry } from "../core/drivers/DriverRegistry";
+import { StateStore } from "../core/state/StateStore";
+import { Device } from "../core/types/Device";
+import { theme } from "./theme";
+import { useOfflineAlert } from "./useOfflineAlert";
+
+interface OfflineAlertBannerProps {
+  devices: readonly Device[];
+  stateStore: StateStore;
+  driverRegistry: DriverRegistry;
+  commandEngine: CommandEngine;
+  fccConfigured: boolean;
+  onReconnect: (device: Device) => Promise<void>;
+}
+
+function canWake(device: Device, driverRegistry: DriverRegistry): boolean {
+  return device.capabilities.includes("powerOn") || (driverRegistry.get(device.driverId)?.getCapabilities().includes("powerOn") ?? false);
+}
+
+/** Calm, dismissible one-line banner for a silent failure: the relay not answering, or a device that has stopped answering (ADR-HEARTH-172). Renders nothing while healthy. */
+export function OfflineAlertBanner({ devices, stateStore, driverRegistry, commandEngine, fccConfigured, onReconnect }: OfflineAlertBannerProps) {
+  const { alert, dismiss, recheckFcc } = useOfflineAlert({ devices, stateStore, fccConfigured });
+  if (!alert) return null;
+  const device = alert.kind === "device" ? devices.find((candidate) => candidate.id === alert.deviceId) : undefined;
+  const showWake = device !== undefined && canWake(device, driverRegistry);
+
+  return (
+    <View style={styles.banner} accessibilityRole="alert">
+      <Ionicons name={alert.kind === "fcc" ? "cloud-offline-outline" : "time-outline"} size={16} color={theme.textTertiary} />
+      <Text style={styles.text}>{alert.message}</Text>
+      {alert.kind === "fcc" && <ActionButton label="Retry" onPress={recheckFcc} />}
+      {device && showWake && <ActionButton label="Wake" onPress={() => void commandEngine.execute({ deviceId: device.id, capability: "powerOn" })} />}
+      {device && <ActionButton label="Retry" onPress={() => void onReconnect(device)} />}
+      <Pressable onPress={dismiss} hitSlop={8} accessibilityRole="button" accessibilityLabel="Dismiss">
+        <Ionicons name="close" size={16} color={theme.textTertiary} />
+      </Pressable>
+    </View>
+  );
+}
+
+function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.action} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  text: { flex: 1, minWidth: 0,color: theme.textSecondary, fontSize: theme.type.label },
+  action: { backgroundColor: theme.surfaceRaised, borderRadius: theme.radius.sm, paddingVertical: theme.spacing.xs, paddingHorizontal: theme.spacing.md },
+  actionLabel: { color: theme.accentEnd, fontWeight: "700", fontSize: theme.type.label },
+});
