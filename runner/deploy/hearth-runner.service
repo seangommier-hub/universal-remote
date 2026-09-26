@@ -1,0 +1,37 @@
+# NOT INSTALLED. Spike artifact for ADR-HEARTH-151.
+# Install (later, deliberately): copy to /etc/systemd/system/, put the FCC token in
+# /etc/hearth-runner/fcc-token (root:root 0600), then `systemctl enable --now hearth-runner`.
+[Unit]
+Description=Hearth headless driver runner
+After=network-online.target family-command-center.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seangommier
+WorkingDirectory=/home/seangommier/hearth-runner
+ExecStart=/usr/bin/node /home/seangommier/hearth-runner/hearth-runner.cjs
+Restart=always
+RestartSec=5
+
+# Pairing keys already live in this 0600 file (the household device sync file); the runner only reads it.
+Environment=HEARTH_RUNNER_DEVICES=/home/seangommier/.hearth-device-sync.json
+Environment=HEARTH_RUNNER_PORT=3220
+Environment=HEARTH_RUNNER_EAGER_CONNECT=1
+Environment=HEARTH_FCC_BASE_URL=http://localhost:3210
+# Token arrives as a systemd credential, never in the environment or the unit file.
+LoadCredential=fcc-token:/etc/hearth-runner/fcc-token
+Environment=HEARTH_FCC_TOKEN_FILE=%d/fcc-token
+
+# Hardening: the runner needs LAN sockets and read access to its own files, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/seangommier/hearth-runner
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

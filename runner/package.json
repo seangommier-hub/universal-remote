@@ -1,0 +1,19 @@
+{
+  "name": "hearth-runner",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Headless Node runner for the Hearth device drivers (spike, ADR-HEARTH-151)",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/hearth-runner.cjs"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "@types/ws": "8.5.14",
+    "esbuild": "0.25.9"
+  }
+}
