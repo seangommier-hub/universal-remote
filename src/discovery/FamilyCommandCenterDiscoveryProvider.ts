@@ -8,6 +8,7 @@ import { YAMAHA_MUSICCAST_DRIVER_ID } from "../drivers/tv/yamaha/YamahaMusicCast
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { SONOS_DRIVER_ID } from "../drivers/audio/sonos/SonosDriver";
 import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
+import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "../core/network/fccErrors";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 
 // Discovery via the Family Command Center's own Pi-hole-backed device
@@ -25,6 +26,7 @@ import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 // what a hung request looks like to a user with no diagnostic access. Now aborts and surfaces
 // a real, retry-able error instead.
 const SCAN_TIMEOUT_MS = 8000;
+const HTTP_UNAUTHORIZED = 401;
 
 interface LanDevice {
   hwaddr: string;
@@ -103,7 +105,7 @@ export class FamilyCommandCenterDiscoveryProvider implements DiscoveryProvider {
   async scan(onFound: (device: DiscoveredDevice) => void, signal?: AbortSignal): Promise<void> {
     const config = await loadFamilyCommandCenterConfig();
     if (!config) {
-      throw new Error("Family Command Center isn't connected yet — add its address and token in Settings first.");
+      throw new FccNotConfiguredError("Family Command Center isn't connected yet — add its address and token in Settings first.");
     }
 
     const timeoutController = new AbortController();
@@ -119,16 +121,15 @@ export class FamilyCommandCenterDiscoveryProvider implements DiscoveryProvider {
       });
     } catch (err) {
       if (timeoutController.signal.aborted && !signal?.aborted) {
-        throw new Error(`Family Command Center didn't respond within ${SCAN_TIMEOUT_MS / 1000} seconds — check it's reachable and try again.`);
+        throw new FccUnreachableError(`Family Command Center didn't respond within ${SCAN_TIMEOUT_MS / 1000} seconds — check it's reachable and try again.`);
       }
-      throw err;
+      throw new FccUnreachableError(err instanceof Error ? err.message : String(err));
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onCallerAbort);
     }
-    if (!res.ok) {
-      throw new Error(res.status === 401 ? "Family Command Center rejected the saved token." : `Family Command Center returned ${res.status}.`);
-    }
+    if (res.status === HTTP_UNAUTHORIZED) throw new FccTokenRejectedError("Family Command Center rejected the saved token.");
+    if (!res.ok) throw new Error(`Family Command Center returned ${res.status}.`);
 
     const { devices } = (await res.json()) as { devices: LanDevice[] };
     for (const device of devices) {

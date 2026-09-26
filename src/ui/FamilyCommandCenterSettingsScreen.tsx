@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
+import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig, verifyAndSavePublicUrl } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { Device } from "../core/types/Device";
@@ -31,6 +33,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
 
   useEffect(() => {
     loadFamilyCommandCenterConfig().then((existing) => {
@@ -45,6 +48,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
   async function handleSave() {
     setStatus("checking");
     setErrorMessage("");
+    setFailure(null);
     try {
       await verifyAndSaveFamilyCommandCenterConfig(baseUrl, token);
       // Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used
@@ -55,6 +59,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : String(err));
+      setFailure(classifyNetworkFailure(err));
     }
   }
 
@@ -115,7 +120,8 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, devices, 
         keyboardType="url"
       />
 
-      {status === "error" && (
+      {status === "error" && failure && failure.kind !== "unknown" && <NetworkFailureNotice diagnosis={failure} />}
+      {status === "error" && (!failure || failure.kind === "unknown") && (
         <View style={styles.errorCard}>
           <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
           <Text style={styles.error}>{errorMessage}</Text>

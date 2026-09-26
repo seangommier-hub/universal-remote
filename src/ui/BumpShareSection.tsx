@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useRef, useState } from "react";
 import { Text, View } from "react-native";
+import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { Device } from "../core/types/Device";
+import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { bumpDevices } from "../discovery/familyCommandCenterBump";
 import { selectDevicesToImport } from "../runtime/selectDevicesToImport";
 import { markShared, selectSharedDevices } from "../runtime/sharedDevices";
@@ -20,6 +22,7 @@ export function BumpShareSection({ devices, onDeviceAdded }: BumpShareSectionPro
   const [waiting, setWaiting] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
   const inFlight = useRef(false);
   const devicesRef = useRef(devices);
   devicesRef.current = devices;
@@ -29,6 +32,7 @@ export function BumpShareSection({ devices, onDeviceAdded }: BumpShareSectionPro
     inFlight.current = true;
     setWaiting(true);
     setFailed(false);
+    setFailure(null);
     setMessage("");
     try {
       const partnerDevices = await bumpDevices(selectSharedDevices(devicesRef.current));
@@ -41,6 +45,7 @@ export function BumpShareSection({ devices, onDeviceAdded }: BumpShareSectionPro
       setMessage(toImport.length === 0 ? "Bumped! Nothing new — you already have all of their devices." : `Bumped! Added ${toImport.length} device${toImport.length === 1 ? "" : "s"}.`);
     } catch (err) {
       setFailed(true);
+      setFailure(classifyNetworkFailure(err));
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
       inFlight.current = false;
@@ -62,7 +67,8 @@ export function BumpShareSection({ devices, onDeviceAdded }: BumpShareSectionPro
       <View style={styles.row}>
         <CapabilityButton label={waiting ? "Waiting for the other phone…" : "Bump"} variant="accent" onPress={bump} disabled={waiting} />
       </View>
-      {message !== "" && (
+      {failed && failure && failure.kind !== "unknown" && <NetworkFailureNotice diagnosis={failure} />}
+      {message !== "" && !(failed && failure && failure.kind !== "unknown") && (
         <View style={failed ? styles.errorCard : styles.hintCard}>
           {failed && <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />}
           <Text style={failed ? styles.error : styles.hint}>{message}</Text>

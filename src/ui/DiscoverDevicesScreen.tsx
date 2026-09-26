@@ -6,9 +6,11 @@ import { DiscoveredDevice } from "../core/discovery/DiscoveryProvider";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
-import { FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
+import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
+import { FAMILY_COMMAND_CENTER_DISCOVERY_ID, FamilyCommandCenterDiscoveryProvider } from "../discovery/FamilyCommandCenterDiscoveryProvider";
 import { SsdpDiscoveryProvider } from "../discovery/SsdpDiscoveryProvider";
-import { scanAllProviders } from "../discovery/scanAllProviders";
+import { scanAllProvidersWithDiagnostics } from "../discovery/scanAllProviders";
+import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { AddableBrand } from "./DeviceListScreen";
 import { CapabilityButton } from "./CapabilityButton";
@@ -71,6 +73,7 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
   const [status, setStatus] = useState<"scanning" | "done">("scanning");
   const [found, setFound] = useState<DiscoveredDevice[]>([]);
   const [fccConfigured, setFccConfigured] = useState(true); // optimistic default — avoids a flash of the hint before the real check resolves
+  const [fccFailure, setFccFailure] = useState<NetworkFailureDiagnosis | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<{ id: string; message: string } | null>(null);
   // Real bug found live (2026-09-12): Android's native Alert.alert silently drops any button past
@@ -81,11 +84,16 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
   const runScan = useCallback(async () => {
     setStatus("scanning");
     setFound([]);
+    setFccFailure(null);
     const [results] = await Promise.all([
-      scanAllProviders([new SsdpDiscoveryProvider(), new FamilyCommandCenterDiscoveryProvider()]),
+      scanAllProvidersWithDiagnostics([new SsdpDiscoveryProvider(), new FamilyCommandCenterDiscoveryProvider()]),
       loadFamilyCommandCenterConfig().then((config) => setFccConfigured(config !== null)),
     ]);
-    setFound(results);
+    setFound(results.devices);
+    // ADR-HEARTH-142: an unreachable Family Command Center must not look like "nothing on the
+    // network". A not-configured failure is already covered by the connect hint below.
+    const fccResult = results.failures.find((failure) => failure.providerId === FAMILY_COMMAND_CENTER_DISCOVERY_ID);
+    setFccFailure(fccResult && fccResult.diagnosis.kind !== "not-configured" ? fccResult.diagnosis : null);
     setStatus("done");
   }, []);
 
@@ -166,7 +174,14 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
       ) : found.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="search-outline" size={36} color={theme.textTertiary} />
-          <Text style={styles.errorBody}>No devices found on your network right now.</Text>
+          {fccFailure ? (
+            <>
+              <Text style={styles.errorBody}>The scan couldn't finish — this isn't the same as finding no devices.</Text>
+              <NetworkFailureNotice diagnosis={fccFailure} />
+            </>
+          ) : (
+            <Text style={styles.errorBody}>No devices found on your network right now.</Text>
+          )}
           {/* Non-blocking — this used to be the only path forward (a hard error state) even
               though most brands work fine added manually with just an IP, and now SSDP can find
               plenty without FCC at all. Just a suggestion for broader coverage. */}
@@ -186,6 +201,7 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, onCancel, on
           data={found}
           keyExtractor={(d) => d.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={fccFailure ? <NetworkFailureNotice diagnosis={fccFailure} /> : null}
           renderItem={({ item }) => {
             const supported = item.driverId.length > 0;
             const isConnecting = connectingId === item.id;

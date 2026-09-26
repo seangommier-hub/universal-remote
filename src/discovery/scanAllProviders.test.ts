@@ -1,4 +1,5 @@
-import { scanAllProviders } from "./scanAllProviders";
+import { FccUnreachableError } from "../core/network/fccErrors";
+import { scanAllProviders, scanAllProvidersWithDiagnostics } from "./scanAllProviders";
 import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/DiscoveryProvider";
 
 function fakeProvider(id: string, devices: DiscoveredDevice[], shouldThrow = false): DiscoveryProvider {
@@ -69,5 +70,36 @@ describe("scanAllProviders", () => {
     const result = await scanAllProviders([fakeProvider("ssdp", [noIp])]);
 
     expect(result).toEqual([]);
+  });
+});
+
+describe("scanAllProvidersWithDiagnostics", () => {
+  test("reports an unreachable provider as lan-blocked while keeping the other's devices (ADR-HEARTH-142)", async () => {
+    const unreachable: DiscoveryProvider = {
+      id: "fcc",
+      displayName: "fcc",
+      async scan() {
+        throw new FccUnreachableError("Network request failed");
+      },
+    };
+
+    const result = await scanAllProvidersWithDiagnostics([fakeProvider("ssdp", [roku]), unreachable]);
+
+    expect(result.devices).toEqual([roku]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0].providerId).toBe("fcc");
+    expect(result.failures[0].diagnosis.kind).toBe("lan-blocked");
+  });
+
+  test("reports no failures when every provider succeeds, even with nothing found", async () => {
+    const result = await scanAllProvidersWithDiagnostics([fakeProvider("ssdp", []), fakeProvider("fcc", [])]);
+
+    expect(result).toEqual({ devices: [], failures: [] });
+  });
+
+  test("classifies a plain-message failure as unknown", async () => {
+    const result = await scanAllProvidersWithDiagnostics([fakeProvider("ssdp", [], true)]);
+
+    expect(result.failures[0].diagnosis.kind).toBe("unknown");
   });
 });

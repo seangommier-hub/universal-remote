@@ -8,6 +8,7 @@ import { CapabilityId, StreamingService } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
+import { describeReconnectFailure } from "./describeReconnectFailure";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
 import { theme } from "./theme";
@@ -645,7 +646,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           <View style={styles.reconnectTextGroup}>
             <Text style={styles.reconnectTitle}>Reconnecting…</Text>
             {reconnectError ? (
-              <Text style={styles.reconnectError}>Last attempt: {reconnectError} — controls are off for now, still retrying automatically.</Text>
+              <Text style={styles.reconnectError}>{describeReconnectFailure(reconnectError)}</Text>
             ) : (
               <Text style={styles.reconnectBody}>Controls are off for now — retrying automatically in the background. Tap to try right now.</Text>
             )}

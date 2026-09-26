@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Switch, Text, View } from "react-native";
+import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { Device } from "../core/types/Device";
+import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { fetchSharedDevices, publishDevices } from "../discovery/familyCommandCenterDeviceSync";
 import { selectDevicesToImport } from "../runtime/selectDevicesToImport";
 import { isShared, markShared, selectSharedDevices } from "../runtime/sharedDevices";
@@ -21,15 +23,18 @@ export function DeviceSharePanel({ devices, onDeviceAdded, onDeviceUpdated }: De
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
 
   async function run(action: () => Promise<string>) {
     setBusy(true);
     setFailed(false);
+    setFailure(null);
     setMessage("");
     try {
       setMessage(await action());
     } catch (err) {
       setFailed(true);
+      setFailure(classifyNetworkFailure(err));
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
@@ -75,7 +80,8 @@ export function DeviceSharePanel({ devices, onDeviceAdded, onDeviceUpdated }: De
         <CapabilityButton label="Share mine" variant="ghost" onPress={share} disabled={busy || devices.length === 0} />
         <CapabilityButton label="Load shared" variant="accent" onPress={load} disabled={busy} />
       </View>
-      {message !== "" && (
+      {failed && failure && failure.kind !== "unknown" && <NetworkFailureNotice diagnosis={failure} />}
+      {message !== "" && !(failed && failure && failure.kind !== "unknown") && (
         <View style={failed ? styles.errorCard : styles.hintCard}>
           {failed && <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />}
           <Text style={failed ? styles.error : styles.hint}>{message}</Text>

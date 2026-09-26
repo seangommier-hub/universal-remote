@@ -1,5 +1,6 @@
 import { FamilyCommandCenterDiscoveryProvider } from "./FamilyCommandCenterDiscoveryProvider";
 import { loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
+import { FccTokenRejectedError, FccUnreachableError } from "../core/network/fccErrors";
 import { SONY_BRAVIA_DRIVER_ID } from "../drivers/tv/sony/SonyBraviaDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
 import { ROKU_ECP_DRIVER_ID } from "../drivers/streaming/roku/RokuEcpDriver";
@@ -118,6 +119,20 @@ describe("FamilyCommandCenterDiscoveryProvider", () => {
     const provider = new FamilyCommandCenterDiscoveryProvider();
 
     await expect(provider.scan(() => {})).rejects.toThrow(/rejected/);
+  });
+
+  test("a blocked network surfaces as an FccUnreachableError, not a raw fetch error (ADR-HEARTH-142)", async () => {
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError("Network request failed"));
+    const provider = new FamilyCommandCenterDiscoveryProvider();
+
+    await expect(provider.scan(() => {})).rejects.toBeInstanceOf(FccUnreachableError);
+  });
+
+  test("a rejected token surfaces as an FccTokenRejectedError", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({}, false, 401));
+    const provider = new FamilyCommandCenterDiscoveryProvider();
+
+    await expect(provider.scan(() => {})).rejects.toBeInstanceOf(FccTokenRejectedError);
   });
 
   test("times out and surfaces a clear, retry-able error instead of hanging forever (real-hardware finding, 2026-09-09)", async () => {

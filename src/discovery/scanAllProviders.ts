@@ -1,4 +1,5 @@
 import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/DiscoveryProvider";
+import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 
 /**
  * Runs every given DiscoveryProvider concurrently and merges their results into one list —
@@ -13,23 +14,45 @@ import { DiscoveredDevice, DiscoveryProvider } from "../core/discovery/Discovery
  * category, versus SSDP's IP-only data), since that's the more useful entry to show, but still
  * surfaces only once.
  */
-export async function scanAllProviders(providers: DiscoveryProvider[], signal?: AbortSignal): Promise<DiscoveredDevice[]> {
-  const byIp = new Map<string, DiscoveredDevice>();
+export interface ProviderScanFailure {
+  providerId: string;
+  diagnosis: NetworkFailureDiagnosis;
+}
 
-  await Promise.allSettled(
+export interface ScanAllResult {
+  devices: DiscoveredDevice[];
+  /** Providers that threw, each classified (ADR-HEARTH-142) — so "unreachable" is never mistaken for "found nothing". */
+  failures: ProviderScanFailure[];
+}
+
+/** Same merged scan as scanAllProviders, but also reports which providers failed and why. */
+export async function scanAllProvidersWithDiagnostics(providers: DiscoveryProvider[], signal?: AbortSignal): Promise<ScanAllResult> {
+  const byIp = new Map<string, DiscoveredDevice>();
+  const failures: ProviderScanFailure[] = [];
+
+  await Promise.all(
     providers.map((provider) =>
-      provider.scan((device) => {
-        const ip = String(device.metadata?.ipAddress ?? "");
-        if (!ip) return;
-        const existing = byIp.get(ip);
-        // Prefer whichever entry already has an hwaddr (richer — Family Command Center's own
-        // devices carry one, SSDP's never do) over a same-IP entry that doesn't.
-        if (!existing || (!existing.metadata?.hwaddr && device.metadata?.hwaddr)) {
-          byIp.set(ip, device);
-        }
-      }, signal)
+      provider
+        .scan((device) => {
+          const ip = String(device.metadata?.ipAddress ?? "");
+          if (!ip) return;
+          const existing = byIp.get(ip);
+          // Prefer whichever entry already has an hwaddr (richer — Family Command Center's own
+          // devices carry one, SSDP's never do) over a same-IP entry that doesn't.
+          if (!existing || (!existing.metadata?.hwaddr && device.metadata?.hwaddr)) {
+            byIp.set(ip, device);
+          }
+        }, signal)
+        .catch((error: unknown) => {
+          failures.push({ providerId: provider.id, diagnosis: classifyNetworkFailure(error) });
+        })
     )
   );
 
-  return Array.from(byIp.values());
+  return { devices: Array.from(byIp.values()), failures };
+}
+
+/** Runs every provider and returns only the merged devices; failures are swallowed (use scanAllProvidersWithDiagnostics to see them). */
+export async function scanAllProviders(providers: DiscoveryProvider[], signal?: AbortSignal): Promise<DiscoveredDevice[]> {
+  return (await scanAllProvidersWithDiagnostics(providers, signal)).devices;
 }

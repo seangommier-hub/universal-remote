@@ -1,4 +1,5 @@
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "./fccErrors";
 
 // See ADR-HEARTH-011. A device may sit on a network segment the phone isn't currently joined
 // to (e.g. an isolated Guest/IoT/kids-AP network) — direct connection then fails not because
@@ -39,6 +40,7 @@ const DIRECT_TIMEOUT_MS = 4000;
 // just missed here since this relay leg predates that fix. Matches wsRelayFallback's own relay
 // timeout value for consistency between the HTTP and WebSocket relay paths.
 const RELAY_TIMEOUT_MS = 8000;
+const HTTP_UNAUTHORIZED = 401;
 const RELAY_PATH = "/api/integrations/hearth/relay/http";
 
 export interface RelayableRequest {
@@ -98,7 +100,7 @@ function isCancellation(err: unknown): boolean {
 // explicitly rejected the request" (a real error — wrong token, malformed request, a device it
 // doesn't recognize — retrying elsewhere would only mask it, not fix it). Only the former ever
 // triggers the public-URL fallback below.
-class FccUnreachableError extends Error {}
+
 
 async function callRelayAt(baseUrl: string, token: string, request: RelayableRequest): Promise<RelayableResponse> {
   let response: Response;
@@ -126,6 +128,9 @@ async function callRelayAt(baseUrl: string, token: string, request: RelayableReq
     throw new FccUnreachableError(err instanceof Error ? err.message : String(err));
   }
 
+  if (response.status === HTTP_UNAUTHORIZED) {
+    throw new FccTokenRejectedError("Family Command Center rejected the saved token.");
+  }
   if (!response.ok) {
     throw new Error(`Family Command Center rejected the relay request: HTTP ${response.status}`);
   }
@@ -142,7 +147,7 @@ async function callRelayAt(baseUrl: string, token: string, request: RelayableReq
 async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
   const config = await loadFamilyCommandCenterConfig();
   if (!config) {
-    throw new Error(
+    throw new FccNotConfiguredError(
       `Could not reach ${request.ip} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`
     );
   }
