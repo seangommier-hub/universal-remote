@@ -7,7 +7,9 @@ import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure"
 import { Device } from "../core/types/Device";
 import { connectBrandDevice } from "../discovery/addDeviceFlow";
 import { BrandEntry } from "../discovery/brandRegistry";
+import { setNameSource } from "../discovery/deviceNameSource";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { identifyDeviceByIp } from "../discovery/identifyDevice";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSetupGuideScreen } from "./DeviceSetupGuideScreen";
@@ -15,6 +17,7 @@ import { setupGuideForBrand } from "./deviceSetupSteps";
 import { FCC_REQUIRED_MESSAGE } from "./DiscoveredDeviceRow";
 import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { theme } from "./theme";
+import { useIdentifiedName } from "./useIdentifiedName";
 
 interface GenericIpAddDeviceScreenProps {
   brand: BrandEntry;
@@ -31,8 +34,9 @@ type Status = { name: "idle" } | { name: "connecting" } | { name: "needs-fcc" } 
 /** The one add screen for every brand whose only input is an IP address (ADR-HEARTH-148), driven entirely by the brand registry. */
 export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAdded, initialIpAddress, onOpenFccSetup }: GenericIpAddDeviceScreenProps) {
   const insets = useSafeAreaInsets();
-  const [name, setName] = useState(brand.defaultName);
+  const [name, setName] = useState("");
   const [ipAddress, setIpAddress] = useState(initialIpAddress ?? "");
+  const identified = useIdentifiedName(ipAddress, brand.id);
   const [status, setStatus] = useState<Status>({ name: "idle" });
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const guide = setupGuideForBrand(brand.id);
@@ -42,9 +46,9 @@ export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAd
   async function handleConnect() {
     setStatus({ name: "connecting" });
     const outcome = await connectBrandDevice(
-      { driverRegistry, readReportedName: () => undefined, hasFccConfig: async () => (await loadFamilyCommandCenterConfig()) !== null },
+      { driverRegistry, readReportedName: () => undefined, hasFccConfig: async () => (await loadFamilyCommandCenterConfig()) !== null, identify: identifyDeviceByIp, recordNameSource: (id, source) => void setNameSource(id, source) },
       brand,
-      { id: `${brand.id}-${Date.now()}`, ipAddress: ipAddress.trim(), name }
+      { id: `${brand.id}-${Date.now()}`, ipAddress: ipAddress.trim(), name: name.trim() || undefined }
     );
     if (outcome.kind === "added") return onAdded(outcome.device);
     if (outcome.kind === "needs-fcc") return setStatus({ name: "needs-fcc" });
@@ -69,7 +73,7 @@ export function GenericIpAddDeviceScreen({ brand, driverRegistry, onCancel, onAd
         {guide && <CapabilityButton label="Setup This Device" variant="ghost" onPress={() => setShowSetupGuide(true)} />}
 
         <Text style={styles.label}>Name</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={brand.defaultName} placeholderTextColor={theme.textTertiary} />
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={identified.name ?? brand.defaultName} placeholderTextColor={theme.textTertiary} />
 
         <Text style={styles.label}>IP address</Text>
         <TextInput

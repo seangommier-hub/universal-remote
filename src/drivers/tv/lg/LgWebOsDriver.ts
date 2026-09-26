@@ -6,7 +6,7 @@ import { DeviceState, PlaybackState } from "../../../core/types/DeviceState";
 import { logger } from "../../../core/logging/logger";
 import { LgWebOsClient, LgWebOsConfig } from "./LgWebOsClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 import { withBackoffJitter } from "../../shared/backoffJitter";
@@ -268,7 +268,7 @@ export class LgWebOsDriver implements DeviceDriver {
       // reacts to failure types — there's nothing to look up. Falls back to a hostname match on
       // this device's own `name`, which discovery already set from the Center's reported hostname
       // for exactly this device — same "safe to try, harmless if nothing matches" contract.
-      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      const freshIp = await findCurrentIpByIdentity(device.config, device.name);
       if (!freshIp || freshIp === config.ipAddress) throw err; // nothing better found — surface the original failure
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp; // persisted the same way a fresh client-key is, in doConnect

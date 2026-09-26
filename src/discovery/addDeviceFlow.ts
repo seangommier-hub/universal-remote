@@ -2,6 +2,7 @@ import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { Device } from "../core/types/Device";
 import { BrandEntry, BrandField, initialCapabilities } from "./brandRegistry";
+import { DeviceIdentity, NameSourceKind, resolveDisplayName } from "./deviceIdentity";
 
 // ADR-HEARTH-148: the ONE connect path for adding a device by address — used by the Discover
 // screen, the home Suggested list and the generic IP add screen, replacing three copies of the
@@ -16,6 +17,8 @@ export interface AddTarget {
   name?: string;
   /** Values for the brand's inline fields (Sony PSK, Xbox Live ID). */
   fieldValues?: Record<string, string>;
+  /** ADR-HEARTH-156: what discovery already knows, used as lower-precedence name sources. */
+  hints?: { friendlyName?: string | null; hostname?: string | null; vendor?: string | null; model?: string | null };
 }
 
 export interface AddFlowDependencies {
@@ -23,6 +26,10 @@ export interface AddFlowDependencies {
   /** A device's own self-reported name, if its driver fetched one at connect time (ADR-HEARTH-085). */
   readReportedName: (deviceId: string) => string | undefined;
   hasFccConfig: () => Promise<boolean>;
+  /** ADR-HEARTH-156: asks the Pi who the device at an address is; absent or null means "no answer". */
+  identify?: (ipAddress: string) => Promise<DeviceIdentity | null>;
+  /** ADR-HEARTH-156: remembers where the saved name came from (typed vs from the device). */
+  recordNameSource?: (deviceId: string, source: NameSourceKind) => void;
 }
 
 export type AddOutcome =
@@ -63,6 +70,26 @@ function buildDevice(brand: BrandEntry, target: AddTarget, capabilities: Device[
   };
 }
 
+/** Adds what the device said about itself (UUID, serial, MAC, model) and the best name; a typed name always wins (ADR-HEARTH-156). */
+function withIdentity(device: Device, brand: BrandEntry, target: AddTarget, reported: string | undefined, identity: DeviceIdentity | null): { device: Device; source: NameSourceKind } {
+  const hints = target.hints ?? {};
+  const model = identity?.model ?? hints.model ?? undefined;
+  const { name, source } = resolveDisplayName({
+    userTyped: target.name,
+    reported: reported ?? identity?.name,
+    friendly: hints.friendlyName,
+    hostname: hints.hostname,
+    vendor: hints.vendor ?? brand.manufacturer,
+    model,
+    brandLabel: brand.defaultName,
+  });
+  const config = device.config ?? {}; // shared with the driver, which keeps updating it (pairing keys)
+  if (identity?.uuid) config.uuid = identity.uuid;
+  if (identity?.serial) config.serial = identity.serial;
+  if (identity?.mac && !config.hwaddr) config.hwaddr = identity.mac;
+  return { device: { ...device, name, ...(model ? { model } : {}), config }, source };
+}
+
 /** Connects a device of `brand` at an address with defaults, or says exactly what is still needed first. */
 export async function connectBrandDevice(deps: AddFlowDependencies, brand: BrandEntry, target: AddTarget): Promise<AddOutcome> {
   if (brand.addMode === "custom-screen") return { kind: "custom-screen" };
@@ -74,6 +101,7 @@ export async function connectBrandDevice(deps: AddFlowDependencies, brand: Brand
   if (!driver) return { kind: "failed", message: `The ${brand.label} driver is not available in this build.`, diagnosis: null };
 
   const device = buildDevice(brand, target, initialCapabilities(brand, driver));
+  const identifying = deps.identify ? deps.identify(target.ipAddress).catch(() => null) : Promise.resolve(null);
   try {
     await driver.connect(device);
   } catch (error) {
@@ -83,5 +111,7 @@ export async function connectBrandDevice(deps: AddFlowDependencies, brand: Brand
     return { kind: "failed", ...describeAddFailure(error, brand, target.ipAddress) };
   }
   const reported = deps.readReportedName(device.id)?.trim();
-  return { kind: "added", device: reported && !target.name ? { ...device, name: reported } : device };
+  const identified = withIdentity(device, brand, target, reported, await identifying);
+  deps.recordNameSource?.(device.id, identified.source);
+  return { kind: "added", device: identified.device };
 }

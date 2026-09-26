@@ -6,7 +6,7 @@ import { DeviceState } from "../../../core/types/DeviceState";
 import { SamsungTizenClient, SamsungTizenConfig } from "./SamsungTizenClient";
 import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
 import { logger } from "../../../core/logging/logger";
-import { findCurrentIpByMac, findCurrentIpByName, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
+import { findCurrentIpByIdentity, findMacByIp } from "../../../discovery/familyCommandCenterDeviceLookup";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController } from "../../shared/wakeBurst";
@@ -202,7 +202,7 @@ export class SamsungTizenDriver implements DeviceDriver {
       // See LgWebOsDriver.ts's identical comment: a device discovered before hwaddr-saving
       // existed has no MAC to look up by at all — falls back to a hostname match on this
       // device's own `name` (discovery already set it from the Center's reported hostname).
-      const freshIp = typeof hwaddr === "string" ? await findCurrentIpByMac(hwaddr) : await findCurrentIpByName(device.name);
+      const freshIp = await findCurrentIpByIdentity(device.config, device.name);
       if (!freshIp || freshIp === config.ipAddress) throw err;
       logger.info(LOG_SCOPE, `${device.name} found at a new address: ${config.ipAddress} -> ${freshIp} — retrying`);
       if (device.config) device.config.ipAddress = freshIp;

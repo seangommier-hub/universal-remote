@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NameSourceKind } from "../discovery/deviceIdentity";
 import { StyleSheet, View } from "react-native";
 import { HearthRuntime } from "../runtime/bootstrap";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
@@ -49,7 +50,7 @@ interface DevicesTabScreenProps {
   onDismissUpdateBanner: () => void;
   onDeviceAdded: (device: Device) => Device;
   onReconnect: (device: Device) => Promise<void>;
-  onRenameDevice: (device: Device, newName: string) => Promise<Device>;
+  onRenameDevice: (device: Device, newName: string, source?: NameSourceKind) => Promise<Device>;
   onAddressUpdated: (updated: Device) => void;
   onDeviceUpdatedInPlace: (updated: Device) => void;
   onRemoveDevice: (device: Device) => Promise<void>;
@@ -113,8 +114,8 @@ export function DevicesTabScreen({
     setScreen(mode === "post-add" ? { name: "remote", device: current } : { name: "list" });
   }
 
-  async function handleRename(device: Device, newName: string): Promise<void> {
-    const updated = await onRenameDevice(device, newName);
+  async function handleRename(device: Device, newName: string, source?: NameSourceKind): Promise<void> {
+    const updated = await onRenameDevice(device, newName, source);
     setScreen((current) => (current.name === "remote" && current.device.id === device.id ? { name: "remote", device: updated } : current));
   }
 
@@ -301,6 +302,7 @@ export function DevicesTabScreen({
           onRename={(device) => setScreen({ name: "rename-device", device })}
           onTeachCommands={(device) => setScreen({ name: "teach-broadlink", device })}
           onSetupChecks={(device) => setScreen({ name: "post-add", device, mode: "setup-checks" })}
+          onUseDeviceName={(device, name) => void handleRename(device, name, "device")}
           activities={activities.activities}
           activityProgress={activities.progress}
           activityHistory={activities.history}
