@@ -47,6 +47,12 @@ describe("buildDiscoveryRows", () => {
     expect(all.every((r) => r.action === "added")).toBe(true);
   });
 
+  test("a Pi-recognized Google TV (mDNS _androidtvremote2) becomes an Add row that opens the guided pairing screen", () => {
+    const rows = buildDiscoveryRows([net({ id: "g", ip: "192.168.1.91", brand: "androidtv", confidence: "certain", friendlyName: "Living Room TV" })], []);
+    expect(rows.identified[0]).toMatchObject({ action: "add", title: "Living Room TV", subtitle: "192.168.1.91 · Answered as Google TV / Android TV" });
+    expect(rows.identified[0].brand).toMatchObject({ id: "androidtv", addMode: "custom-screen" });
+  });
+
   test("a Hue bridge address counts as added", () => {
     expect(findAddedDevice(net({ ip: "192.168.1.7" }), [saved({ bridgeIpAddress: "192.168.1.7" })])).toBeDefined();
   });

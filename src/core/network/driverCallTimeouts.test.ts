@@ -4,6 +4,7 @@ import { Ps5Client } from "../../drivers/gaming/ps5/Ps5Client";
 import { XboxDriver } from "../../drivers/gaming/xbox/XboxDriver";
 import { BroadlinkClient } from "../../drivers/irHub/broadlink/BroadlinkClient";
 import { ChromecastClient } from "../../drivers/streaming/chromecast/ChromecastClient";
+import { AndroidTvClient } from "../../drivers/tv/androidtv/AndroidTvClient";
 import { AppleTvClient } from "../../drivers/tv/appletv/AppleTvClient";
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 import { Device } from "../types/Device";
@@ -59,6 +60,11 @@ describe("Family Command Center calls never hang", () => {
 
   test("AppleTvClient rejects when the relay never answers", async () => {
     await expectRejectsAfter(() => new AppleTvClient().startPairing("192.168.1.60"), LONG_FETCH_TIMEOUT_MS);
+  });
+
+  test("AndroidTvClient rejects a pairing start and a status read when the relay never answers", async () => {
+    await expectRejectsAfter(() => new AndroidTvClient().startPairing("192.168.1.91"), LONG_FETCH_TIMEOUT_MS);
+    await expectRejectsAfter(() => new AndroidTvClient().getStatus("192.168.1.91"), DEFAULT_FETCH_TIMEOUT_MS * 2);
   });
 
   test("ChromecastClient rejects when the relay never answers", async () => {

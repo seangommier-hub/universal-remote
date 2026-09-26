@@ -2,6 +2,7 @@ import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network
 import { PS5_PAIRING_POLL_INTERVAL_MS, PS5_PAIRING_POLL_MAX_ATTEMPTS } from "../drivers/gaming/ps5/Ps5Client";
 import { LG_PAIRING_TIMEOUT_MS } from "../drivers/tv/lg/LgWebOsClient";
 import { SAMSUNG_PAIRING_TIMEOUT_MS, SamsungPairingError } from "../drivers/tv/samsung/SamsungTizenClient";
+import { ANDROID_TV_PAIRING_FINISH_MS, AndroidTvRelayError } from "../drivers/tv/androidtv/AndroidTvClient";
 import { APPLE_TV_PAIRING_POLL_INTERVAL_MS, APPLE_TV_PAIRING_POLL_MAX_ATTEMPTS } from "../drivers/tv/appletv/AppleTvClient";
 import { BrandId } from "./brandRegistry";
 import { HUE_PAIRING_MAX_WAIT_MS, HuePairingTimedOutError } from "./huePairing";
@@ -36,6 +37,11 @@ const PAIRING_PROMPTS: Partial<Record<PairingPromptId, PairingPrompt>> = {
     heading: "Look at your Apple TV",
     instruction: "A 4-digit PIN is showing on the Apple TV screen. Type it in below.",
     timeoutMs: APPLE_TV_PAIRING_POLL_INTERVAL_MS * APPLE_TV_PAIRING_POLL_MAX_ATTEMPTS,
+  },
+  androidtv: {
+    heading: "Look at your TV",
+    instruction: "A 6-character code is showing on the TV screen. Type it in below (letters A to F and digits only).",
+    timeoutMs: ANDROID_TV_PAIRING_FINISH_MS,
   },
   hue: {
     heading: "Look at your Hue bridge",
@@ -139,6 +145,18 @@ function describeAppleTvFailure(message: string): PairingFailureCopy | null {
   return null;
 }
 
+function describeAndroidTvFailure(error: unknown, message: string): PairingFailureCopy | null {
+  const kind = error instanceof AndroidTvRelayError ? error.kind : null;
+  if (kind === "bad_code") return copy("wrong-pin", "That code didn't work", "The TV didn't accept that code. Try again and type the new 6-character code now showing on the TV.");
+  if (kind === "unknown_session" || TIMEOUT_PATTERN.test(message)) {
+    return copy("timeout", "Code not confirmed in time", "The pairing code expired. Try again and type the new code shown on the TV within two minutes.");
+  }
+  if (kind === "unreachable") {
+    return copy("unreachable", "Can't reach the TV", "Family Command Center couldn't reach the TV. Turn it on, keep it on the same network, and try again.");
+  }
+  return null;
+}
+
 function describePs5Failure(message: string): PairingFailureCopy | null {
   if (TIMEOUT_PATTERN.test(message)) return copy("timeout", "PS5 pairing timed out", "Nothing finished in time. Try again, and enter the PS5's 8-digit code promptly.");
   if (REDIRECT_PATTERN.test(message)) return copy("bad-redirect", "Sign-in wasn't recognized", "Hearth couldn't use that PlayStation sign-in. Sign in again, then copy the whole address from the blank page.");
@@ -163,6 +181,8 @@ function brandSpecificFailure(brandId: BrandId, label: string, error: unknown, m
       return describeRokuFailure(message);
     case "appletv":
       return describeAppleTvFailure(message);
+    case "androidtv":
+      return describeAndroidTvFailure(error, message);
     case "ps5":
       return describePs5Failure(message);
     case "hue":

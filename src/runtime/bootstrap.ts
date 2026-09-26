@@ -17,6 +17,7 @@ import { DenonDriver } from "../drivers/tv/denon/DenonDriver";
 import { ChromecastDriver } from "../drivers/streaming/chromecast/ChromecastDriver";
 import { BroadlinkIrDriver } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { SquirrelFeederDriver } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
+import { AndroidTvDriver } from "../drivers/tv/androidtv/AndroidTvDriver";
 import { AppleTvDriver } from "../drivers/tv/appletv/AppleTvDriver";
 import { SwitchBotVacuumDriver } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
 import { isDemoMode } from "../demo/demoMode";
@@ -56,6 +57,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new BroadlinkIrDriver());
   driverRegistry.register(new SquirrelFeederDriver());
   driverRegistry.register(new AppleTvDriver());
+  driverRegistry.register(new AndroidTvDriver());
   driverRegistry.register(new SwitchBotVacuumDriver());
 
   if (isDemoMode()) swapInDemoDrivers(driverRegistry);

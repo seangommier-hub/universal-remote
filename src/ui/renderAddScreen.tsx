@@ -2,6 +2,7 @@ import { ReactElement } from "react";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { Device } from "../core/types/Device";
 import { BrandId, getBrand } from "../discovery/brandRegistry";
+import { AddAndroidTvDeviceScreen } from "./AddAndroidTvDeviceScreen";
 import { AddAppleTvDeviceScreen } from "./AddAppleTvDeviceScreen";
 import { AddHueDeviceScreen } from "./AddHueDeviceScreen";
 import { AddPs5DeviceScreen } from "./AddPs5DeviceScreen";
@@ -33,6 +34,8 @@ export function renderAddScreen(brandId: BrandId, props: AddScreenProps): ReactE
       return <AddXboxDeviceScreen {...screenProps} />;
     case "appletv":
       return <AddAppleTvDeviceScreen {...screenProps} />;
+    case "androidtv":
+      return <AddAndroidTvDeviceScreen {...screenProps} />;
     case "ps5":
       return <AddPs5DeviceScreen {...screenProps} />;
     case "hue":

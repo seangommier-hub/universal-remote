@@ -16,6 +16,7 @@ import { KasaPlugDriver } from "../outlet/kasa/KasaPlugDriver";
 import { SmartThingsOutletDriver } from "../outlet/smartthings/SmartThingsOutletDriver";
 import { ChromecastDriver } from "../streaming/chromecast/ChromecastDriver";
 import { RokuEcpDriver } from "../streaming/roku/RokuEcpDriver";
+import { AndroidTvDriver } from "../tv/androidtv/AndroidTvDriver";
 import { AppleTvDriver } from "../tv/appletv/AppleTvDriver";
 import { DenonDriver } from "../tv/denon/DenonDriver";
 import { LgWebOsDriver } from "../tv/lg/LgWebOsDriver";
@@ -140,6 +141,7 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
       ...{},
     } },
   { name: "AppleTvDriver", createDriver: () => new AppleTvDriver(), createDevice: device("atv-1", { ipAddress: "192.168.1.90" }), responder: () => ({ json: { output: "PowerState.On" } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
+  { name: "AndroidTvDriver", createDriver: () => new AndroidTvDriver(), createDevice: device("atvr-1", { ipAddress: "192.168.1.91" }), responder: () => ({ json: { isOn: true, currentApp: null } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
   { name: "KasaPlugDriver", createDriver: () => new KasaPlugDriver(), createDevice: device("kasa-1", { ipAddress: "192.168.1.50" }), responder: kasaResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "SmartThingsOutletDriver", createDriver: () => new SmartThingsOutletDriver(), createDevice: device("st-1", { deviceId: "st-1" }), responder: smartThingsResponder, usesFcc: true, command: anyCommand("power"), exemptions: {
       ...UNDEDUPED_CONNECT_EXEMPTIONS,

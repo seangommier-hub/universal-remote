@@ -166,6 +166,26 @@ export const BRAND_SETUP_TABLE: BrandSetup[] = [
     ],
   },
   {
+    brand: "androidtv",
+    wakeFailureHint: "The TV never answered. Pair it once with the code shown on screen, and turn on Wake on LAN / Wake on Cast so it can be woken from standby.",
+    checks: [
+      FCC_CHECK,
+      {
+        id: "androidtv-paired",
+        title: "You paired once with the code on the screen",
+        why: "Google TV / Android TV refuses control until a 6-character code pairing succeeds.",
+        where: "The code appears on the TV while Hearth starts pairing.",
+      },
+      {
+        id: "androidtv-wake",
+        title: "Wake on LAN / Wake on Cast is on",
+        why: "A TV in deep standby only answers a network wake-up while this is enabled; some models cannot be woken over Wi-Fi at all.",
+        where: "Settings > Network & Internet > (your network) > Wake on LAN / Wake on Cast, or Settings > System > Power & energy.",
+      },
+      LOCAL_NETWORK_CHECK,
+    ],
+  },
+  {
     brand: "xbox",
     wakeFailureHint: "The Xbox never answered. It must be set to Instant-on and use the right Live ID.",
     checks: [
