@@ -11,13 +11,18 @@ import { CapabilityButton } from "./CapabilityButton";
 import { DeviceSharePanel } from "./DeviceSharePanel";
 import { InviteSomeonePanel } from "./InviteSomeonePanel";
 import { PhoneNameField } from "./PhoneNameField";
+import { KidModeSettingsPanel } from "./KidModeSettingsPanel";
 import { RecentActivityList } from "./RecentActivityList";
+import type { KidModeControls } from "./useKidMode";
 import { theme } from "./theme";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
   onSaved: () => void;
   onJoinWithCode: () => void;
+  kid: KidModeControls;
+  /** Called after kid mode is switched on. */
+  onKidModeOn: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
   onDeviceUpdated: (device: Device) => void;
@@ -30,7 +35,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, kid, onKidModeOn, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -151,6 +156,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
       <CapabilityButton label="Join with a code instead" variant="ghost" onPress={onJoinWithCode} disabled={status === "checking"} />
       {alreadyConnected && <InviteSomeonePanel />}
       <PhoneNameField />
+      <KidModeSettingsPanel kid={kid} onKidModeOn={onKidModeOn} />
       {alreadyConnected && <RecentActivityList />}
 
       <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} onDeviceUpdated={onDeviceUpdated} />

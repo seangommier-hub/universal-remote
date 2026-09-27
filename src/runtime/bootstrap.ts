@@ -30,7 +30,7 @@ import { WizLightDriver } from "../drivers/lighting/wiz/WizLightDriver";
 import { randomUUID } from "expo-crypto";
 import { ActivityLogRecorder } from "../core/activityLog/ActivityLogRecorder";
 import { saveOutbox } from "./activityLogOutbox";
-import { getPhoneName } from "./phoneName";
+import { getLoggedWho } from "./loggedWho";
 import { isDemoMode } from "../demo/demoMode";
 import { swapInDemoDrivers } from "../demo/demoRuntime";
 
@@ -44,7 +44,7 @@ export interface HearthRuntime {
 }
 
 function createActivityLogRecorder(): ActivityLogRecorder {
-  return new ActivityLogRecorder({ getWho: getPhoneName, newId: randomUUID, now: Date.now, onChange: saveOutbox });
+  return new ActivityLogRecorder({ getWho: getLoggedWho, newId: randomUUID, now: Date.now, onChange: saveOutbox });
 }
 
 /**
@@ -87,7 +87,7 @@ export function createHearthRuntime(): HearthRuntime {
 
   const commandEngine = new CommandEngine(deviceRegistry, driverRegistry, stateStore);
   const activityLog = createActivityLogRecorder();
-  if (!isDemoMode()) commandEngine.setOutcomeObserver((command, device, result) => activityLog.record(command, device, result));
+  if (!isDemoMode()) commandEngine.setOutcomeObserver((command, device, result, options) => activityLog.record(command, device, result, options.cause));
 
   return { deviceRegistry, driverRegistry, stateStore, commandEngine, activityLog };
 }

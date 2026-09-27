@@ -21,6 +21,16 @@ describe("normalizeLayout", () => {
     expect(layout.favorites).toEqual(["a"]);
     expect(layout.order).toEqual([]);
     expect(layout.collapsedRooms).toEqual([]);
+    expect(layout.kidAllowed).toEqual([]);
+  });
+
+  test("keeps kid-allowed ids and drops junk; a layout saved before kid mode has none", () => {
+    expect(normalizeLayout({ kidAllowed: ["a", 3, "a", ""] }).kidAllowed).toEqual(["a"]);
+    expect(normalizeLayout({ rooms: { a: "Den" } }).kidAllowed).toEqual([]);
+  });
+
+  test("pruneLayout forgets kid-allowed ids of removed devices", () => {
+    expect(pruneLayout({ ...emptyLayout(), kidAllowed: ["a", "gone"] }, ["a"]).kidAllowed).toEqual(["a"]);
   });
 });
 

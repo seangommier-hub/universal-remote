@@ -7,6 +7,8 @@ import { Device } from "../core/types/Device";
 import { Activity } from "../core/types/Activity";
 import { BrandId } from "../discovery/brandRegistry";
 import { DeviceListScreen } from "./DeviceListScreen";
+import { KidDeviceListScreen } from "./KidDeviceListScreen";
+import type { KidModeControls } from "./useKidMode";
 import { renderAddScreen } from "./renderAddScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
 import { LightControlScreen } from "./LightControlScreen";
@@ -57,6 +59,8 @@ interface DevicesTabScreenProps {
   onAddressUpdated: (updated: Device) => void;
   onDeviceUpdatedInPlace: (updated: Device) => void;
   onRemoveDevice: (device: Device) => Promise<void>;
+  /** ADR-HEARTH-176: this phone's kid-mode state; in kid mode only the list and allowed remotes are reachable. */
+  kid: KidModeControls;
 }
 
 /**
@@ -80,8 +84,11 @@ export function DevicesTabScreen({
   onAddressUpdated,
   onDeviceUpdatedInPlace,
   onRemoveDevice,
+  kid,
 }: DevicesTabScreenProps) {
-  const [screen, setScreen] = useState<DevicesScreen>(() => demoStartingScreen(devices) ?? { name: "list" });
+  const restricted = kid.status === "restricted";
+  const [requestedScreen, setScreen] = useState<DevicesScreen>(() => demoStartingScreen(devices) ?? { name: "list" });
+  const screen = restricted ? kidSafeScreen(requestedScreen) : requestedScreen;
   // Real gap found live (2026-09-21): the header's "Connect Family Command Center" button always
   // opened the QR-scan screen, meant for *first-time* pairing (a camera view + a "manual entry"
   // text link buried inside it) -- the only way this app ever exposed the settings screen at all.
@@ -254,6 +261,8 @@ export function DevicesTabScreen({
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "list" })}
           onJoinWithCode={() => setScreen({ name: "fcc-join" })}
+          kid={kid}
+          onKidModeOn={() => setScreen({ name: "list" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
@@ -296,7 +305,8 @@ export function DevicesTabScreen({
           }}
         />
       )}
-      {screen.name === "list" && (
+      {screen.name === "list" && restricted && <KidDeviceListScreen devices={devices} stateStore={runtime.stateStore} commandEngine={runtime.commandEngine} kid={kid} onSelect={(device) => setScreen({ name: "remote", device })} />}
+      {screen.name === "list" && !restricted && (
         <DeviceListScreen
           devices={devices}
           stateStore={runtime.stateStore}
@@ -333,6 +343,11 @@ export function DevicesTabScreen({
       )}
     </View>
   );
+}
+
+/** In kid mode only the list and a device's remote may be shown; anything else (setup, settings, editors) falls back to the list. */
+function kidSafeScreen(screen: DevicesScreen): DevicesScreen {
+  return screen.name === "list" || screen.name === "remote" ? screen : { name: "list" };
 }
 
 const styles = StyleSheet.create({

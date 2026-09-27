@@ -14,6 +14,7 @@ export interface DeviceActionHandlers {
   onTeachCommands: (device: Device) => void;
   onRemove: (device: Device) => void;
   onToggleFavorite: (device: Device) => void;
+  onToggleKidAllowed: (device: Device) => void;
   onSetRoom: (device: Device, room: string) => void;
   onMove: (device: Device, direction: "up" | "down") => void;
 }
@@ -22,6 +23,7 @@ interface DeviceActionsModalProps {
   device: Device | null;
   nameSuggestion: string | null;
   isFavorite: boolean;
+  isKidAllowed: boolean;
   currentRoom: string | undefined;
   roomChoices: string[];
   canMoveUp: boolean;
@@ -40,7 +42,7 @@ function Option({ label, onPress, destructive, disabled }: { label: string; onPr
 }
 
 /** The long-press menu for a device: rename, room, favorite, order, address, setup, teach and remove. */
-export function DeviceActionsModal({ device, nameSuggestion, isFavorite, currentRoom, roomChoices, canMoveUp, canMoveDown, handlers, onClose }: DeviceActionsModalProps) {
+export function DeviceActionsModal({ device, nameSuggestion, isFavorite, isKidAllowed, currentRoom, roomChoices, canMoveUp, canMoveDown, handlers, onClose }: DeviceActionsModalProps) {
   const [editingRoom, setEditingRoom] = useState(false);
   useEffect(() => setEditingRoom(false), [device?.id]);
 
@@ -75,6 +77,7 @@ export function DeviceActionsModal({ device, nameSuggestion, isFavorite, current
               <Option label="Rename" onPress={act(handlers.onRename)} />
               {nameSuggestion && <Option label={`Use the name set on the device: "${nameSuggestion}"`} onPress={act((d) => handlers.onUseDeviceName(d, nameSuggestion))} />}
               <Option label={isFavorite ? "Remove from Favorites" : "Add to Favorites"} onPress={act(handlers.onToggleFavorite)} />
+              <Option label={isKidAllowed ? "Not allowed in kid mode" : "Allowed in kid mode"} onPress={act(handlers.onToggleKidAllowed)} />
               <Option label={currentRoom ? `Set room (${currentRoom})` : "Set room"} onPress={() => setEditingRoom(true)} />
               <Option label="Move up" onPress={stay((d) => handlers.onMove(d, "up"))} disabled={!canMoveUp} />
               <Option label="Move down" onPress={stay((d) => handlers.onMove(d, "down"))} disabled={!canMoveDown} />

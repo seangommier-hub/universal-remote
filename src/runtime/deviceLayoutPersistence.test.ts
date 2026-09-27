@@ -22,11 +22,11 @@ describe("deviceLayoutPersistence", () => {
 
   test("a layout saved without newer fields loads with those fields empty", async () => {
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ favorites: ["a"] }));
-    expect(await loadDeviceLayout()).toEqual({ rooms: {}, favorites: ["a"], order: [], collapsedRooms: [] });
+    expect(await loadDeviceLayout()).toEqual({ rooms: {}, favorites: ["a"], order: [], collapsedRooms: [], kidAllowed: [] });
   });
 
   test("save then load round-trips", async () => {
-    const layout = { rooms: { a: "Den" }, favorites: ["a"], order: ["b", "a"], collapsedRooms: ["den"] };
+    const layout = { rooms: { a: "Den" }, favorites: ["a"], order: ["b", "a"], collapsedRooms: ["den"], kidAllowed: ["b"] };
     await saveDeviceLayout(layout);
     const [, stored] = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(stored);

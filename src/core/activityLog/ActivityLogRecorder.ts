@@ -9,6 +9,7 @@ import {
   MAX_VERB_LENGTH,
   MAX_WHO_LENGTH,
 } from "./activityLogEntry";
+import { CommandCause, whoForCause } from "./activityCause";
 import { describeCommandVerb, isWorthLogging } from "./commandVerb";
 
 // ADR-HEARTH-170: turns command outcomes into a bounded, offline-safe outbox of log entries. Pure:
@@ -39,10 +40,10 @@ export class ActivityLogRecorder {
     this.pending = restored.slice(-MAX_PENDING_ENTRIES);
   }
 
-  /** Records one finished command; never throws and ignores navigation noise and rapid repeats. */
-  record(command: Command, device: Device, result: CommandResult): void {
+  /** Records one finished command (attributed to `cause` when it was not the owner's own press); never throws and ignores navigation noise and rapid repeats. */
+  record(command: Command, device: Device, result: CommandResult, cause?: CommandCause): void {
     if (!isWorthLogging(command.capability, result.success)) return;
-    const who = clampText(this.deps.getWho(), MAX_WHO_LENGTH, UNKNOWN_NAME);
+    const who = clampText(cause ? whoForCause(cause) : this.deps.getWho(), MAX_WHO_LENGTH, UNKNOWN_NAME);
     const verb = clampText(describeCommandVerb(command), MAX_VERB_LENGTH, "used");
     if (this.isRepeat(device.id, verb, who, result.success)) return;
     const entry: ActivityLogEntry = {

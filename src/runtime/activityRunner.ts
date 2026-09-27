@@ -92,9 +92,9 @@ function retriesFor(step: CommandStep): number {
   return policy.startsWith(RETRY_POLICY_PREFIX) ? Number(policy.slice(RETRY_POLICY_PREFIX.length)) : 0;
 }
 
-async function tryExecute(step: CommandStep, deps: ActivityRunDeps): Promise<{ result?: CommandResult; thrown?: string }> {
+async function tryExecute(step: CommandStep, deps: ActivityRunDeps, activityName: string): Promise<{ result?: CommandResult; thrown?: string }> {
   try {
-    return { result: await deps.commandEngine.execute({ deviceId: step.deviceId, capability: step.capability, args: step.args }, { silent: true }) };
+    return { result: await deps.commandEngine.execute({ deviceId: step.deviceId, capability: step.capability, args: step.args }, { cause: { kind: "activity", name: activityName } }) };
   } catch (err) {
     return { thrown: err instanceof Error ? err.message : String(err) };
   }
@@ -105,11 +105,11 @@ function canRetry(step: CommandStep, attempt: { result?: CommandResult; thrown?:
   return attempt.result?.error?.code === "driver_error" && !NON_IDEMPOTENT_CAPABILITIES.has(step.capability);
 }
 
-async function runCommandStep(index: number, step: CommandStep, deps: ActivityRunDeps, signal?: AbortSignal): Promise<StepOutcome> {
+async function runCommandStep(index: number, step: CommandStep, deps: ActivityRunDeps, activityName: string, signal?: AbortSignal): Promise<StepOutcome> {
   const retries = retriesFor(step);
   let attemptNumber = 0;
   for (;;) {
-    const attempt = await tryExecute(step, deps);
+    const attempt = await tryExecute(step, deps, activityName);
     if (attempt.result?.success) return { result: { index, status: "ok" }, halt: false };
     const error = attempt.thrown ?? attempt.result?.error?.message ?? "Unknown error";
     logger.warn(LOG_SCOPE, "command step failed", { deviceId: step.deviceId, capability: step.capability, message: error, attemptNumber });
@@ -137,13 +137,13 @@ async function runWaitForStep(index: number, step: WaitForStep, deps: ActivityRu
   return { result: { index, status: "failed", error }, halt: (step.onTimeout ?? "stop") === "stop" };
 }
 
-async function runStep(index: number, step: ActivityStep, deps: ActivityRunDeps, signal?: AbortSignal): Promise<StepOutcome> {
+async function runStep(index: number, step: ActivityStep, deps: ActivityRunDeps, activityName: string, signal?: AbortSignal): Promise<StepOutcome> {
   if (step.kind === "delay") {
     const completed = await abortableSleep(step.ms, signal);
     return { result: { index, status: completed ? "ok" : "skipped" }, halt: !completed };
   }
   if (step.kind === "waitFor") return runWaitForStep(index, step, deps, signal);
-  return runCommandStep(index, step, deps, signal);
+  return runCommandStep(index, step, deps, activityName, signal);
 }
 
 /**
@@ -167,7 +167,7 @@ export async function runActivity(activity: Activity, deps: ActivityRunDeps, opt
       continue;
     }
     options.onProgress?.({ runId, index, total: activity.steps.length, phase: "running" });
-    const outcome = await runStep(index, activity.steps[index], deps, options.signal);
+    const outcome = await runStep(index, activity.steps[index], deps, activity.name, options.signal);
     steps.push(outcome.result);
     options.onProgress?.({ runId, index, total: activity.steps.length, phase: "done", status: outcome.result.status });
     if (options.signal?.aborted) cancelled = true;

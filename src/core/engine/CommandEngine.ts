@@ -4,15 +4,18 @@ import { StateStore } from "../state/StateStore";
 import { Command, CommandError, CommandResult } from "../types/Command";
 import { Device } from "../types/Device";
 import { logger } from "../logging/logger";
+import { CommandCause } from "../activityLog/activityCause";
 
 const LOG_SCOPE = "CommandEngine";
 
 /** Called after every finished command whose device is known (ADR-HEARTH-170); must be fast and is never awaited. */
-export type CommandOutcomeObserver = (command: Command, device: Device, result: CommandResult) => void;
+export type CommandOutcomeObserver = (command: Command, device: Device, result: CommandResult, options: ExecuteOptions) => void;
 
 export interface ExecuteOptions {
   /** True for commands the app sends on its own (wake tests, activity steps), which are not the household's own presses. */
   silent?: boolean;
+  /** ADR-HEARTH-176: why the app sent this (an Activity step, a schedule); absent means the phone's owner pressed it. */
+  cause?: CommandCause;
 }
 
 /**
@@ -36,15 +39,15 @@ export class CommandEngine {
 
   async execute(command: Command, options: ExecuteOptions = {}): Promise<CommandResult> {
     const result = await this.run(command);
-    if (!options.silent) this.notifyObserver(command, result);
+    if (!options.silent) this.notifyObserver(command, result, options);
     return result;
   }
 
-  private notifyObserver(command: Command, result: CommandResult): void {
+  private notifyObserver(command: Command, result: CommandResult, options: ExecuteOptions): void {
     const device = this.deviceRegistry.get(command.deviceId);
     if (!this.outcomeObserver || !device) return;
     try {
-      this.outcomeObserver(command, device, result);
+      this.outcomeObserver(command, device, result, options);
     } catch (err) {
       logger.warn(LOG_SCOPE, "outcome observer threw", { message: err instanceof Error ? err.message : String(err) });
     }

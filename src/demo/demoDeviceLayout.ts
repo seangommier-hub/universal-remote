@@ -22,5 +22,5 @@ export function demoDeviceLayout(devices: readonly Device[]): DeviceLayout | nul
   const rooms: Record<string, string> = kind === "rooms"
     ? { [DEMO_LG_ID]: "Living Room", [DEMO_SONOS_ID]: "Living Room", [DEMO_SAMSUNG_ID]: "Bedroom", [DEMO_BROADLINK_ID]: "Living Room", [DEMO_KASA_ID]: "Kitchen" }
     : {};
-  return { ...emptyLayout(), rooms, favorites: keep([DEMO_LG_ID, DEMO_SONOS_ID, DEMO_KASA_ID]), order: keep([DEMO_SONOS_ID, DEMO_LG_ID, DEMO_BROADLINK_ID, DEMO_SAMSUNG_ID, DEMO_ROKU_ID, DEMO_KASA_ID]), collapsedRooms: kind === "rooms" ? ["kitchen"] : [] };
+  return { ...emptyLayout(), rooms, favorites: keep([DEMO_LG_ID, DEMO_SONOS_ID, DEMO_KASA_ID]), order: keep([DEMO_SONOS_ID, DEMO_LG_ID, DEMO_BROADLINK_ID, DEMO_SAMSUNG_ID, DEMO_ROKU_ID, DEMO_KASA_ID]), collapsedRooms: kind === "rooms" ? ["kitchen"] : [], kidAllowed: keep([DEMO_LG_ID, DEMO_KASA_ID]) };
 }

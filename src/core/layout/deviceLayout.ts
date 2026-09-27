@@ -12,11 +12,13 @@ export interface DeviceLayout {
   order: string[];
   /** Lowercase room keys whose section is collapsed. */
   collapsedRooms: string[];
+  /** ADR-HEARTH-176: ids of devices an adult allowed in kid mode on this phone. */
+  kidAllowed: string[];
 }
 
 /** A layout with nothing set, which renders the flat list as it always was. */
 export function emptyLayout(): DeviceLayout {
-  return { rooms: {}, favorites: [], order: [], collapsedRooms: [] };
+  return { rooms: {}, favorites: [], order: [], collapsedRooms: [], kidAllowed: [] };
 }
 
 function stringList(value: unknown): string[] {
@@ -45,7 +47,7 @@ export function normalizeLayout(raw: unknown): DeviceLayout {
       if (cleaned) rooms[id] = cleaned;
     }
   }
-  return { rooms, favorites: stringList(stored.favorites), order: stringList(stored.order), collapsedRooms: stringList(stored.collapsedRooms) };
+  return { rooms, favorites: stringList(stored.favorites), order: stringList(stored.order), collapsedRooms: stringList(stored.collapsedRooms), kidAllowed: stringList(stored.kidAllowed) };
 }
 
 /** Puts a device in a room; an empty name takes it out of any room. */
@@ -74,7 +76,7 @@ export function pruneLayout(layout: DeviceLayout, existingIds: readonly string[]
   const alive = new Set(existingIds);
   const rooms: Record<string, string> = {};
   for (const [id, name] of Object.entries(layout.rooms)) if (alive.has(id)) rooms[id] = name;
-  return { ...layout, rooms, favorites: layout.favorites.filter((id) => alive.has(id)), order: layout.order.filter((id) => alive.has(id)) };
+  return { ...layout, rooms, favorites: layout.favorites.filter((id) => alive.has(id)), order: layout.order.filter((id) => alive.has(id)), kidAllowed: layout.kidAllowed.filter((id) => alive.has(id)) };
 }
 
 /** The room names already in use, for offering alongside the built-in suggestions. */

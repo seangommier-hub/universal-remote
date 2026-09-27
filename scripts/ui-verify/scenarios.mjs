@@ -91,6 +91,45 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  { name: "kid-mode-list", screen: "list", query: "&layout=favorites&kid=on", assertFit: false },
+  {
+    name: "kid-mode-pin-prompt",
+    screen: "list",
+    query: "&layout=favorites&kid=on",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Leave kid mode").click();
+      await page.getByLabel("PIN", { exact: true }).fill("1234");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "kid-mode-bedtime", screen: "list", query: "&layout=favorites&kid=bedtime", assertFit: false },
+  {
+    name: "kid-mode-create-pin",
+    screen: "fcc-settings",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Turn on kid mode", { exact: true }).scrollIntoViewIfNeeded();
+      await page.getByText("Turn on kid mode", { exact: true }).click();
+      await page.getByLabel("PIN", { exact: true }).fill("4827");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "kid-mode-enabled-from-settings",
+    screen: "fcc-settings",
+    query: "&layout=favorites",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Turn on kid mode", { exact: true }).click();
+      await page.getByLabel("PIN", { exact: true }).fill("4827");
+      await page.getByText("Next", { exact: true }).click();
+      await page.getByLabel("PIN", { exact: true }).fill("4827");
+      await page.getByText("Save PIN", { exact: true }).click();
+      await page.waitForSelector("text=Kid mode");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
   {
     name: "remote-lg-keypad",

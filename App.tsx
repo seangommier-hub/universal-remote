@@ -29,6 +29,8 @@ import { appNavigationRef } from "./src/ui/appNavigation";
 import { useActivities } from "./src/ui/useActivities";
 import { ActivityRunModal } from "./src/ui/ActivityRunModal";
 import { FeederTabScreen } from "./src/ui/FeederTabScreen";
+import { BedtimeScreen } from "./src/ui/BedtimeScreen";
+import { useKidMode } from "./src/ui/useKidMode";
 import { theme } from "./src/ui/theme";
 import { isDemoMode } from "./src/demo/demoMode";
 import { DemoGate } from "./src/demo/DemoGate";
@@ -59,6 +61,8 @@ function saveDeviceQuietly(device: Device): void {
 function HearthApp() {
   const runtime = useMemo(() => createHearthRuntime(), []);
   const [ready, setReady] = useState(false);
+  // ADR-HEARTH-176: per-phone kid mode (restricted device list, PIN to leave, optional bedtime screen).
+  const kid = useKidMode();
   const [devices, setDevices] = useState<Device[]>([]);
   const activities = useActivities({ commandEngine: runtime.commandEngine, stateStore: runtime.stateStore });
   // ADR-HEARTH-084/086: "checking"/"error" only ever come from a manual check (DeviceListScreen's
@@ -355,7 +359,7 @@ function HearthApp() {
     });
   }
 
-  if (!ready) {
+  if (!ready || !kid.ready) {
     return (
       <SafeAreaProvider>
         <IphoneSafeAreaEmulation>
@@ -363,6 +367,17 @@ function HearthApp() {
             <ActivityIndicator color={theme.accentEnd} size="large" />
             <StatusBar style="light" />
           </View>
+        </IphoneSafeAreaEmulation>
+      </SafeAreaProvider>
+    );
+  }
+
+  if (kid.status === "bedtime" && kid.settings.bedtime) {
+    return (
+      <SafeAreaProvider>
+        <IphoneSafeAreaEmulation>
+          <BedtimeScreen kid={kid} window={kid.settings.bedtime} />
+          <StatusBar style="light" />
         </IphoneSafeAreaEmulation>
       </SafeAreaProvider>
     );
@@ -405,10 +420,11 @@ function HearthApp() {
                   onAddressUpdated={handleAddressUpdated}
                   onDeviceUpdatedInPlace={handleDeviceUpdatedInPlace}
                   onRemoveDevice={handleRemoveDevice}
+                  kid={kid}
                 />
               )}
             </Tab.Screen>
-            {PERSONAL_HARDWARE_ENABLED && (
+            {PERSONAL_HARDWARE_ENABLED && !kid.settings.enabled && (
             <Tab.Screen name="Feeder" options={{ tabBarIcon: ({ color, size }) => <Ionicons name="paw-outline" size={size} color={color} /> }}>
               {() => (
                 <FeederTabScreen
