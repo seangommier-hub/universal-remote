@@ -194,6 +194,12 @@ export const SCENARIOS = [
   { name: "entity-sensor", screen: "remote:ha-temp", assertFit: false },
   { name: "entity-sensor-unavailable", screen: "remote:ha-offline", assertFit: false },
   { name: "entity-camera", screen: "remote:ha-camera", assertFit: false },
+  // ADR-HEARTH-191: the Family Command Center (Ring) camera list — six demo cameras (one battery
+  // doorbell, five wired, two with no snapshot yet) — and one camera's own entity screen for each
+  // of the two interesting cases (a snapshot present, and none yet).
+  { name: "fcc-cameras-list", screen: "cameras", assertFit: false },
+  { name: "entity-camera-ring-doorbell", screen: "remote:fcc-camera-doorbell", assertFit: false },
+  { name: "entity-camera-ring-no-snapshot", screen: "remote:fcc-camera-sideyard", assertFit: false },
   { name: "entity-alarm", screen: "remote:ha-alarm", assertFit: false },
   {
     name: "entity-alarm-code-pad",

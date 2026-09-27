@@ -21,6 +21,7 @@ import { migrateHaDevices } from "./src/runtime/haDeviceMigration";
 import { startClientLogShipper } from "./src/runtime/clientLogShipper";
 import { startActivityLog } from "./src/runtime/startActivityLog";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
+import { syncFccCameras } from "./src/runtime/fccCameraSync";
 import { markShared } from "./src/runtime/sharedDevices";
 import { reconnectAllDevices } from "./src/runtime/reconnectAllDevices";
 import { bridgeDeviceState } from "./src/runtime/stateStoreBridge";
@@ -262,6 +263,10 @@ function HearthApp() {
     runAutoDeviceSync(runtime.deviceRegistry.list(), (device) => {
       handleDeviceAdded(markShared(device));
     });
+    // ADR-HEARTH-191: same one-shot cadence as the shared-device sync above (startup and every
+    // return to the foreground), never a recurring timer — adds/removes Ring camera Devices so
+    // they appear as ordinary tiles, or disappear entirely once `enabled:false`.
+    void syncFccCameras(runtime.deviceRegistry.list(), handleDeviceAdded, handleRemoveDevice);
   }
 
   async function handleReconnect(device: Device): Promise<void> {

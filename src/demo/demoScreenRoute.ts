@@ -25,6 +25,11 @@ export function resolveDemoScreen(param: string | null, devices: Device[]): Devi
     case "fcc-privacy":
     case "fcc-household-phones":
       return { name };
+    // ADR-HEARTH-191: opens the plain Devices list — loadDemoDevices.ts already narrows the demo
+    // household down to just the six Ring cameras for this exact screen value, so the list itself
+    // needs no camera-specific rendering to produce a focused "camera list" screenshot.
+    case "cameras":
+      return { name: "list" };
     case "activity-editor":
       return { name: "edit-activity", editingActivity: demoActivities()[0] };
     case "activity-scheduled":

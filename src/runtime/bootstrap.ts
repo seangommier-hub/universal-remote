@@ -24,6 +24,7 @@ import { AndroidTvDriver } from "../drivers/tv/androidtv/AndroidTvDriver";
 import { AppleTvDriver } from "../drivers/tv/appletv/AppleTvDriver";
 import { SwitchBotVacuumDriver } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
 import { HomeAssistantDriver } from "../drivers/homeAssistant/HomeAssistantDriver";
+import { FccCameraDriver } from "../drivers/camera/ring/FccCameraDriver";
 import { LifxLightDriver } from "../drivers/lighting/lifx/LifxLightDriver";
 import { ShellyRelayDriver } from "../drivers/outlet/shelly/ShellyRelayDriver";
 import { VizioSmartCastDriver } from "../drivers/tv/vizio/VizioSmartCastDriver";
@@ -84,6 +85,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new LifxLightDriver());
   driverRegistry.register(new ShellyRelayDriver());
   driverRegistry.register(new GoveeLightDriver());
+  driverRegistry.register(new FccCameraDriver());
 
   if (isDemoMode()) swapInDemoDrivers(driverRegistry);
 

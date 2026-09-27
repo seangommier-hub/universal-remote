@@ -5,6 +5,7 @@ import { APPLE_TV_DRIVER_ID } from "../drivers/tv/appletv/AppleTvDriver";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { CHROMECAST_DRIVER_ID } from "../drivers/streaming/chromecast/ChromecastDriver";
 import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
+import { FCC_CAMERA_DRIVER_ID } from "../drivers/camera/ring/FccCameraDriver";
 import { SQUIRREL_FEEDER_DRIVER_ID } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
 import { GOVEE_LIGHT_DRIVER_ID } from "../drivers/lighting/govee/GoveeLightDriver";
@@ -53,7 +54,8 @@ export type BrandId =
   | "wiz"
   | "lifx"
   | "shelly"
-  | "govee";
+  | "govee"
+  | "ringcamera";
 
 /** Kept for existing imports: every brand can be the target of an add flow. */
 export type AddableBrand = BrandId;
@@ -223,6 +225,18 @@ export const BRAND_REGISTRY: BrandEntry[] = [
     hint: "Turn on \"LAN Control\" for this light in the Govee Home app first (Settings > this device > LAN Control) — Hearth can't enable it remotely. Only local, LAN-Control models are supported (H6xxx typically), not cloud-only ones.",
     vendorPattern: /govee/i, inAddPicker: true,
   }),
+  {
+    // ADR-HEARTH-191: never reached through the add picker or a discovered row (inAddPicker:
+    // false, vendorPattern: null, same "registered but not offered" shape as the feeder) — Ring
+    // cameras are synced automatically from Family Command Center's own camera list
+    // (fccCameraSync.ts), never added one at a time by a person picking a brand.
+    // needsFcc: false, matching Kasa/Govee's own precedent above — this field gates the add/pairing
+    // flow specifically, and there is no add/pairing flow here at all to gate (see the comment above).
+    id: "ringcamera", label: "Family Command Center Cameras", driverId: FCC_CAMERA_DRIVER_ID, manufacturer: "Ring", category: "camera", icon: "hardware-chip-outline", defaultName: "Ring Camera",
+    addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false,
+    hint: "Synced automatically from Family Command Center's Ring integration — nothing to add here.",
+    vendorPattern: null, inAddPicker: false,
+  },
 ];
 
 const BY_ID = new Map<BrandId, BrandEntry>(BRAND_REGISTRY.map((brand) => [brand.id, brand]));
