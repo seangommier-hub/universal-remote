@@ -122,12 +122,13 @@ describe("SonyBraviaDriver", () => {
     expect(state.values.volume).toBe(22); // refreshState's own fields still update correctly alongside the preserved ones
   });
 
-  test("power command reads current status, sends the opposite, then re-reads state", async () => {
+  // ADR-HEARTH-179: power reads current status (to know which way to toggle), sends the opposite,
+  // and now reports the result optimistically from those two already-made calls — no third,
+  // verification read-back the way this used to (a full refreshState() after every command).
+  test("power command reads current status, sends the opposite, and reports the result with no re-read", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(powerStatusResponse("standby")) // applyCommand's read
-      .mockResolvedValueOnce(emptyResultResponse()) // setPowerStatus
-      .mockResolvedValueOnce(powerStatusResponse("active")) // refreshState
-      .mockResolvedValueOnce(volumeInfoResponse(20, false));
+      .mockResolvedValueOnce(emptyResultResponse()); // setPowerStatus
 
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "power" });
 
@@ -135,6 +136,7 @@ describe("SonyBraviaDriver", () => {
     expect(result.state?.power).toBe("on");
     const setPowerCall = (global.fetch as jest.Mock).mock.calls[1];
     expect(JSON.parse(setPowerCall[1].body)).toMatchObject({ method: "setPowerStatus", params: [{ status: true }] });
+    expect(global.fetch).toHaveBeenCalledTimes(2); // the read + the set — no refreshState afterward
   });
 
   // ADR-HEARTH-102: unlike LG/Samsung, Sony has no persistent connection to check for absence —
@@ -257,22 +259,56 @@ describe("SonyBraviaDriver", () => {
     expect(result.state?.volume).toBe(22);
   });
 
-  test("inputSelection maps 'hdmi2' to the documented extInput URI", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(emptyResultResponse()).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+  // ADR-HEARTH-179: mute's own pre-toggle getVolumeInformation read is load-bearing (setAudioMute
+  // takes an explicit boolean), not a verification read-back — it already carries the current
+  // volume too, so no second REST call is needed to report the result.
+  test("mute reads current state once to know which way to toggle, then reports optimistically with no second read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(volumeInfoResponse(20, false)).mockResolvedValueOnce(emptyResultResponse());
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "mute" });
+
+    const setMuteCall = (global.fetch as jest.Mock).mock.calls[1];
+    expect(JSON.parse(setMuteCall[1].body)).toMatchObject({ method: "setAudioMute", params: [{ status: true }] });
+    expect(result.state?.muted).toBe(true);
+    expect(result.state?.volume).toBe(20); // carried through from the load-bearing read, not a second call
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("inputSelection maps 'hdmi2' to the documented extInput URI, with no follow-up read (ADR-HEARTH-179 — inputSelection doesn't change power/volume)", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(emptyResultResponse());
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "hdmi2" } });
 
     const call = (global.fetch as jest.Mock).mock.calls[0];
     expect(JSON.parse(call[1].body)).toMatchObject({ method: "setPlayContent", params: [{ uri: "extInput:hdmi?port=2" }] });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   test("inputSelection passes a real uri (from the dynamic input list) straight through, not re-parsed as hdmi shorthand", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(emptyResultResponse()).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(emptyResultResponse());
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "inputSelection", args: { input: "extInput:composite?port=1" } });
 
     const call = (global.fetch as jest.Mock).mock.calls[0];
     expect(JSON.parse(call[1].body)).toMatchObject({ method: "setPlayContent", params: [{ uri: "extInput:composite?port=1" }] });
+  });
+
+  // ADR-HEARTH-179: removing the trailing refreshState() call for power/mute/setVolume/nav also
+  // removed refreshState's own generation guard against exactly this race — restored here via
+  // markConnected's own guard, so a disconnect() mid-command still wins.
+  test("a disconnect() that races with an in-flight command wins — its own disconnected state is not overwritten by the command's optimistic patch", async () => {
+    let resolveRead!: (value: Response) => void;
+    const readPromise = new Promise<Response>((resolve) => {
+      resolveRead = resolve;
+    });
+    (global.fetch as jest.Mock).mockReturnValueOnce(readPromise).mockResolvedValueOnce(emptyResultResponse());
+
+    const commandPromise = driver.executeCommand(device, { deviceId: device.id, capability: "power" });
+    await driver.disconnect(device); // wins the race while the command's own read is still pending
+    resolveRead(powerStatusResponse("standby"));
+
+    await commandPromise;
+    expect((await driver.getState(device)).connection).toBe("disconnected");
   });
 
   test("rejects a device with no config instead of silently doing nothing", async () => {
@@ -285,21 +321,33 @@ describe("SonyBraviaDriver", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  // ADR-HEARTH-071: directionalNavigation/select/back/home go through SonyIrccClient (a separate
-  // SOAP-over-HTTP protocol from the REST calls above), then executeCommand's own refreshState()
-  // still runs afterward the same as every other command — the IRCC POST itself has no JSON body
-  // to assert on the way the REST calls' JSON-RPC envelopes do, so these check the raw XML body.
-  test("directionalNavigation sends the real, sourced IRCC code for each direction", async () => {
-    (global.fetch as jest.Mock)
-      .mockResolvedValueOnce({ ok: true, status: 200 } as Response) // IRCC POST
-      .mockResolvedValueOnce(powerStatusResponse("active"))
-      .mockResolvedValueOnce(volumeInfoResponse(20, false));
+  // ADR-HEARTH-179: an exact value we just set, unlike volumeUp/volumeDown's relative step above —
+  // trust it instead of paying a read-back to confirm what's already known.
+  test("setVolume sends the exact value and reports it optimistically, with no read-back", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(emptyResultResponse());
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setVolume", args: { volume: 42 } });
+
+    const call = (global.fetch as jest.Mock).mock.calls[0];
+    expect(JSON.parse(call[1].body)).toMatchObject({ method: "setAudioVolume", params: [{ target: "speaker", volume: "42" }] });
+    expect(result.state?.volume).toBe(42);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  // ADR-HEARTH-071/179: directionalNavigation/select/back/home go through SonyIrccClient (a
+  // separate SOAP-over-HTTP protocol from the REST calls above) — none of them changes power or
+  // volume, so executeCommand no longer re-reads state afterward the way it used to; the IRCC POST
+  // itself has no JSON body to assert on the way the REST calls' JSON-RPC envelopes do, so these
+  // check the raw XML body.
+  test("directionalNavigation sends the real, sourced IRCC code for each direction, with no follow-up read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response); // IRCC POST
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "directionalNavigation", args: { direction: "up" } });
 
     const irccCall = (global.fetch as jest.Mock).mock.calls[0];
     expect(irccCall[0]).toBe("http://192.168.1.50:80/sony/ircc");
     expect(irccCall[1].body).toContain("<IRCCCode>AAAAAQAAAAEAAAB0Aw==</IRCCCode>"); // Up
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   test("directionalNavigation without a valid direction rejects before any network call", async () => {
@@ -307,28 +355,31 @@ describe("SonyBraviaDriver", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test("select sends the real Confirm IRCC code", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+  test("select sends the real Confirm IRCC code, with no follow-up read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response);
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "select" });
 
     expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABlAw==</IRCCCode>");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  test("back sends the real Return IRCC code", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+  test("back sends the real Return IRCC code, with no follow-up read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response);
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "back" });
 
     expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAgAAAJcAAAAjAw==</IRCCCode>");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  test("home sends the real Home IRCC code", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response).mockResolvedValueOnce(powerStatusResponse("active")).mockResolvedValueOnce(volumeInfoResponse(20, false));
+  test("home sends the real Home IRCC code, with no follow-up read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response);
 
     await driver.executeCommand(device, { deviceId: device.id, capability: "home" });
 
     expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABgAw==</IRCCCode>");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
 

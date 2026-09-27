@@ -48,6 +48,15 @@ const SONY_BRAVIA_CAPABILITIES: CapabilityId[] = [
 
 export const SONY_BRAVIA_DRIVER_ID = "sony-bravia";
 
+/** What applyCommand learned about the resulting state (ADR-HEARTH-179): `patch` for a command
+ * whose new value is already known (an exact set, or nothing state-relevant changed at all — an
+ * empty patch), or `needsVolumeRefresh` for the one case (a relative volume step) where the only
+ * honest answer requires an actual read-back. */
+interface CommandOutcome {
+  patch?: DeviceState["values"];
+  needsVolumeRefresh?: boolean;
+}
+
 interface PowerStatus {
   status: "active" | "standby";
 }
@@ -268,10 +277,14 @@ export class SonyBraviaDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
-    const client = new SonyBraviaClient(requireConfig(device));
+    // Captured before applyCommand's own await, mirroring refreshState's identical guard below —
+    // a disconnect() racing with this in-flight command must not have its own "disconnected" state
+    // clobbered by this command's optimistic patch landing afterward (ADR-HEARTH-179).
     const generation = this.generations.get(device.id) ?? 0;
+    const client = new SonyBraviaClient(requireConfig(device));
+    let outcome: CommandOutcome;
     try {
-      await this.applyCommand(client, device, command);
+      outcome = await this.applyCommand(client, device, command);
     } catch (err) {
       if (err instanceof CommandValidationError || !isReachabilityFailure(err)) throw err;
       // Connection contract (ADR-HEARTH-171): a command that fails because nothing answered marks
@@ -285,7 +298,11 @@ export class SonyBraviaDriver implements DeviceDriver {
       // fix (Wake-on-LAN) apply.
       return this.executeWakeOnLan(device);
     }
-    const state = await this.refreshState(device);
+    // ADR-HEARTH-179: only volumeUp/volumeDown still need a real read-back (a relative adjustment
+    // whose resulting absolute level setAudioVolume's own response doesn't carry) — every other
+    // command already knows its own resulting value (an exact set) or changes nothing refreshState
+    // would report (navigation/input), so it's applied optimistically with no extra REST round trip.
+    const state = outcome.needsVolumeRefresh ? await this.refreshState(device) : this.markConnected(device, generation, outcome.patch);
     return {
       success: true,
       deviceId: device.id,
@@ -302,6 +319,22 @@ export class SonyBraviaDriver implements DeviceDriver {
     this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
     this.scheduleReconnect(device);
   }
+
+  /** Merges `patch` into the cached values and marks the device connected, with no network round
+   * trip — the cheap path for a command whose own result (or a read it already had to make) fully
+   * tells us the new state (ADR-HEARTH-179). The result is always returned so the caller gets a
+   * truthful CommandResult, but it's only committed to cached state (and any pending reconnect
+   * cleared) if `generation` is still current — an explicit disconnect() that raced with this
+   * command already set its own, more correct "disconnected" state, and must win. */
+  private markConnected(device: Device, generation: number, patch: DeviceState["values"] = {}): DeviceState {
+    const current = this.states.get(device.id);
+    const state: DeviceState = { connection: "connected", values: { ...current?.values, ...patch }, lastUpdated: Date.now() };
+    if (generation !== (this.generations.get(device.id) ?? 0)) return state;
+    this.clearReconnectTimer(device.id);
+    this.setState(device.id, state);
+    return state;
+  }
+
 
   /** See LgWebOsDriver.ts/SamsungTizenDriver.ts's identical helper (ADR-HEARTH-102) — resolves the
    * TV's MAC from discovery's saved `hwaddr`, falling back to a fresh Family Command Center lookup
@@ -340,35 +373,47 @@ export class SonyBraviaDriver implements DeviceDriver {
     return () => set.delete(listener);
   }
 
-  private async applyCommand(client: SonyBraviaClient, device: Device, command: Command): Promise<void> {
+  private async applyCommand(client: SonyBraviaClient, device: Device, command: Command): Promise<CommandOutcome> {
     switch (command.capability) {
       case "power": {
         const [power] = await client.call<PowerStatus[]>("system", "getPowerStatus");
-        await client.call("system", "setPowerStatus", [{ status: power.status !== "active" }]);
-        return;
+        const nextIsActive = power.status !== "active";
+        await client.call("system", "setPowerStatus", [{ status: nextIsActive }]);
+        // The read above already had to happen to decide which way to toggle — its result plus the
+        // exact value we just sent tells us the new state outright (ADR-HEARTH-179).
+        return { patch: { power: nextIsActive ? "on" : "off" } };
       }
       case "volumeUp":
         await client.call("audio", "setAudioVolume", [{ target: "speaker", volume: `+${VOLUME_STEP}` }]);
-        return;
+        // A relative adjustment — Sony's setAudioVolume response doesn't carry the resulting level,
+        // so the actual new volume can only be read back (kept exactly as before, ADR-HEARTH-179).
+        return { needsVolumeRefresh: true };
       case "volumeDown":
         await client.call("audio", "setAudioVolume", [{ target: "speaker", volume: `-${VOLUME_STEP}` }]);
-        return;
+        return { needsVolumeRefresh: true };
       case "setVolume": {
         const target = command.args?.volume;
         if (typeof target !== "number") throw new CommandValidationError("setVolume requires a numeric 'volume' arg");
         await client.call("audio", "setAudioVolume", [{ target: "speaker", volume: String(target) }]);
-        return;
+        // Exact value we just set, unlike volumeUp/volumeDown's relative step — trust it rather
+        // than paying a read-back to confirm what we already know (ADR-HEARTH-179).
+        return { patch: { volume: target } };
       }
       case "mute": {
         const [info] = await client.call<VolumeInfo[]>("audio", "getVolumeInformation");
-        await client.call("audio", "setAudioMute", [{ status: !info.mute }]);
-        return;
+        const nextMuted = !info.mute;
+        await client.call("audio", "setAudioMute", [{ status: nextMuted }]);
+        // This read is load-bearing (setAudioMute takes an explicit boolean, so the current value
+        // has to be known before it can be flipped), not a verification read-back — it already
+        // gave us the current volume too, and muting doesn't change it, so no second read is needed
+        // (ADR-HEARTH-179).
+        return { patch: { volume: info.volume, muted: nextMuted } };
       }
       case "inputSelection": {
         const input = command.args?.input;
         if (typeof input !== "string") throw new CommandValidationError("inputSelection requires a string 'input' arg");
         await client.call("avContent", "setPlayContent", [{ uri: resolveInputUri(input) }]);
-        return;
+        return {};
       }
       case "directionalNavigation": {
         const direction = command.args?.direction as NavigationDirection | undefined;
@@ -376,17 +421,17 @@ export class SonyBraviaDriver implements DeviceDriver {
           throw new CommandValidationError("directionalNavigation requires a valid 'direction' arg");
         }
         await new SonyIrccClient(requireConfig(device)).sendCode(DIRECTION_TO_IRCC_CODE[direction]);
-        return;
+        return {};
       }
       case "select":
         await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.confirm);
-        return;
+        return {};
       case "back":
         await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.return);
-        return;
+        return {};
       case "home":
         await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.home);
-        return;
+        return {};
       default:
         throw new CommandValidationError(`SonyBraviaDriver does not implement capability: ${command.capability}`);
     }
