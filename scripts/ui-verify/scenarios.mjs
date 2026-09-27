@@ -322,6 +322,17 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  {
+    name: "activity-editor-ha-webhook",
+    screen: "activity-editor",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Home Assistant", { exact: true }).scrollIntoViewIfNeeded();
+      await page.getByRole("switch").first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "ha-assist", screen: "ha-assist", assertFit: false },
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
   {
     name: "fcc-settings-activity",
