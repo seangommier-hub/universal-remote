@@ -83,6 +83,18 @@ function fanValues(entity: HomeAssistantEntity): Record<string, unknown> {
   };
 }
 
+const DEFAULT_CODE_ARM_REQUIRED = true;
+
+/** An alarm panel's live state plus the two attributes that decide whether/what kind of code pad the entity screen shows (ADR-HEARTH-182): `code_arm_required` defaults true per Home Assistant's own entity docs, and no `code_format` at all means never ask for a code. */
+function alarmValues(entity: HomeAssistantEntity): Record<string, unknown> {
+  const codeFormat = entity.attributes.code_format;
+  return {
+    alarmState: entity.state,
+    codeArmRequired: entity.attributes.code_arm_required !== false ? DEFAULT_CODE_ARM_REQUIRED : false,
+    ...(typeof codeFormat === "string" && codeFormat ? { codeFormat } : {}),
+  };
+}
+
 function vacuumValues(entity: HomeAssistantEntity): Record<string, unknown> {
   const battery = numberAttr(entity, "battery_level");
   return {
@@ -102,6 +114,7 @@ function domainValues(entity: HomeAssistantEntity, domain: string): Record<strin
     case "climate": return climateValues(entity);
     case "fan": return fanValues(entity);
     case "vacuum": return vacuumValues(entity);
+    case "alarm_control_panel": return alarmValues(entity);
     case "sensor": return sensorValues(entity);
     case "binary_sensor": return binarySensorValues(entity);
     default: return {};

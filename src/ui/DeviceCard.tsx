@@ -20,7 +20,10 @@ const CATEGORY_ICON: Record<string, IconName> = {
   climate: "thermometer-outline",
   fan: "aperture-outline",
   sensor: "pulse-outline",
-  action: "play-circle-outline",};
+  action: "play-circle-outline",
+  camera: "camera-outline",
+  alarm: "shield-checkmark-outline",
+};
 
 const FALLBACK_ICON: IconName = "hardware-chip-outline";
 

@@ -1,5 +1,7 @@
 import { Command } from "../core/types/Command";
 import { Device } from "../core/types/Device";
+import { MediaBrowseNode } from "../core/types/MediaBrowse";
+import { SnapshotImage } from "../core/types/Snapshot";
 import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
 import type { DemoDeviceScript } from "./demoHousehold";
 import { demoScreenParam } from "./demoMode";
@@ -29,9 +31,14 @@ export const DEMO_ENTITY_SCRIPTS: Record<string, DemoDeviceScript> = {
   "demo-ha-scene": { reachable: true, values: {} },
   "demo-ha-temp": { reachable: true, values: { deviceClass: "temperature", reading: "72.4", unit: "°F" } },
   "demo-ha-offline": { reachable: true, connection: "disconnected", values: { unavailable: true, availability: "unavailable", deviceClass: "humidity" } },
+  // ADR-HEARTH-182
+  "demo-ha-camera": { reachable: true, values: {} },
+  "demo-ha-alarm": { reachable: true, values: { alarmState: "disarmed", codeArmRequired: true, codeFormat: "number" } },
+  "demo-ha-media": { reachable: true, values: { power: "on", volume: 40 } },
 };
 
-/** The demo Home Assistant devices: a garage door, a lock, a thermostat, a fan, a scene, a temperature sensor and an unavailable sensor. */
+/** The demo Home Assistant devices: a garage door, a lock, a thermostat, a fan, a scene, a temperature sensor, an
+ * unavailable sensor, a camera, an alarm panel and a browsable/playable media player (ADR-HEARTH-182). */
 export function demoEntityDevices(): Device[] {
   return [
     entityDevice("ha-garage", "Garage Door", "cover", "cover", ["open", "close", "stop", "setPosition"], "garage"),
@@ -41,7 +48,42 @@ export function demoEntityDevices(): Device[] {
     entityDevice("ha-scene", "Movie Time", "scene", "action", ["trigger"]),
     entityDevice("ha-temp", "Porch Temperature", "sensor", "sensor", [], "temperature"),
     entityDevice("ha-offline", "Attic Humidity", "sensor", "sensor", [], "humidity"),
+    entityDevice("ha-camera", "Front Porch Camera", "camera", "camera", []),
+    entityDevice("ha-alarm", "Home Alarm", "alarm_control_panel", "alarm", ["armHome", "armAway", "armNight", "disarm"]),
+    entityDevice("ha-media", "Living Room Speaker", "media_player", "streaming", ["power", "setVolume", "volumeUp", "volumeDown", "mute", "playPause", "browseMedia", "playMedia"]),
   ];
+}
+
+// A tiny 1x1 placeholder pixel — proof the tile actually renders an image, standing in for a real camera frame the demo has no server to fetch.
+export const DEMO_CAMERA_SNAPSHOT: SnapshotImage = { uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+
+const DEMO_MEDIA_ROOT: MediaBrowseNode = {
+  title: "Living Room Speaker",
+  mediaContentId: "",
+  mediaContentType: "",
+  canExpand: true,
+  canPlay: false,
+  children: [
+    { title: "Playlists", mediaContentId: "playlists", mediaContentType: "directory", canExpand: true, canPlay: false },
+    { title: "Now Playing Mix", mediaContentId: "track-1", mediaContentType: "track", canExpand: false, canPlay: true },
+  ],
+};
+
+const DEMO_MEDIA_PLAYLISTS: MediaBrowseNode = {
+  title: "Playlists",
+  mediaContentId: "playlists",
+  mediaContentType: "directory",
+  canExpand: true,
+  canPlay: false,
+  children: [
+    { title: "Morning Jazz", mediaContentId: "track-2", mediaContentType: "track", canExpand: false, canPlay: true },
+    { title: "Focus Beats", mediaContentId: "track-3", mediaContentType: "track", canExpand: false, canPlay: true },
+  ],
+};
+
+/** The demo's own tiny media tree: a root with one folder and one direct track, the folder holding two more tracks. */
+export function demoBrowseMedia(mediaContentId?: string): MediaBrowseNode {
+  return mediaContentId === "playlists" ? DEMO_MEDIA_PLAYLISTS : DEMO_MEDIA_ROOT;
 }
 
 /** The demo Home Assistant devices when the URL asks for one of their screens; empty in every other case. */
@@ -64,6 +106,10 @@ export function applyEntityCommand(values: Record<string, unknown>, command: Com
     case "setFanSpeed": return { ...values, percentage: arg("percentage"), power: Number(arg("percentage")) > 0 ? "on" : "off" };
     case "setFanPreset": return { ...values, preset: arg("preset") };
     case "trigger": return values;
+    case "armHome": return { ...values, alarmState: "armed_home" };
+    case "armAway": return { ...values, alarmState: "armed_away" };
+    case "armNight": return { ...values, alarmState: "armed_night" };
+    case "disarm": return { ...values, alarmState: "disarmed" };
     default: return undefined;
   }
 }

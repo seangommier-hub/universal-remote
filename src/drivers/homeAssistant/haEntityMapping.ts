@@ -5,6 +5,8 @@ import { HomeAssistantEntity } from "./HomeAssistantClient";
 export const HA_SYNCED_DOMAINS = [
   "switch", "light", "media_player", "remote",
   "cover", "lock", "scene", "script", "automation", "button", "input_boolean", "climate", "fan", "sensor", "binary_sensor", "vacuum",
+  // ADR-HEARTH-182
+  "camera", "alarm_control_panel",
 ] as const;
 export type HaDomain = (typeof HA_SYNCED_DOMAINS)[number];
 
@@ -14,8 +16,18 @@ const MEDIA_VOLUME_SET = 4;
 const MEDIA_VOLUME_MUTE = 8;
 const MEDIA_TURN_ON = 128;
 const MEDIA_TURN_OFF = 256;
+const MEDIA_PLAY_MEDIA = 512;
 const MEDIA_VOLUME_STEP = 1024;
 const MEDIA_SELECT_SOURCE = 2048;
+// ADR-HEARTH-182: not given a numeric value on the fetched media-player entity page — from Home Assistant's
+// source as remembered (MediaPlayerEntityFeature.BROWSE_MEDIA), Unverified against a live server.
+const MEDIA_BROWSE_MEDIA = 131072;
+
+// ADR-HEARTH-182: AlarmControlPanelEntityFeature bits — not given numeric values on the fetched alarm
+// control panel entity page either, same Unverified status as the bits above.
+const ALARM_ARM_HOME = 1;
+const ALARM_ARM_AWAY = 2;
+const ALARM_ARM_NIGHT = 4;
 
 // Feature bits from Home Assistant's CoverEntityFeature, FanEntityFeature, ClimateEntityFeature and VacuumEntityFeature.
 // The integration docs list the names but not the numbers, so these come from the HA source (ADR-HEARTH-178, "Unverified").
@@ -44,12 +56,13 @@ const CATEGORY_BY_DOMAIN: Record<HaDomain, DeviceCategory> = {
   switch: "outlet", light: "lighting", media_player: "streaming", remote: "other",
   cover: "cover", lock: "lock", scene: "action", script: "action", automation: "action", button: "action",
   input_boolean: "outlet", climate: "climate", fan: "fan", sensor: "sensor", binary_sensor: "sensor", vacuum: "vacuum",
+  camera: "camera", alarm_control_panel: "alarm",
 };
 
 /** Stateless "run it" domains: one Run button. */
 const ACTION_DOMAINS: readonly string[] = ["scene", "script", "automation", "button"];
 /** Domains shown only as a reading, with no controls (so an empty capability list is right for them). */
-const READ_ONLY_DOMAINS: readonly string[] = ["sensor", "binary_sensor"];
+const READ_ONLY_DOMAINS: readonly string[] = ["sensor", "binary_sensor", "camera"];
 
 export interface ImportedHaEntity {
   entityId: string;
@@ -100,6 +113,17 @@ function mediaPlayerCapabilities(entity: HomeAssistantEntity): CapabilityId[] {
   if (features & MEDIA_VOLUME_MUTE) capabilities.push("mute");
   if (features & MEDIA_PAUSE) capabilities.push("playPause");
   if (features & MEDIA_SELECT_SOURCE) capabilities.push("inputSelection");
+  if (features & MEDIA_PLAY_MEDIA) capabilities.push("playMedia");
+  if (features & MEDIA_BROWSE_MEDIA) capabilities.push("browseMedia");
+  return capabilities;
+}
+
+/** Disarm is always offered; each arm mode only when the panel's own feature bits say it supports it (ADR-HEARTH-182). */
+function alarmCapabilities(features: number): CapabilityId[] {
+  const capabilities: CapabilityId[] = ["disarm"];
+  if (features & ALARM_ARM_HOME) capabilities.push("armHome");
+  if (features & ALARM_ARM_AWAY) capabilities.push("armAway");
+  if (features & ALARM_ARM_NIGHT) capabilities.push("armNight");
   return capabilities;
 }
 
@@ -151,6 +175,7 @@ export function capabilitiesForEntity(entity: HomeAssistantEntity): CapabilityId
   if (domain === "climate") return climateCapabilities(entity);
   if (domain === "fan") return fanCapabilities(entity);
   if (domain === "vacuum") return vacuumCapabilities(featureBits(entity));
+  if (domain === "alarm_control_panel") return alarmCapabilities(featureBits(entity));
   return [];
 }
 

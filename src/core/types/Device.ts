@@ -16,6 +16,10 @@ export type DeviceCategory =
   | "fan"
   | "sensor"
   | "action"
+  // ADR-HEARTH-182: Home Assistant camera (a snapshot tile, no dispatched capability at all) and
+  // alarm_control_panel (arm/disarm behind a live code pad and a confirm step).
+  | "camera"
+  | "alarm"
   | "gaming"
   // ADR-HEARTH-104: doesn't fit the remote-control metaphor any other category here implies (no
   // directional nav, no volume/power toggle) — surfaced in its own "Feeder" tab, not the Devices

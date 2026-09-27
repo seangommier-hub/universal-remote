@@ -42,6 +42,11 @@ function mediaPlayerCommand(command: Command, entityId: string, values: Record<s
     case "inputSelection":
       if (typeof command.args?.input !== "string") throw new HaCommandValidationError("inputSelection requires a string 'input' arg");
       return call("select_source", { source: command.args.input });
+    case "playMedia": {
+      const mediaContentId = stringArg(command, "mediaContentId");
+      const mediaContentType = command.args?.mediaContentType;
+      return call("play_media", { media_content_id: mediaContentId, ...(typeof mediaContentType === "string" && mediaContentType ? { media_content_type: mediaContentType } : {}) });
+    }
     default:
       throw new HaCommandValidationError(`Home Assistant media players do not implement ${command.capability}`);
   }
@@ -75,6 +80,8 @@ const COVER_SERVICES: Record<string, string> = { open: "open_cover", close: "clo
 const LOCK_SERVICES: Record<string, string> = { lock: "lock", unlock: "unlock" };
 const VACUUM_SERVICES: Record<string, string> = { vacuumStart: "start", vacuumStop: "stop", vacuumDock: "return_to_base" };
 const ACTION_SERVICES: Record<string, string> = { scene: "turn_on", script: "turn_on", automation: "trigger", button: "press" };
+// ADR-HEARTH-182, developers.home-assistant.io/docs/core/entity/alarm-control-panel (fetched 2026-09-27).
+const ALARM_SERVICES: Record<string, string> = { armHome: "alarm_arm_home", armAway: "alarm_arm_away", armNight: "alarm_arm_night", disarm: "alarm_disarm" };
 
 function coverCommand(command: Command, entityId: string): HaServiceCall {
   const service = COVER_SERVICES[command.capability];
@@ -120,5 +127,10 @@ export function commandToServiceCall(command: Command, entityId: string, values:
   if (domain === "climate") return climateCommand(command, entityId);
   if (domain === "fan") return fanCommand(command, entityId);
   if (domain === "vacuum") return vacuumCommand(command, entityId, values);
+  if (domain === "alarm_control_panel" && ALARM_SERVICES[command.capability]) {
+    // The code is read once here and never stored anywhere or logged (ADR-HEARTH-182); omitted entirely when not given, matching HA's own optional `code` parameter.
+    const code = command.args?.code;
+    return serviceCall("alarm_control_panel", ALARM_SERVICES[command.capability], entityId, typeof code === "string" && code ? { code } : {});
+  }
   throw new HaCommandValidationError(`Home Assistant ${domain} entities only support power`);
 }

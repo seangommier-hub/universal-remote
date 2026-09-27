@@ -181,6 +181,42 @@ describe("sensor and binary_sensor", () => {
   });
 });
 
+describe("camera (ADR-HEARTH-182)", () => {
+  test("is a read-only tile, offered with no capabilities regardless of state", () => {
+    expect(capabilitiesForEntity(entity("camera.porch", "idle"))).toEqual([]);
+    const [imported] = importSupportedEntities([entity("camera.porch", "idle", { friendly_name: "Porch Camera" })]);
+    expect(imported).toMatchObject({ entityId: "camera.porch", category: "camera", capabilities: [] });
+  });
+});
+
+describe("alarm_control_panel (ADR-HEARTH-182)", () => {
+  const panel = entity("alarm_control_panel.home", "disarmed", { supported_features: 1 | 2, code_arm_required: true, code_format: "number" });
+
+  test("disarm is always offered; each arm mode follows its own feature bit", () => {
+    expect(capabilitiesForEntity(panel)).toEqual(["disarm", "armHome", "armAway"]);
+    expect(capabilitiesForEntity(entity("alarm_control_panel.bare", "disarmed"))).toEqual(["disarm"]);
+  });
+
+  test("commands call the alarm services and only carry a code when one was typed", () => {
+    expect(commandToServiceCall(command("armHome"), "alarm_control_panel.home", {})).toEqual({ domain: "alarm_control_panel", service: "alarm_arm_home", data: { entity_id: "alarm_control_panel.home" } });
+    expect(commandToServiceCall(command("disarm", { code: "1234" }), "alarm_control_panel.home", {}).data).toEqual({ entity_id: "alarm_control_panel.home", code: "1234" });
+    expect(() => commandToServiceCall(command("armNight"), "alarm_control_panel.bare", {})).not.toThrow();
+  });
+
+  test("state carries the live state plus the code-prompt attributes", () => {
+    expect(entityToValues(panel)).toMatchObject({ alarmState: "disarmed", codeArmRequired: true, codeFormat: "number" });
+    expect(entityToValues(entity("alarm_control_panel.b", "armed_away", { code_arm_required: false, code_format: "text" }))).toMatchObject({ alarmState: "armed_away", codeArmRequired: false, codeFormat: "text" });
+    expect(entityToValues(entity("alarm_control_panel.nocode", "disarmed"))).not.toHaveProperty("codeFormat");
+    expect(entityToValues(entity("alarm_control_panel.nocode", "disarmed"))).not.toHaveProperty("power");
+  });
+
+  test("the device's category is alarm and it carries no device class", () => {
+    const [imported] = importSupportedEntities([panel]);
+    expect(imported.category).toBe("alarm");
+    expect(imported.deviceClass).toBeUndefined();
+  });
+});
+
 describe("unavailable and unknown", () => {
   test("unavailable is disconnected and unknown is unknown, never quietly off", () => {
     expect(entityConnection(entity("switch.a", "unavailable"))).toBe("disconnected");

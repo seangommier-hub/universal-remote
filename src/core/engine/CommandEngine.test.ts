@@ -1,4 +1,5 @@
 import { CommandEngine } from "./CommandEngine";
+import { DeviceDriver } from "../drivers/DeviceDriver";
 import { DeviceRegistry } from "../registry/DeviceRegistry";
 import { DriverRegistry } from "../drivers/DriverRegistry";
 import { StateStore } from "../state/StateStore";
@@ -110,6 +111,92 @@ describe("CommandEngine", () => {
       const result = await engine.execute({ deviceId: "tv-1", capability: "power" });
 
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe("fetchSnapshot (ADR-HEARTH-182)", () => {
+    const camera: Device = { id: "cam-1", name: "Porch Camera", category: "camera", manufacturer: "Home Assistant", driverId: "fake-camera", capabilities: [] };
+
+    function registerCameraDriver(driverRegistry: DriverRegistry, fetchSnapshot: DeviceDriver["fetchSnapshot"]) {
+      driverRegistry.register({
+        id: "fake-camera",
+        displayName: "Fake Camera",
+        getCapabilities: () => [],
+        connect: async () => undefined,
+        disconnect: async () => undefined,
+        getState: async () => ({ connection: "connected", values: {}, lastUpdated: 0 }),
+        executeCommand: async () => ({ success: true, deviceId: "cam-1", capability: "power", timestamp: 0 }),
+        subscribeToState: () => () => undefined,
+        fetchSnapshot,
+      });
+    }
+
+    test("returns the driver's snapshot image", async () => {
+      const { deviceRegistry, driverRegistry, engine } = buildEngine();
+      registerCameraDriver(driverRegistry, async () => ({ uri: "http://ha.test/api/camera_proxy/camera.porch", headers: { Authorization: "Bearer t" } }));
+      deviceRegistry.add(camera);
+
+      const result = await engine.fetchSnapshot("cam-1");
+
+      expect(result).toEqual({ success: true, image: { uri: "http://ha.test/api/camera_proxy/camera.porch", headers: { Authorization: "Bearer t" } } });
+    });
+
+    test("fails gracefully for an unknown device, and for a driver with no fetchSnapshot", async () => {
+      const { deviceRegistry, driverRegistry, engine } = buildEngine();
+      driverRegistry.register(mockSamsungTvDriver);
+      deviceRegistry.add({ ...camera, driverId: "mock-samsung-tv" });
+
+      expect((await engine.fetchSnapshot("missing")).success).toBe(false);
+      expect((await engine.fetchSnapshot("cam-1")).success).toBe(false);
+    });
+
+    test("a thrown fetch is reported, never thrown to the caller", async () => {
+      const { deviceRegistry, driverRegistry, engine } = buildEngine();
+      registerCameraDriver(driverRegistry, async () => {
+        throw new Error("camera unreachable");
+      });
+      deviceRegistry.add(camera);
+
+      const result = await engine.fetchSnapshot("cam-1");
+
+      expect(result).toEqual({ success: false, error: "camera unreachable" });
+    });
+  });
+
+  describe("browseMedia (ADR-HEARTH-182)", () => {
+    const speaker: Device = { id: "spk-1", name: "Speaker", category: "streaming", manufacturer: "Home Assistant", driverId: "fake-speaker", capabilities: ["browseMedia", "playMedia"] };
+    const node = { title: "Speaker", mediaContentId: "", mediaContentType: "", canPlay: false, canExpand: true, children: [] };
+
+    function registerSpeakerDriver(driverRegistry: DriverRegistry, browseMedia: DeviceDriver["browseMedia"]) {
+      driverRegistry.register({
+        id: "fake-speaker",
+        displayName: "Fake Speaker",
+        getCapabilities: () => ["browseMedia", "playMedia"],
+        connect: async () => undefined,
+        disconnect: async () => undefined,
+        getState: async () => ({ connection: "connected", values: {}, lastUpdated: 0 }),
+        executeCommand: async () => ({ success: true, deviceId: "spk-1", capability: "playMedia", timestamp: 0 }),
+        subscribeToState: () => () => undefined,
+        browseMedia,
+      });
+    }
+
+    test("returns the driver's browsed node", async () => {
+      const { deviceRegistry, driverRegistry, engine } = buildEngine();
+      registerSpeakerDriver(driverRegistry, async () => node);
+      deviceRegistry.add(speaker);
+
+      const result = await engine.browseMedia("spk-1", "folder-1", "directory");
+
+      expect(result).toEqual({ success: true, node });
+    });
+
+    test("refuses a device that does not declare browseMedia even if its driver implements it", async () => {
+      const { deviceRegistry, driverRegistry, engine } = buildEngine();
+      registerSpeakerDriver(driverRegistry, async () => node);
+      deviceRegistry.add({ ...speaker, capabilities: ["playMedia"] });
+
+      expect((await engine.browseMedia("spk-1")).success).toBe(false);
     });
   });
 });

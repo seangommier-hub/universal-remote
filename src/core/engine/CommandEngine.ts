@@ -3,6 +3,8 @@ import { DeviceRegistry } from "../registry/DeviceRegistry";
 import { StateStore } from "../state/StateStore";
 import { Command, CommandError, CommandResult } from "../types/Command";
 import { Device } from "../types/Device";
+import { MediaBrowseResult } from "../types/MediaBrowse";
+import { SnapshotResult } from "../types/Snapshot";
 import { logger } from "../logging/logger";
 import { CommandCause } from "../activityLog/activityCause";
 
@@ -78,6 +80,36 @@ export class CommandEngine {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(LOG_SCOPE, `Driver ${driver.id} threw executing ${command.capability}`, { deviceId: device.id, message });
       return this.fail(command, "driver_error", message);
+    }
+  }
+
+  /**
+   * Fetches a device's current snapshot image (ADR-HEARTH-182). A read, not a Command — it never
+   * touches an Activity, is never dispatched through `run()`/`execute()`, and is only ever called
+   * from the UI's own open/manual-refresh, never on a timer.
+   */
+  async fetchSnapshot(deviceId: string): Promise<SnapshotResult> {
+    const device = this.deviceRegistry.get(deviceId);
+    if (!device) return { success: false, error: `No device registered with id ${deviceId}` };
+    const driver = this.driverRegistry.get(device.driverId);
+    if (!driver?.fetchSnapshot) return { success: false, error: `${device.name} has no snapshot.` };
+    try {
+      return { success: true, image: await driver.fetchSnapshot(device) };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Browses one level of a media_player's tree (ADR-HEARTH-182). Also a read, never a dispatched Command. */
+  async browseMedia(deviceId: string, mediaContentId?: string, mediaContentType?: string): Promise<MediaBrowseResult> {
+    const device = this.deviceRegistry.get(deviceId);
+    if (!device) return { success: false, error: `No device registered with id ${deviceId}` };
+    const driver = this.driverRegistry.get(device.driverId);
+    if (!driver?.browseMedia || !device.capabilities.includes("browseMedia")) return { success: false, error: `${device.name} cannot browse media.` };
+    try {
+      return { success: true, node: await driver.browseMedia(device, mediaContentId, mediaContentType) };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 

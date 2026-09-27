@@ -10,6 +10,7 @@ import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
 import { describeReconnectFailure } from "./describeReconnectFailure";
 import { describeDeviceStatus } from "./describeDeviceStatus";
+import { MediaBrowseModal } from "./MediaBrowseModal";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
@@ -221,6 +222,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // editingName above, so switching devices never shows a stale timer from the last one.
   const [sleepExpiresAt, setSleepExpiresAt] = useState<number | undefined>(() => getSleepTimerExpiration(device.id));
   const [showSleepPicker, setShowSleepPicker] = useState(false);
+  // ADR-HEARTH-182: media_player browse_media, offered as one more utility-row button next to Source/Settings.
+  const [browsing, setBrowsing] = useState(false);
   // Real gap found in review (2026-09-09): `send()` fired commandEngine.execute() without
   // awaiting it, so a failed command (device dropped mid-press, TV rejected the request) vanished
   // silently — CommandEngine.execute() never throws, it resolves a CommandResult either way, so
@@ -427,7 +430,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // ADR-HEARTH-134: equal-width columns so the utility buttons spread evenly (one row up to 5 buttons, else 3 or 4 across, wrapping
   // to an even second row) instead of a ragged flex-wrap row of tiny chips.
   const utilityButtonCount =
-    ["home", "menu", "mute", "back", "settings", "openSourceList"].filter((capability) => has(device, capability as CapabilityId)).length +
+    ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia"].filter((capability) => has(device, capability as CapabilityId)).length +
     (hasNativeSleepTimer ? 1 : 0) +
     (canUniversalSleep ? 1 : 0);
   const utilityColumns = utilityButtonCount <= 5 ? Math.max(utilityButtonCount, 1) : utilityButtonCount === 6 ? 3 : 4;
@@ -1055,7 +1058,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         has(device, "settings") ||
         hasNativeSleepTimer ||
         canUniversalSleep ||
-        has(device, "openSourceList")) && (
+        has(device, "openSourceList") ||
+        has(device, "browseMedia")) && (
         <View style={[styles.card, styles.utilityCard]}>
           {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
           <View style={styles.utilityRow}>
@@ -1098,6 +1102,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 picker with the d-pad/select this driver already has. */}
             {has(device, "openSourceList") && (
               <UtilityAction columns={utilityColumns} scale={scale} icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
+            )}
+            {/* ADR-HEARTH-182: media_player browse_media — its own full-screen modal, opened here rather than folded into this row's send()s since browsing is a read, not a dispatched Command. */}
+            {has(device, "browseMedia") && (
+              <UtilityAction columns={utilityColumns} scale={scale} icon="folder-outline" label="Browse" onPress={() => setBrowsing(true)} disabled={controlsDisabled} />
             )}
           </View>
         </View>
@@ -1207,6 +1215,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           </Pressable>
         </Pressable>
       </Modal>
+
+      <MediaBrowseModal visible={browsing} device={device} commandEngine={commandEngine} onClose={() => setBrowsing(false)} />
     </View>
   );
 }
