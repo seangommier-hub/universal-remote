@@ -119,10 +119,13 @@ function requireConfig(device: Device): LgWebOsConfig {
  * `LgWebOsClient` always connects through Family Command Center's relay (ADR-HEARTH-011/014),
  * which does the actual TLS connection server-side where certificate trust is configurable.
  *
- * Volume/mute state is read back from the TV after each command (ssap://audio/getVolume) using
- * inferred field names (`volume`, `mute`) — LG's official docs for this reverse-engineered
- * protocol don't publish a payload schema, so these are best-effort and degrade to `undefined`
- * rather than crash if wrong. Power and nav/menu state are optimistic (no verified read-back).
+ * Volume/mute state uses inferred field names (`volume`, `mute`) — LG's official docs for this
+ * reverse-engineered protocol don't publish a payload schema, so these are best-effort and degrade
+ * to `undefined` rather than crash if wrong. volumeUp/volumeDown genuinely need a read-back
+ * (ssap://audio/getVolume) since the TV's own response to those doesn't carry the resulting level;
+ * setVolume/mute set an exact, already-known value instead and skip it (ADR-HEARTH-179), relying on
+ * the connection heartbeat's periodic probe to correct any drift from e.g. the physical remote.
+ * Power and nav/menu state are optimistic (no verified read-back).
  */
 // Real-hardware ask (2026-09-09), Sean directly: "once the remote is connected it should never
 // lose connection." A dropped WebSocket can't literally be prevented (router hiccups, the TV
@@ -335,11 +338,15 @@ export class LgWebOsDriver implements DeviceDriver {
     this.playbackUnsubscribes.delete(device.id);
     this.clients.set(device.id, client);
     // ADR-HEARTH-132: a socket that dies without a clean close never fires onDisconnect, so probe it.
+    // ADR-HEARTH-179: this probe already calls ssap://audio/getVolume every HEARTBEAT_INTERVAL_MS
+    // regardless — feeding its response into state too (probeAndSyncVolume, not just discarding it
+    // for liveness) is the "periodic poll that corrects drift" setVolume/mute below now rely on
+    // instead of a dedicated read-back after every volume command.
     this.stopHeartbeat(device.id);
     this.heartbeatStops.set(
       device.id,
       startConnectionHeartbeat(
-        () => client.call("ssap://audio/getVolume"),
+        () => this.probeAndSyncVolume(device, client),
         () => {
           logger.warn(LOG_SCOPE, `${device.name} stopped answering — reconnecting`);
           client.close();
@@ -353,6 +360,16 @@ export class LgWebOsDriver implements DeviceDriver {
     await this.refreshInputList(device, client);
     await this.refreshApps(device, client);
     this.subscribeToPlaybackState(device, client);
+  }
+
+  /** ADR-HEARTH-179: the heartbeat's own liveness probe already calls ssap://audio/getVolume every
+   * HEARTBEAT_INTERVAL_MS — this feeds that same response into cached state instead of discarding
+   * it, so it doubles as the periodic correction for setVolume/mute's optimistic updates below.
+   * Left to throw on failure (unlike refreshVolumeState) so the heartbeat's own failure counting
+   * still works. */
+  private async probeAndSyncVolume(device: Device, client: LgWebOsClient): Promise<void> {
+    const payload = await client.call("ssap://audio/getVolume");
+    this.patchValues(device.id, { volume: payload.volume, muted: payload.mute });
   }
 
   /** True only if this TV's live socket answers a cheap request right now (ADR-HEARTH-138). */
@@ -525,13 +542,22 @@ export class LgWebOsDriver implements DeviceDriver {
         const target = command.args?.volume;
         if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg");
         await client.call("ssap://audio/setVolume", { volume: target });
-        await this.refreshVolumeState(device, client);
+        // ADR-HEARTH-179: an exact value we just set, not a relative adjustment — trust it instead
+        // of paying a second ssap://audio/getVolume round trip to confirm what we already know.
+        // The heartbeat's own periodic probe (probeAndSyncVolume above) still corrects any drift
+        // (e.g. someone using the TV's physical remote) within one HEARTBEAT_INTERVAL_MS.
+        this.patchValues(device.id, { volume: target });
         return;
       }
       case "mute": {
+        // This read is load-bearing, not a verification read-back: setMute takes an explicit
+        // boolean, so the current value has to be known before it can be flipped. Muting doesn't
+        // change the volume level itself, so `current.volume` is patched through unchanged rather
+        // than paying a second read for it (ADR-HEARTH-179).
         const current = await client.call("ssap://audio/getVolume");
-        await client.call("ssap://audio/setMute", { mute: !current.mute });
-        await this.refreshVolumeState(device, client);
+        const nextMuted = !current.mute;
+        await client.call("ssap://audio/setMute", { mute: nextMuted });
+        this.patchValues(device.id, { volume: current.volume, muted: nextMuted });
         return;
       }
       case "channelUp":

@@ -106,9 +106,17 @@ export class DenonDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
+    // Captured before applyCommand's own await, mirroring refreshState's identical guard below —
+    // a disconnect() racing with this in-flight command must not have its own "disconnected" state
+    // clobbered by this command's optimistic patch landing afterward (ADR-HEARTH-179).
+    const generation = this.generations.get(device.id) ?? 0;
     const client = new DenonClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
-    const state = await this.refreshState(device);
+    const patch = await this.applyCommand(client, device, command);
+    // ADR-HEARTH-179: power/mute/setVolume already know their own resulting value (power/mute
+    // from the pre-toggle read applyCommand had to make anyway; setVolume from the exact value we
+    // just sent) — only volumeUp/volumeDown (a relative dB step, undefined patch) still need the
+    // one real getStatus() round trip refreshState makes.
+    const state = patch ? this.markConnected(device, generation, patch) : await this.refreshState(device);
     return {
       success: true,
       deviceId: device.id,
@@ -118,6 +126,21 @@ export class DenonDriver implements DeviceDriver {
     };
   }
 
+  /** Merges `patch` into cached values and marks the device connected, with no network round trip
+   * — reaching this point means the command itself just succeeded, so the device is provably
+   * reachable right now (ADR-HEARTH-179). The result is always returned for a truthful
+   * CommandResult, but only committed to cached state if `generation` is still current — an
+   * explicit disconnect() that raced with this command already set its own, more correct
+   * "disconnected" state, and must win. */
+  private markConnected(device: Device, generation: number, patch: DeviceState["values"]): DeviceState {
+    const current = this.states.get(device.id);
+    const state: DeviceState = { connection: "connected", values: { ...current?.values, ...patch }, lastUpdated: Date.now() };
+    if (generation !== (this.generations.get(device.id) ?? 0)) return state;
+    this.clearReconnectTimer(device.id);
+    this.setState(device.id, state);
+    return state;
+  }
+
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
     const set = this.listeners.get(device.id) ?? new Set<StateChangeListener>();
     set.add(listener);
@@ -125,33 +148,47 @@ export class DenonDriver implements DeviceDriver {
     return () => set.delete(listener);
   }
 
-  private async applyCommand(client: DenonClient, device: Device, command: Command): Promise<void> {
+  /** Returns the resulting `values` patch when the command's own (possibly load-bearing) read
+   * already tells us it, or `undefined` when only a real read-back (refreshState) can (a relative
+   * volume step whose resulting dB level the receiver's own command response doesn't carry) —
+   * ADR-HEARTH-179. */
+  private async applyCommand(client: DenonClient, device: Device, command: Command): Promise<DeviceState["values"] | undefined> {
     switch (command.capability) {
       case "power": {
+        // This read is load-bearing (power has to be flipped, not set to an explicit target), not
+        // a verification read-back — it already tells us the resulting state once we know which
+        // way we just sent it.
         const status = await client.getStatus();
-        if (status.power === "ON") {
-          await client.powerStandby();
-        } else {
+        const nextIsOn = status.power !== "ON";
+        if (nextIsOn) {
           await client.powerOn();
+        } else {
+          await client.powerStandby();
         }
-        return;
+        return { power: nextIsOn ? "on" : "off" };
       }
       case "volumeUp":
         await client.volumeUp();
-        return;
+        // A relative +VOLUME_STEP_DB adjustment — the receiver's own response doesn't carry the
+        // resulting level, so the actual new volume can only be read back (undefined patch).
+        return undefined;
       case "volumeDown":
         await client.volumeDown();
-        return;
+        return undefined;
       case "setVolume": {
         const target = command.args?.volume;
         if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg (the receiver's own dB scale)");
         await client.setVolume(target);
-        return;
+        // Exact value we just set, unlike volumeUp/volumeDown's relative step — trust it.
+        return { volume: target };
       }
       case "mute": {
+        // Load-bearing read (setMute takes an explicit boolean) — muting doesn't change the
+        // volume level, so it's carried through from this same read rather than re-fetched.
         const status = await client.getStatus();
-        await client.setMute(!status.muted);
-        return;
+        const nextMuted = !status.muted;
+        await client.setMute(nextMuted);
+        return { volume: status.volumeDb, muted: nextMuted };
       }
       default:
         throw new Error(`DenonDriver does not implement capability: ${command.capability}`);

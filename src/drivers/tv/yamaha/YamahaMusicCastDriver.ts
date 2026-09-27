@@ -126,9 +126,16 @@ export class YamahaMusicCastDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
+    // Captured before applyCommand's own await, mirroring refreshState's identical guard below —
+    // a disconnect() racing with this in-flight command must not have its own "disconnected" state
+    // clobbered by this command's optimistic patch landing afterward (ADR-HEARTH-179).
+    const generation = this.generations.get(device.id) ?? 0;
     const client = new YamahaMusicCastClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
-    const state = await this.refreshState(device);
+    // ADR-HEARTH-179: every command below already reads current status (to compute an exact
+    // target — a toggle, or a clamped absolute volume) or is itself an exact set, so applyCommand's
+    // own patch always fully describes the result — no refreshState() read-back follows it anymore.
+    const patch = await this.applyCommand(client, device, command);
+    const state = this.markConnected(device, generation, patch);
     return {
       success: true,
       deviceId: device.id,
@@ -138,6 +145,21 @@ export class YamahaMusicCastDriver implements DeviceDriver {
     };
   }
 
+  /** Merges `patch` into cached values and marks the device connected, with no network round trip
+   * — reaching this point means the command itself just succeeded, so the device is provably
+   * reachable right now (ADR-HEARTH-179). The result is always returned for a truthful
+   * CommandResult, but only committed to cached state if `generation` is still current — an
+   * explicit disconnect() that raced with this command already set its own, more correct
+   * "disconnected" state, and must win. */
+  private markConnected(device: Device, generation: number, patch: DeviceState["values"]): DeviceState {
+    const current = this.states.get(device.id);
+    const state: DeviceState = { connection: "connected", values: { ...current?.values, ...patch }, lastUpdated: Date.now() };
+    if (generation !== (this.generations.get(device.id) ?? 0)) return state;
+    this.clearReconnectTimer(device.id);
+    this.setState(device.id, state);
+    return state;
+  }
+
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
     const set = this.listeners.get(device.id) ?? new Set<StateChangeListener>();
     set.add(listener);
@@ -145,39 +167,47 @@ export class YamahaMusicCastDriver implements DeviceDriver {
     return () => set.delete(listener);
   }
 
-  private async applyCommand(client: YamahaMusicCastClient, device: Device, command: Command): Promise<void> {
+  /** Returns the resulting `values` patch — every branch below either already read current status
+   * to compute an exact target (a toggle, or a volume clamped to the device's own reported max) or
+   * is itself an exact set, so the value we just sent IS the new state (ADR-HEARTH-179); no branch
+   * here needs a separate read-back. */
+  private async applyCommand(client: YamahaMusicCastClient, device: Device, command: Command): Promise<DeviceState["values"]> {
     switch (command.capability) {
       case "power": {
         const status = await client.getStatus();
-        await client.setPower(status.power !== "on");
-        return;
+        const nextIsOn = status.power !== "on";
+        await client.setPower(nextIsOn);
+        return { power: nextIsOn ? "on" : "off" };
       }
       case "volumeUp": {
         const status = await client.getStatus();
-        await client.setVolume(Math.min(status.max_volume, status.volume + VOLUME_STEP));
-        return;
+        const target = Math.min(status.max_volume, status.volume + VOLUME_STEP);
+        await client.setVolume(target);
+        return { volume: target };
       }
       case "volumeDown": {
         const status = await client.getStatus();
-        await client.setVolume(Math.max(0, status.volume - VOLUME_STEP));
-        return;
+        const target = Math.max(0, status.volume - VOLUME_STEP);
+        await client.setVolume(target);
+        return { volume: target };
       }
       case "setVolume": {
         const target = command.args?.volume;
         if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg");
         await client.setVolume(target);
-        return;
+        return { volume: target };
       }
       case "mute": {
         const status = await client.getStatus();
-        await client.setMute(!status.mute);
-        return;
+        const nextMuted = !status.mute;
+        await client.setMute(nextMuted);
+        return { muted: nextMuted };
       }
       case "inputSelection": {
         const input = command.args?.input;
         if (typeof input !== "string") throw new Error("inputSelection requires a string 'input' arg");
         await client.setInput(input);
-        return;
+        return { input };
       }
       default:
         throw new Error(`YamahaMusicCastDriver does not implement capability: ${command.capability}`);

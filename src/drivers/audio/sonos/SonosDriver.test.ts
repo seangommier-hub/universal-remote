@@ -66,76 +66,98 @@ describe("SonosDriver", () => {
     expect(state.values.playbackState).toBe("paused");
   });
 
-  test("volumeUp increases relative to the speaker's own real current volume", async () => {
+  // ADR-HEARTH-179: this read is load-bearing (it's how the relative step is turned into an
+  // absolute target) — the value just sent is exact, so no separate read-back follows it the way
+  // there used to be (a full refreshState() after every command).
+  test("volumeUp increases relative to the speaker's own real current volume, with no read-back", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(volumeResponse(30)) // applyCommand's read
-      .mockResolvedValueOnce(okResponse()) // setVolume
-      .mockResolvedValueOnce(volumeResponse(35)) // refreshState
-      .mockResolvedValueOnce(muteResponse(false))
-      .mockResolvedValueOnce(transportResponse("STOPPED"));
+      .mockResolvedValueOnce(okResponse()); // setVolume
 
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" });
 
     const setVolumeBody = (global.fetch as jest.Mock).mock.calls[1][1].body as string;
     expect(setVolumeBody).toContain("<DesiredVolume>35</DesiredVolume>");
     expect(result.state?.volume).toBe(35);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   test("volumeDown never requests below zero", async () => {
-    (global.fetch as jest.Mock)
-      .mockResolvedValueOnce(volumeResponse(2))
-      .mockResolvedValueOnce(okResponse())
-      .mockResolvedValueOnce(volumeResponse(0))
-      .mockResolvedValueOnce(muteResponse(false))
-      .mockResolvedValueOnce(transportResponse("STOPPED"));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(volumeResponse(2)).mockResolvedValueOnce(okResponse());
 
-    await driver.executeCommand(device, { deviceId: device.id, capability: "volumeDown" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "volumeDown" });
 
     const setVolumeBody = (global.fetch as jest.Mock).mock.calls[1][1].body as string;
     expect(setVolumeBody).toContain("<DesiredVolume>0</DesiredVolume>");
+    expect(result.state?.volume).toBe(0);
   });
 
-  test("mute toggles based on real current state", async () => {
-    (global.fetch as jest.Mock)
-      .mockResolvedValueOnce(muteResponse(false)) // applyCommand's read
-      .mockResolvedValueOnce(okResponse()) // setMute
-      .mockResolvedValueOnce(volumeResponse(20))
-      .mockResolvedValueOnce(muteResponse(true))
-      .mockResolvedValueOnce(transportResponse("STOPPED"));
+  // ADR-HEARTH-179: this read is load-bearing (setMute takes an explicit boolean) — no second
+  // read follows it.
+  test("mute toggles based on real current state and reports optimistically with no second read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(muteResponse(false)).mockResolvedValueOnce(okResponse());
 
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "mute" });
 
     const setMuteBody = (global.fetch as jest.Mock).mock.calls[1][1].body as string;
     expect(setMuteBody).toContain("<DesiredMute>1</DesiredMute>");
     expect(result.state?.muted).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  test("playPause sends Pause when currently playing", async () => {
+  test("setVolume sends the exact value and reports it optimistically, with no read-back (ADR-HEARTH-179)", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setVolume", args: { volume: 55 } });
+
+    const setVolumeBody = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+    expect(setVolumeBody).toContain("<DesiredVolume>55</DesiredVolume>");
+    expect(result.state?.volume).toBe(55);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  // ADR-HEARTH-179: this read is load-bearing (deciding which of Play/Pause to send) — knowing
+  // which one we just sent already tells us the resulting playbackState, so no second read follows.
+  test("playPause sends Pause when currently playing and reports 'paused' with no read-back", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(transportResponse("PLAYING")) // applyCommand's read
-      .mockResolvedValueOnce(okResponse()) // Pause
-      .mockResolvedValueOnce(volumeResponse(20))
-      .mockResolvedValueOnce(muteResponse(false))
-      .mockResolvedValueOnce(transportResponse("PAUSED_PLAYBACK"));
+      .mockResolvedValueOnce(okResponse()); // Pause
 
-    await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
 
     const pauseCall = (global.fetch as jest.Mock).mock.calls[1][1];
     expect(pauseCall.headers.SOAPACTION).toBe("urn:schemas-upnp-org:service:AVTransport:1#Pause");
+    expect(result.state?.playbackState).toBe("paused");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  test("playPause sends Play when currently paused", async () => {
-    (global.fetch as jest.Mock)
-      .mockResolvedValueOnce(transportResponse("PAUSED_PLAYBACK"))
-      .mockResolvedValueOnce(okResponse())
-      .mockResolvedValueOnce(volumeResponse(20))
-      .mockResolvedValueOnce(muteResponse(false))
-      .mockResolvedValueOnce(transportResponse("PLAYING"));
+  test("playPause sends Play when currently paused and reports 'playing' with no read-back", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(transportResponse("PAUSED_PLAYBACK")).mockResolvedValueOnce(okResponse());
 
-    await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "playPause" });
 
     const playCall = (global.fetch as jest.Mock).mock.calls[1][1];
     expect(playCall.headers.SOAPACTION).toBe("urn:schemas-upnp-org:service:AVTransport:1#Play");
+    expect(result.state?.playbackState).toBe("playing");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // ADR-HEARTH-179: removing the trailing refreshState() call for every command also removed
+  // refreshState's own generation guard against exactly this race — restored here via
+  // markConnected's own guard, so a disconnect() mid-command still wins.
+  test("a disconnect() that races with an in-flight command wins — its own disconnected state is not overwritten by the command's optimistic patch", async () => {
+    let resolveRead!: (value: Response) => void;
+    const readPromise = new Promise<Response>((resolve) => {
+      resolveRead = resolve;
+    });
+    (global.fetch as jest.Mock).mockReturnValueOnce(readPromise).mockResolvedValueOnce(okResponse());
+
+    const commandPromise = driver.executeCommand(device, { deviceId: device.id, capability: "mute" });
+    await driver.disconnect(device); // wins the race while the command's own read is still pending
+    resolveRead(muteResponse(false));
+
+    await commandPromise;
+    expect((await driver.getState(device)).connection).toBe("disconnected");
   });
 
   test("rejects a device with no config instead of silently doing nothing", async () => {

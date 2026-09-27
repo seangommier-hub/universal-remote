@@ -111,9 +111,16 @@ export class SonosDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
+    // Captured before applyCommand's own await, mirroring refreshState's identical guard below —
+    // a disconnect() racing with this in-flight command must not have its own "disconnected" state
+    // clobbered by this command's optimistic patch landing afterward (ADR-HEARTH-179).
+    const generation = this.generations.get(device.id) ?? 0;
     const client = new SonosClient(requireConfig(device));
-    await this.applyCommand(client, device, command);
-    const state = await this.refreshState(device);
+    // ADR-HEARTH-179: every command below already reads current state to compute an exact target
+    // (a toggle, or a volume clamped to 0-100) or is itself an exact set, so applyCommand's own
+    // patch always fully describes the result — no refreshState() read-back follows it anymore.
+    const patch = await this.applyCommand(client, device, command);
+    const state = this.markConnected(device, generation, patch);
     return {
       success: true,
       deviceId: device.id,
@@ -123,6 +130,21 @@ export class SonosDriver implements DeviceDriver {
     };
   }
 
+  /** Merges `patch` into cached values and marks the device connected, with no network round trip
+   * — reaching this point means the command itself just succeeded, so the device is provably
+   * reachable right now (ADR-HEARTH-179). The result is always returned for a truthful
+   * CommandResult, but only committed to cached state if `generation` is still current — an
+   * explicit disconnect() that raced with this command already set its own, more correct
+   * "disconnected" state, and must win. */
+  private markConnected(device: Device, generation: number, patch: DeviceState["values"]): DeviceState {
+    const current = this.states.get(device.id);
+    const state: DeviceState = { connection: "connected", values: { ...current?.values, ...patch }, lastUpdated: Date.now() };
+    if (generation !== (this.generations.get(device.id) ?? 0)) return state;
+    this.clearReconnectTimer(device.id);
+    this.setState(device.id, state);
+    return state;
+  }
+
   subscribeToState(device: Device, listener: StateChangeListener): () => void {
     const set = this.listeners.get(device.id) ?? new Set<StateChangeListener>();
     set.add(listener);
@@ -130,37 +152,45 @@ export class SonosDriver implements DeviceDriver {
     return () => set.delete(listener);
   }
 
-  private async applyCommand(client: SonosClient, device: Device, command: Command): Promise<void> {
+  /** Returns the resulting `values` patch — every branch below either already read current state
+   * to compute an exact target (a toggle, or a volume clamped to 0-100) or is itself an exact set,
+   * so the value we just sent IS the new state (ADR-HEARTH-179); no branch here needs a separate
+   * read-back. */
+  private async applyCommand(client: SonosClient, device: Device, command: Command): Promise<DeviceState["values"]> {
     switch (command.capability) {
       case "volumeUp": {
         const current = await client.getVolume();
-        await client.setVolume(Math.min(100, current + VOLUME_STEP));
-        return;
+        const target = Math.min(100, current + VOLUME_STEP);
+        await client.setVolume(target);
+        return { volume: target };
       }
       case "volumeDown": {
         const current = await client.getVolume();
-        await client.setVolume(Math.max(0, current - VOLUME_STEP));
-        return;
+        const target = Math.max(0, current - VOLUME_STEP);
+        await client.setVolume(target);
+        return { volume: target };
       }
       case "setVolume": {
         const target = command.args?.volume;
         if (typeof target !== "number") throw new Error("setVolume requires a numeric 'volume' arg");
         await client.setVolume(target);
-        return;
+        return { volume: target };
       }
       case "mute": {
         const muted = await client.getMute();
-        await client.setMute(!muted);
-        return;
+        const nextMuted = !muted;
+        await client.setMute(nextMuted);
+        return { muted: nextMuted };
       }
       case "playPause": {
         const transportState = await client.getTransportState();
-        if (transportState === "PLAYING") {
-          await client.pause();
-        } else {
+        const nowPlaying = transportState !== "PLAYING";
+        if (nowPlaying) {
           await client.play();
+        } else {
+          await client.pause();
         }
-        return;
+        return { playbackState: nowPlaying ? "playing" : "paused" };
       }
       default:
         throw new Error(`SonosDriver does not implement capability: ${command.capability}`);

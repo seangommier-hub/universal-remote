@@ -56,39 +56,85 @@ describe("DenonDriver", () => {
     expect(state.values).toEqual({ power: "on", volume: -55.5, muted: true });
   });
 
-  test("power command toggles based on real current state, then re-reads it", async () => {
+  // ADR-HEARTH-179: the read above is load-bearing (power has to be flipped, not set to an
+  // explicit target) — its result plus the toggle direction we just sent already tells us the new
+  // state, so no third, verification getStatus() call follows it the way there used to be.
+  test("power command toggles based on real current state and reports the result with no re-read", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(xmlResponse(statusXml({ power: "ON" }))) // applyCommand's read
-      .mockResolvedValueOnce(okResponse()) // powerStandby
-      .mockResolvedValueOnce(xmlResponse(statusXml({ power: "OFF" }))); // refreshState
+      .mockResolvedValueOnce(okResponse()); // powerStandby
 
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "power" });
 
     expect(result.success).toBe(true);
     expect(result.state?.power).toBe("off");
     expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("http://192.168.1.80:80/goform/formiPhoneAppPower.xml?1+PowerStandby");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   test("power command sends PowerOn when currently off", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(xmlResponse(statusXml({ power: "OFF" }))).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(xmlResponse(statusXml({ power: "ON" })));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(xmlResponse(statusXml({ power: "OFF" }))).mockResolvedValueOnce(okResponse());
 
-    await driver.executeCommand(device, { deviceId: device.id, capability: "power" });
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "power" });
 
     expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("http://192.168.1.80:80/goform/formiPhoneAppPower.xml?1+PowerOn");
+    expect(result.state?.power).toBe("on");
   });
 
-  test("mute toggles based on real current state", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(xmlResponse(statusXml({ muted: false }))).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(xmlResponse(statusXml({ muted: true })));
+  // ADR-HEARTH-179: this read is load-bearing (setMute takes an explicit boolean), not a
+  // verification read-back — it already carries the current volume too, so no second call follows.
+  test("mute toggles based on real current state and reports optimistically with no second read", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(xmlResponse(statusXml({ muted: false, volumeDb: -40 }))).mockResolvedValueOnce(okResponse());
 
     const result = await driver.executeCommand(device, { deviceId: device.id, capability: "mute" });
 
     expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("http://192.168.1.80:80/goform/formiPhoneAppMute.xml?1+MuteOn");
     expect(result.state?.muted).toBe(true);
+    expect(result.state?.volume).toBe(-40); // carried through from the load-bearing read, not a second call
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   test("setVolume without a numeric arg rejects before making any network call", async () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "setVolume" })).rejects.toThrow(/numeric/);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // ADR-HEARTH-179: an exact value we just set — trust it instead of paying a read-back.
+  test("setVolume sends the exact value and reports it optimistically, with no read-back", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse());
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setVolume", args: { volume: -30 } });
+
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe("http://192.168.1.80:80/goform/formiPhoneAppVolume.xml?1+-30.0");
+    expect(result.state?.volume).toBe(-30);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("volumeUp still reads real state back — a relative step whose resulting dB level the receiver's own response doesn't carry", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse()).mockResolvedValueOnce(xmlResponse(statusXml({ volumeDb: -49.5 })));
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" });
+
+    expect(result.state?.volume).toBe(-49.5);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // ADR-HEARTH-179: removing the trailing refreshState() call for power/mute/setVolume also
+  // removed refreshState's own generation guard against exactly this race — restored here via
+  // markConnected's own guard, so a disconnect() mid-command still wins.
+  test("a disconnect() that races with an in-flight command wins — its own disconnected state is not overwritten by the command's optimistic patch", async () => {
+    let resolveRead!: (value: Response) => void;
+    const readPromise = new Promise<Response>((resolve) => {
+      resolveRead = resolve;
+    });
+    (global.fetch as jest.Mock).mockReturnValueOnce(readPromise).mockResolvedValueOnce(okResponse());
+
+    const commandPromise = driver.executeCommand(device, { deviceId: device.id, capability: "power" });
+    await driver.disconnect(device); // wins the race while the command's own read is still pending
+    resolveRead(xmlResponse(statusXml({ power: "ON" })));
+
+    await commandPromise;
+    expect((await driver.getState(device)).connection).toBe("disconnected");
   });
 
   test("rejects a device with no config instead of silently doing nothing", async () => {

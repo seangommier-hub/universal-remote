@@ -4,6 +4,7 @@ import { Device } from "../../../core/types/Device";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { WAKE_BURST_INTERVAL_MS, WAKE_BURST_WINDOW_MS } from "../../shared/wakeBurst";
+import { HEARTBEAT_INTERVAL_MS } from "../../shared/connectionHeartbeat";
 
 // ADR-HEARTH-144: reconnect delays carry random jitter; drop it so the exact-delay assertions below stay exact.
 // (Pinning Math.random instead makes jest's own source-map quicksort recurse without bound.)
@@ -280,6 +281,48 @@ describe("LgWebOsDriver", () => {
 
     const result = await resultPromise;
     expect(result.state?.volume).toBe(17);
+  });
+
+  // ADR-HEARTH-179: setVolume sets an exact, already-known value — unlike volumeUp/volumeDown
+  // above, it must NOT pay a second ssap://audio/getVolume round trip to confirm what was just sent.
+  test("setVolume sends the exact value and reports it optimistically, with no read-back", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+    const sentBefore = socket.sentMessages.length;
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "setVolume", args: { volume: 42 } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(sent.uri).toBe("ssap://audio/setVolume");
+    expect(sent.payload).toEqual({ volume: 42 });
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    const result = await resultPromise;
+    expect(result.state?.volume).toBe(42);
+    expect(socket.sentMessages.length).toBe(sentBefore + 1); // exactly one request — no verification read-back
+  });
+
+  // ADR-HEARTH-179: mute's own pre-toggle getVolume read is load-bearing (setMute takes an
+  // explicit boolean), not a verification read-back — no second read is needed after it.
+  test("mute reads the current value once to know which way to toggle, sends setMute, and reports optimistically with no second read", async () => {
+    await connectDriver(driver); // leaves state.values.volume at 15 (connectDriver's own mock response)
+    const socket = MockWebSocket.latest();
+    const sentBefore = socket.sentMessages.length;
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "mute" });
+    const readSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(readSent.uri).toBe("ssap://audio/getVolume");
+    socket.simulateMessage({ type: "response", id: readSent.id, payload: { returnValue: true, volume: 15, mute: false } });
+
+    await Promise.resolve();
+    const muteSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(muteSent.uri).toBe("ssap://audio/setMute");
+    expect(muteSent.payload).toEqual({ mute: true });
+    socket.simulateMessage({ type: "response", id: muteSent.id, payload: { returnValue: true } });
+
+    const result = await resultPromise;
+    expect(result.state?.muted).toBe(true);
+    expect(result.state?.volume).toBe(15); // carried through from the load-bearing read, not a second call
+    expect(socket.sentMessages.length).toBe(sentBefore + 2); // the load-bearing read + setMute — no third, verification call
   });
 
   test("launchApp('netflix') calls ssap://system.launcher/launch with the real webOS app id (real-hardware research, 2026-09-10)", async () => {
@@ -905,6 +948,36 @@ describe("LgWebOsDriver heartbeat", () => {
       await jest.advanceTimersByTimeAsync(60000); // two unanswered heartbeat probes
 
       expect((await driver.getState(device)).connection).toBe("disconnected");
+    } finally {
+      await driver.disconnect(device);
+      jest.useRealTimers();
+    }
+  });
+
+  // ADR-HEARTH-179: setVolume/mute now report optimistically instead of reading back — this proves
+  // the heartbeat's own already-running getVolume probe (not a dedicated new call) is the periodic
+  // correction that catches any resulting drift, e.g. someone using the TV's physical remote.
+  test("the heartbeat's own liveness probe opportunistically corrects volume/mute drift, not just liveness", async () => {
+    jest.useFakeTimers();
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    const driver = new LgWebOsDriver();
+    try {
+      await connectDriver(driver); // leaves state.values.volume at 15 (connectDriver's own mock response)
+      const socket = MockWebSocket.latest();
+
+      await jest.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      const probeSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+      expect(probeSent.uri).toBe("ssap://audio/getVolume");
+      // The physical remote changed the volume outside the app between commands — the heartbeat's
+      // own probe response is the only thing that will ever notice, since no command triggered it.
+      socket.simulateMessage({ type: "response", id: probeSent.id, payload: { returnValue: true, volume: 30, mute: true } });
+      await flushMicrotasks();
+
+      const state = await driver.getState(device);
+      expect(state.values.volume).toBe(30);
+      expect(state.values.muted).toBe(true);
     } finally {
       await driver.disconnect(device);
       jest.useRealTimers();

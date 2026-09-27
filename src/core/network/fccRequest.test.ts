@@ -1,6 +1,7 @@
 import { fccFetch } from "./fccRequest";
 import { FccUnreachableError } from "./fccErrors";
 import { AWAY_MEMORY_MS, getConnectivityMode, isPrivateLanHost, resetConnectivityForTests, shouldSkipDirectAttempt } from "./fccConnectivity";
+import { DEFAULT_FETCH_TIMEOUT_MS } from "./fetchWithTimeout";
 import type { FamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 
 const LAN_URL = "http://192.168.1.172:3210";
@@ -84,6 +85,51 @@ describe("fccFetch", () => {
       await fccFetch(CONFIG, PATH);
       expect(urlsCalled()).toEqual([`${PUBLIC_URL}${PATH}`, `${LAN_URL}${PATH}`]);
       expect(getConnectivityMode()).toBe("home");
+    });
+  });
+
+  // ADR-HEARTH-179: a dead/stale LAN hop used to pay the caller's full timeout (8s for every
+  // relay-routed command) before falling back to a working public tunnel. These prove the LAN hop
+  // now gives up at its own short budget instead, while the public hop (and a LAN-only config with
+  // no fallback to catch it) still get the full requested budget.
+  describe("per-hop timeout budgets", () => {
+    test("a LAN hop that never answers gives up at ~2.5s (not the full 8s request budget), then falls back to a working public hop", async () => {
+      (global.fetch as jest.Mock).mockImplementation((url: string) => (url.startsWith(LAN_URL) ? new Promise(() => {}) : Promise.resolve(ok())));
+
+      const promise = fccFetch(CONFIG, PATH, {}, DEFAULT_FETCH_TIMEOUT_MS);
+      let resolved = false;
+      void promise.then(() => {
+        resolved = true;
+      });
+
+      await jest.advanceTimersByTimeAsync(2499);
+      expect(resolved).toBe(false); // the LAN hop hasn't given up yet, just shy of its short budget
+
+      await jest.advanceTimersByTimeAsync(2); // crosses the ~2.5s LAN budget
+      const response = await promise;
+      expect(resolved).toBe(true);
+      expect(response.status).toBe(200);
+      expect(urlsCalled()).toEqual([`${LAN_URL}${PATH}`, `${PUBLIC_URL}${PATH}`]);
+    });
+
+    test("the public hop keeps the caller's full timeout budget, not the shortened LAN one", async () => {
+      (global.fetch as jest.Mock).mockImplementation(
+        (url: string) => (url.startsWith(LAN_URL) ? Promise.reject(new TypeError("Network request failed")) : new Promise((resolve) => setTimeout(() => resolve(ok()), 5000)))
+      );
+
+      const promise = fccFetch(CONFIG, PATH, {}, DEFAULT_FETCH_TIMEOUT_MS);
+      const response = await jest.advanceTimersByTimeAsync(5000).then(() => promise);
+
+      expect(response.status).toBe(200); // a 5s public response is well past the 2.5s LAN budget but still inside the full 8s request budget
+    });
+
+    test("a LAN-only config (no public tunnel configured) keeps the full request budget — nothing else would catch a shortened failure", async () => {
+      (global.fetch as jest.Mock).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(ok()), 5000)));
+
+      const promise = fccFetch({ baseUrl: LAN_URL, token: "t" }, PATH, {}, DEFAULT_FETCH_TIMEOUT_MS);
+      const response = await jest.advanceTimersByTimeAsync(5000).then(() => promise);
+
+      expect(response.status).toBe(200); // would have been a false failure at 2.5s if the LAN-only hop were ever shortened
     });
   });
 });
