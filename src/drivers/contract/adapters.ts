@@ -11,6 +11,7 @@ import { SquirrelFeederDriver } from "../feeder/squirrelFeeder/SquirrelFeederDri
 import { Ps5Driver } from "../gaming/ps5/Ps5Driver";
 import { XboxDriver } from "../gaming/xbox/XboxDriver";
 import { BroadlinkIrDriver } from "../irHub/broadlink/BroadlinkIrDriver";
+import { GoveeLightDriver } from "../lighting/govee/GoveeLightDriver";
 import { HueLightDriver } from "../lighting/hue/HueLightDriver";
 import { HomeAssistantDriver } from "../homeAssistant/HomeAssistantDriver";
 import { LifxLightDriver } from "../lighting/lifx/LifxLightDriver";
@@ -159,6 +160,8 @@ const shellyResponder: Responder = (url) => {
   return { json: { output: true } };
 };
 
+const goveeResponder: Responder = (url) => (url.includes("/govee/status") ? { json: { onOff: true, brightness: 50, color: { r: 10, g: 20, b: 30 } } } : { json: { success: true } });
+
 const anyCommand = (capability: Command["capability"]): Command => ({ deviceId: "contract", capability });
 
 export const DRIVER_ADAPTERS: DriverAdapter[] = [
@@ -182,6 +185,7 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
   { name: "WizLightDriver", createDriver: () => new WizLightDriver(), createDevice: device("wiz-1", { ipAddress: "192.168.1.89" }), responder: wizResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "LifxLightDriver", createDriver: () => new LifxLightDriver(), createDevice: device("lifx-1", { ipAddress: "192.168.1.91" }), responder: lifxResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "ShellyRelayDriver", createDriver: () => new ShellyRelayDriver(), createDevice: device("shelly-1", { ipAddress: "192.168.1.92" }), responder: shellyResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },
+  { name: "GoveeLightDriver", createDriver: () => new GoveeLightDriver(), createDevice: device("govee-1", { ipAddress: "192.168.1.61" }), responder: goveeResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "HueLightDriver", createDriver: () => new HueLightDriver(), createDevice: device("hue-1", { bridgeIpAddress: "192.168.1.2", username: "u", lightId: "1" }), responder: hueResponder, usesFcc: false, command: anyCommand("power"), exemptions: { retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: {} },

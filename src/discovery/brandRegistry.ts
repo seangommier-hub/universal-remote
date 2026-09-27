@@ -7,6 +7,7 @@ import { CHROMECAST_DRIVER_ID } from "../drivers/streaming/chromecast/Chromecast
 import { DENON_DRIVER_ID } from "../drivers/tv/denon/DenonDriver";
 import { SQUIRREL_FEEDER_DRIVER_ID } from "../drivers/feeder/squirrelFeeder/SquirrelFeederDriver";
 import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
+import { GOVEE_LIGHT_DRIVER_ID } from "../drivers/lighting/govee/GoveeLightDriver";
 import { HUE_LIGHT_DRIVER_ID } from "../drivers/lighting/hue/HueLightDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { LIFX_LIGHT_DRIVER_ID } from "../drivers/lighting/lifx/LifxLightDriver";
@@ -51,7 +52,8 @@ export type BrandId =
   | "vizio"
   | "wiz"
   | "lifx"
-  | "shelly";
+  | "shelly"
+  | "govee";
 
 /** Kept for existing imports: every brand can be the target of an add flow. */
 export type AddableBrand = BrandId;
@@ -209,6 +211,18 @@ export const BRAND_REGISTRY: BrandEntry[] = [
     hint: "Adds your Home Assistant lights, switches, covers, locks, climate, fans, vacuums, scenes and sensors. Needs its address and a long-lived access token (Home Assistant profile > Security).",
     vendorPattern: null, inAddPicker: true,
   },
+  ipOnly({
+    id: "govee", label: "Govee Light", driverId: GOVEE_LIGHT_DRIVER_ID, manufacturer: "Govee", category: "lighting", icon: "bulb-outline", defaultName: "Govee Light",
+    // Same as Kasa (needsFcc: false despite the driver routing every command through Family
+    // Command Center): this field gates the add/pairing flow, not ongoing command execution -- a
+    // Govee light is added by typing its IP with no FCC pairing step required first.
+    needsFcc: false,
+    // ADR-HEARTH-185: LAN Control is off by default and Hearth cannot turn it on remotely -- must
+    // say so explicitly here, not just in a driver comment, since this is the one place the setup
+    // flow shows the user before they try to add the light.
+    hint: "Turn on \"LAN Control\" for this light in the Govee Home app first (Settings > this device > LAN Control) — Hearth can't enable it remotely. Only local, LAN-Control models are supported (H6xxx typically), not cloud-only ones.",
+    vendorPattern: /govee/i, inAddPicker: true,
+  }),
 ];
 
 const BY_ID = new Map<BrandId, BrandEntry>(BRAND_REGISTRY.map((brand) => [brand.id, brand]));
