@@ -31,6 +31,8 @@ export function resolveDemoScreen(param: string | null, devices: Device[]): Devi
       return device ? { name: "post-add", device, mode: "post-add" } : null;
     case "setup-checks":
       return device ? { name: "post-add", device, mode: "setup-checks" } : null;
+    case "ha-sync":
+      return { name: "add", brand: "homeassistant" };
     case "add":
       return isBrandId(arg) ? { name: "add", brand: arg as BrandId } : null;
     default:

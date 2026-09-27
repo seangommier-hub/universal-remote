@@ -129,6 +129,13 @@ export function DevicesTabScreen({
     setScreen(mode === "post-add" ? { name: "remote", device: current } : { name: "list" });
   }
 
+  // ADR-HEARTH-175: a bulk import adds every device, then returns to the list instead of opening any one of them.
+  function handleImported(imported: Device[]): Device[] {
+    const stored = imported.map((device) => onDeviceAdded(device));
+    setScreen({ name: "list" });
+    return stored;
+  }
+
   async function handleRename(device: Device, newName: string, source?: NameSourceKind): Promise<void> {
     const updated = await onRenameDevice(device, newName, source);
     setScreen((current) => (current.name === "remote" && current.device.id === device.id ? { name: "remote", device: updated } : current));
@@ -157,6 +164,8 @@ export function DevicesTabScreen({
     driverRegistry: runtime.driverRegistry,
     onCancel: () => setScreen({ name: "list" }),
     onAdded: handleAdded,
+    onImported: handleImported,
+    existingDevices: devices,
   };
 
   return (

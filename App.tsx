@@ -10,6 +10,8 @@ import * as Network from "expo-network";
 import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPolicy";
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
+import { hydrateHaInstances } from "./src/drivers/homeAssistant/haInstanceStore";
+import { migrateHaDevices } from "./src/runtime/haDeviceMigration";
 import { startClientLogShipper } from "./src/runtime/clientLogShipper";
 import { startActivityLog } from "./src/runtime/startActivityLog";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
@@ -186,7 +188,12 @@ function HearthApp() {
       // instead of a silent permanent hang.
       let persisted: Device[] = [];
       try {
-        persisted = isDemoMode() ? loadDemoDevices() : await loadDevices();
+        if (isDemoMode()) {
+          persisted = loadDemoDevices();
+        } else {
+          await hydrateHaInstances(); // ADR-HEARTH-175: shared Home Assistant credentials must be known before any HA device connects
+          persisted = await migrateHaDevices(await loadDevices());
+        }
         persisted.forEach((device) => {
           refreshCapabilities(device);
           runtime.deviceRegistry.add(device);

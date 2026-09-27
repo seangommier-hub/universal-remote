@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Device } from "../core/types/Device";
 
 const DEVICES_STORAGE_KEY = "hearth.devices";
+let saveQueue: Promise<void> = Promise.resolve();
 // Config fields whose values are credentials, not just connection metadata — kept out of
 // AsyncStorage (plaintext) and stored per-device in SecureStore instead. Real gap found in a
 // security audit (2026-09-19, ADR-HEARTH-091): this list was never updated when LG's `clientKey`
@@ -27,7 +28,14 @@ function secureStoreKey(deviceId: string, field: string): string {
 }
 
 /** Splits a device's config into non-sensitive (stored inline) and sensitive (stored separately) fields, then persists both. */
-export async function saveDevice(device: Device): Promise<void> {
+export function saveDevice(device: Device): Promise<void> {
+  // Serialized: the list is read, changed and written back whole, so overlapping saves (a bulk import adds dozens at once) would drop each other's devices.
+  const run = saveQueue.then(() => writeDevice(device));
+  saveQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function writeDevice(device: Device): Promise<void> {
   const { safeConfig, sensitiveEntries } = splitConfig(device.config);
   const deviceToStore: Device = { ...device, config: safeConfig };
 
@@ -57,6 +65,11 @@ export async function removeDevice(deviceId: string): Promise<void> {
   const existing = await loadStoredDeviceList();
   await AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(existing.filter((d) => d.id !== deviceId)));
   await Promise.all(SENSITIVE_CONFIG_KEYS.map((field) => SecureStore.deleteItemAsync(secureStoreKey(deviceId, field))));
+}
+
+/** Deletes one secret field of one device from secure storage (used when a credential moves to a shared store). */
+export async function deleteDeviceSecret(deviceId: string, field: string): Promise<void> {
+  await SecureStore.deleteItemAsync(secureStoreKey(deviceId, field));
 }
 
 async function loadStoredDeviceList(): Promise<Device[]> {

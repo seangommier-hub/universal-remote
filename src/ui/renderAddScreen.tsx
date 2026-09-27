@@ -18,6 +18,10 @@ export interface AddScreenProps {
   driverRegistry: DriverRegistry;
   onCancel: () => void;
   onAdded: (device: Device) => void;
+  /** Adds several devices at once without opening any of them (used by "Sync from Home Assistant"); returns them as stored. */
+  onImported?: (devices: Device[]) => Device[];
+  /** Devices already in Hearth, for screens that offer only what is not yet added. */
+  existingDevices?: Device[];
   initialIpAddress?: string;
   onOpenFccSetup: () => void;
 }
