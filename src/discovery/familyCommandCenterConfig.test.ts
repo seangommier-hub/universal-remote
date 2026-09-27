@@ -26,6 +26,24 @@ describe("verifyAndSaveFamilyCommandCenterConfig", () => {
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.fcc.token", "secret-token");
   });
 
+  // ADR-HEARTH-181 phase 1: manual entry / QR scan always saves a "legacy" token kind by default,
+  // since only pair/redeem ever hands out a personal one.
+  test("defaults the saved token kind to legacy when the caller doesn't say otherwise", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await verifyAndSaveFamilyCommandCenterConfig("http://192.168.1.172:3210", "secret-token");
+
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.tokenKind", "legacy");
+  });
+
+  test("saves the token kind the caller passes", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await verifyAndSaveFamilyCommandCenterConfig("http://192.168.1.172:3210", "secret-token", "personal");
+
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.tokenKind", "personal");
+  });
+
   test("rejects and does not save when the server rejects the token", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 401 });
 
@@ -72,6 +90,24 @@ describe("loadFamilyCommandCenterConfig / verifyAndSavePublicUrl", () => {
     const config = await loadFamilyCommandCenterConfig();
 
     expect(config?.publicBaseUrl).toBeUndefined();
+  });
+
+  // ADR-HEARTH-181 phase 1: a config saved before tokenKind existed reads back as undefined, which
+  // every caller treats the same as "legacy" (see tokenUpgrade.ts).
+  test("loadFamilyCommandCenterConfig returns tokenKind as undefined when none was ever saved", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");
+
+    expect((await loadFamilyCommandCenterConfig())?.tokenKind).toBeUndefined();
+  });
+
+  test("loadFamilyCommandCenterConfig reads back a saved personal token kind", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) =>
+      Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : key === "hearth.fcc.tokenKind" ? "personal" : null)
+    );
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");
+
+    expect((await loadFamilyCommandCenterConfig())?.tokenKind).toBe("personal");
   });
 
   test("verifyAndSavePublicUrl verifies the public URL with the already-saved token before saving it", async () => {

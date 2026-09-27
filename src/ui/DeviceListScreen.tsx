@@ -25,6 +25,7 @@ import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
 import { useNameSuggestion } from "./useNameSuggestion";
 import { OfflineAlertBanner } from "./OfflineAlertBanner";
+import { TokenUpgradeBanner } from "./TokenUpgradeBanner";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
@@ -198,6 +199,7 @@ export function DeviceListScreen({
           inside a ScrollView is a real, documented RN bug class, not just a style choice). */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <OfflineAlertBanner devices={devices} stateStore={stateStore} driverRegistry={driverRegistry} commandEngine={commandEngine} fccConfigured={fccConfigured} onReconnect={onReconnect} />
+      <TokenUpgradeBanner fccConfigured={fccConfigured} onJoinWithCode={onJoinWithCode} />
       {updateBanner && <UpdateBanner status={updateBanner.status} onApply={onApplyUpdate} onDismiss={onDismissUpdateBanner} />}
 
       {/* Real bug found live (2026-09-12): a horizontal FlatList's data-item cells rendered at a

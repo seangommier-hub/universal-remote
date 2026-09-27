@@ -44,13 +44,15 @@ export async function redeemAgainstCandidates(code: string, servers: string[], s
 
 async function saveRedeemed(pairing: RedeemedPairing): Promise<void> {
   const publicBaseUrl = pairing.publicBaseUrl ? cleanUrl(pairing.publicBaseUrl) : undefined;
+  // "personal": pair/redeem (ADR-HEARTH-181, phase 1) always mints a fresh per-phone token, never
+  // the shared HEARTH_API_TOKEN — unlike the manual-entry/QR paths, which default to "legacy".
   try {
-    await verifyAndSaveFamilyCommandCenterConfig(pairing.baseUrl, pairing.token);
+    await verifyAndSaveFamilyCommandCenterConfig(pairing.baseUrl, pairing.token, "personal");
   } catch (lanError) {
     if (!publicBaseUrl) throw lanError;
     // Away from home the LAN address is unreachable; prove the token over the public host instead.
-    await verifyAndSaveFamilyCommandCenterConfig(publicBaseUrl, pairing.token);
-    await saveFamilyCommandCenterConfig({ baseUrl: cleanUrl(pairing.baseUrl), token: pairing.token.trim(), publicBaseUrl });
+    await verifyAndSaveFamilyCommandCenterConfig(publicBaseUrl, pairing.token, "personal");
+    await saveFamilyCommandCenterConfig({ baseUrl: cleanUrl(pairing.baseUrl), token: pairing.token.trim(), publicBaseUrl, tokenKind: "personal" });
     return;
   }
   if (publicBaseUrl) {

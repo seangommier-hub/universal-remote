@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
 import { FccUnreachableError } from "../core/network/fccErrors";
+import { getPhoneName } from "../runtime/phoneName";
 import { readBoundedJson, validateRedeemedPairing } from "./redeemResponse";
 
 // Client for the household invite endpoints on Family Command Center (ADR-HEARTH-149).
@@ -50,12 +51,12 @@ export async function createPairInvite(baseUrl: string, token: string): Promise<
   return (await response.json()) as CreatedInvite;
 }
 
-/** Trades a code for the household's address and token; sends no credentials, and rejects any answer that points at an untrusted host. */
+/** Trades a code for the household's address and a fresh PERSONAL token for this phone (ADR-HEARTH-181, phase 1); sends no credentials, and rejects any answer that points at an untrusted host. Sends this phone's own name (already used to attribute activity-log entries) so the household's token admin list can show whose token is whose. */
 export async function redeemPairCode(serverUrl: string, code: string, savedUrls: readonly string[] = []): Promise<RedeemedPairing> {
   const response = await send(`${trimTrailingSlash(serverUrl)}${REDEEM_PATH}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, phoneName: getPhoneName() }),
   });
   if (response.status === HTTP_TOO_MANY_REQUESTS) throw new PairLockedOutError("Locked out");
   if (response.status === HTTP_BAD_REQUEST) throw new PairCodeInvalidError("Invalid code");

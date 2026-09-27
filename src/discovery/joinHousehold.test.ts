@@ -46,6 +46,8 @@ describe("joinHousehold", () => {
     expect(urls[1]).toBe(`${PUBLIC}/api/integrations/hearth/pair/redeem`);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.fcc.token", "tok");
     expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.baseUrl", LAN);
+    // ADR-HEARTH-181 phase 1: a redeem always saves a "personal" token kind, never "legacy".
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.tokenKind", "personal");
   });
 
   test("stops at a wrong-code answer instead of trying more servers", async () => {
@@ -71,5 +73,6 @@ describe("joinHousehold", () => {
     expect(AsyncStorage.setItem).toHaveBeenLastCalledWith("hearth.fcc.publicBaseUrl", PUBLIC);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.baseUrl", LAN);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.fcc.token", "tok");
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.tokenKind", "personal");
   });
 });

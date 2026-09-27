@@ -1,4 +1,5 @@
 import { FccUnreachableError } from "../core/network/fccErrors";
+import { getPhoneName } from "../runtime/phoneName";
 import { createPairInvite, PairCodeInvalidError, PairLockedOutError, redeemPairCode } from "./pairClient";
 
 const SERVER = "https://hearth-relay.carddna.app/";
@@ -8,7 +9,7 @@ describe("redeemPairCode", () => {
     global.fetch = jest.fn();
   });
 
-  test("posts the code with no bearer token and returns the pairing", async () => {
+  test("posts the code, this phone's name, and no bearer token, and returns the pairing", async () => {
     const pairing = { baseUrl: "http://192.168.1.5:3210", publicBaseUrl: "https://hearth-relay.carddna.app", token: "tok" };
     (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify(pairing) });
 
@@ -16,7 +17,7 @@ describe("redeemPairCode", () => {
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe("https://hearth-relay.carddna.app/api/integrations/hearth/pair/redeem");
-    expect(init.body).toBe(JSON.stringify({ code: "K7M2QX9P" }));
+    expect(init.body).toBe(JSON.stringify({ code: "K7M2QX9P", phoneName: getPhoneName() }));
     expect(init.headers.Authorization).toBeUndefined();
   });
 
