@@ -11,6 +11,7 @@ import { SquirrelFeederDriver } from "../feeder/squirrelFeeder/SquirrelFeederDri
 import { Ps5Driver } from "../gaming/ps5/Ps5Driver";
 import { XboxDriver } from "../gaming/xbox/XboxDriver";
 import { BroadlinkIrDriver } from "../irHub/broadlink/BroadlinkIrDriver";
+import { GoveeLightDriver } from "../lighting/govee/GoveeLightDriver";
 import { HueLightDriver } from "../lighting/hue/HueLightDriver";
 import { HomeAssistantDriver } from "../homeAssistant/HomeAssistantDriver";
 import { KasaPlugDriver } from "../outlet/kasa/KasaPlugDriver";
@@ -121,6 +122,8 @@ const kasaResponder: Responder = (url) => (url.includes("sysinfo") ? { json: { r
 
 const smartThingsResponder: Responder = (url, init) => (init?.method === "POST" ? { json: {} } : { json: { outlets: [{ id: "st-1", state: "on" }] } });
 
+const goveeResponder: Responder = (url) => (url.includes("/govee/status") ? { json: { onOff: true, brightness: 50, color: { r: 10, g: 20, b: 30 } } } : { json: { success: true } });
+
 const homeAssistantResponder: Responder = (url, init) =>
   init?.method === "POST" ? { json: [] } : url.includes("/api/states/") ? { json: { entity_id: "switch.lamp", state: "on", attributes: { friendly_name: "Lamp" } } } : { json: [] };
 
@@ -154,6 +157,7 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
       },
     } },
   { name: "HueLightDriver", createDriver: () => new HueLightDriver(), createDevice: device("hue-1", { bridgeIpAddress: "192.168.1.2", username: "u", lightId: "1" }), responder: hueResponder, usesFcc: false, command: anyCommand("power"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
+  { name: "GoveeLightDriver", createDriver: () => new GoveeLightDriver(), createDevice: device("govee-1", { ipAddress: "192.168.1.61" }), responder: goveeResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { ...UNDEDUPED_CONNECT_EXEMPTIONS, retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: hangingRequestBug(4, "SwitchBotClient (SwitchBotClient.ts:93/99/104)", ["connectHangRejects", "commandWhileHungRejects"]) },
   { name: "HomeAssistantDriver", createDriver: () => new HomeAssistantDriver(), createDevice: device("ha-1", { baseUrl: "http://ha.test:8123", token: "contract-token", entityId: "switch.lamp" }), responder: homeAssistantResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },

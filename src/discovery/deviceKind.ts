@@ -108,7 +108,7 @@ const KIND_PATTERNS: Array<[DeviceKind, RegExp]> = [
   ["streaming", /roku|chromecast|fire ?tv|firestick|apple ?tv|appletv|nvidia shield/i],
   ["audio", /sonos|\becho\b|alexa|homepod|soundbar|denon|yamaha|speaker|amazon/i],
   ["tv", /\btv\b|bravia|webos|television|vizio|hisense|tcl/i],
-  ["lighting", /\bhue\b|lifx|nanoleaf|philips|bulb|light/i],
+  ["lighting", /\bhue\b|lifx|nanoleaf|philips|govee|bulb|light/i],
   ["outlet", /kasa|\bplug\b|outlet|smartthings|wemo/i],
   ["printer", /printer|laserjet|officejet|epson|brother|canon|\bhp\b/i],
   ["network", /router|netgear|ubiquiti|unifi|linksys|eero|orbi|arris|modem|gateway|access ?point|tp-?link|asus|cisco|zyxel|\bswitch\b/i],

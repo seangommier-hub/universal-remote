@@ -31,6 +31,7 @@ export const SCENARIOS = [
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
   { name: "post-add", screen: "post-add:lg", assertFit: false },
   { name: "setup-checks", screen: "setup-checks:lg", assertFit: false },
+  { name: "add-govee", screen: "add:govee", assertFit: false },
   {
     name: "pairing-card",
     screen: "add:roku",

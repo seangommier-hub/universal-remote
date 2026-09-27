@@ -7,6 +7,7 @@ import { SamsungTizenDriver } from "../drivers/tv/samsung/SamsungTizenDriver";
 import { LgWebOsDriver } from "../drivers/tv/lg/LgWebOsDriver";
 import { RokuEcpDriver } from "../drivers/streaming/roku/RokuEcpDriver";
 import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
+import { GoveeLightDriver } from "../drivers/lighting/govee/GoveeLightDriver";
 import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
 import { YamahaMusicCastDriver } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { XboxDriver } from "../drivers/gaming/xbox/XboxDriver";
@@ -59,6 +60,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new AppleTvDriver());
   driverRegistry.register(new SwitchBotVacuumDriver());
   driverRegistry.register(new HomeAssistantDriver());
+  driverRegistry.register(new GoveeLightDriver());
 
   if (isDemoMode()) swapInDemoDrivers(driverRegistry);
 
