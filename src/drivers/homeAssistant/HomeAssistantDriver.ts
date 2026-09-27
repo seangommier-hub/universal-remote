@@ -5,12 +5,17 @@ import { Command, CommandResult } from "../../core/types/Command";
 import { Device } from "../../core/types/Device";
 import { DeviceState } from "../../core/types/DeviceState";
 import { withBackoffJitter } from "../shared/backoffJitter";
-import { HomeAssistantClient } from "./HomeAssistantClient";
+import { HomeAssistantClient, HomeAssistantEntity } from "./HomeAssistantClient";
 import { HaCommandValidationError, commandToServiceCall } from "./haCommandMapping";
+import { resolveHaTarget } from "./haDeviceConfig";
+import { HaInstance } from "./haInstance";
+import { releaseSession, startSession } from "./haInstanceHub";
+import { HA_TOKEN_REJECTED_MESSAGE, HaSession, HaSessionStatus } from "./haSession";
 import { entityToValues } from "./haStateMapping";
 
 const LOG_SCOPE = "HomeAssistantDriver";
 export const HOME_ASSISTANT_DRIVER_ID = "home-assistant";
+/** Fallback polling period, used only while the WebSocket session is not live. */
 export const HOME_ASSISTANT_POLL_INTERVAL_MS = 10_000;
 const RECONNECT_BASE_DELAY_MS = 2000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
@@ -22,24 +27,23 @@ const HOME_ASSISTANT_CAPABILITIES: CapabilityId[] = [
   "playPause", "inputSelection", "directionalNavigation", "select", "back", "home", "menu",
 ];
 
-interface HomeAssistantDeviceConfig {
-  baseUrl: string;
-  token: string;
-  entityId: string;
+interface LiveLink {
+  unwatchEntity: () => void;
+  unwatchStatus: () => void;
+  session: HaSession;
+  instance: HaInstance;
 }
 
-function requireConfig(device: Device): HomeAssistantDeviceConfig {
-  const { baseUrl, token, entityId } = device.config ?? {};
-  if (typeof baseUrl !== "string" || typeof token !== "string" || typeof entityId !== "string") {
-    throw new Error(`Device ${device.id} is missing Home Assistant config (baseUrl, token, entityId) — add it again from Home Assistant`);
-  }
-  return { baseUrl, token, entityId };
+function clientFor(device: Device): HomeAssistantClient {
+  const { instance } = resolveHaTarget(device);
+  return new HomeAssistantClient({ baseUrl: instance.baseUrl, token: instance.token });
 }
 
 /**
- * Driver for one Home Assistant entity (switch, light, media_player or remote) over HA's REST API
- * with a long-lived access token (ADR-HEARTH-166). State is polled every ~10 seconds, only while
- * something is subscribed and the entity is connected, so an idle device makes no requests.
+ * Driver for one Home Assistant entity (switch, light, media_player or remote), all sharing one credential and
+ * one WebSocket session per server (ADR-HEARTH-175). While the session is live, state arrives by push; while it is
+ * down (or before it connects) the driver falls back to REST polling every ~10 seconds (ADR-HEARTH-166), only while
+ * something is subscribed, so an idle device makes no requests.
  */
 export class HomeAssistantDriver implements DeviceDriver {
   id = HOME_ASSISTANT_DRIVER_ID;
@@ -52,6 +56,7 @@ export class HomeAssistantDriver implements DeviceDriver {
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private generations = new Map<string, number>();
   private inFlightConnects = new Map<string, Promise<void>>();
+  private links = new Map<string, LiveLink>();
 
   getCapabilities(): CapabilityId[] {
     return HOME_ASSISTANT_CAPABILITIES;
@@ -77,6 +82,7 @@ export class HomeAssistantDriver implements DeviceDriver {
     this.generations.set(device.id, this.generationOf(device.id) + 1);
     this.clearReconnectTimer(device.id);
     this.stopPolling(device.id);
+    this.unlink(device.id);
     this.setDisconnected(device.id);
   }
 
@@ -85,9 +91,9 @@ export class HomeAssistantDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
-    const config = requireConfig(device);
-    const call = commandToServiceCall(command, config.entityId, this.states.get(device.id)?.values ?? {});
-    const client = new HomeAssistantClient(config);
+    const { entityId } = resolveHaTarget(device);
+    const call = commandToServiceCall(command, entityId, this.states.get(device.id)?.values ?? {});
+    const client = clientFor(device);
     try {
       await client.callService(call.domain, call.service, call.data);
       await this.refresh(device, client);
@@ -105,10 +111,14 @@ export class HomeAssistantDriver implements DeviceDriver {
     set.add(listener);
     this.listeners.set(device.id, set);
     this.devices.set(device.id, device);
+    this.ensureLink(device);
     this.ensurePolling(device.id);
     return () => {
       set.delete(listener);
-      if (set.size === 0) this.stopPolling(device.id);
+      if (set.size === 0) {
+        this.stopPolling(device.id);
+        this.unlink(device.id);
+      }
     };
   }
 
@@ -121,9 +131,9 @@ export class HomeAssistantDriver implements DeviceDriver {
     this.devices.set(device.id, device);
     this.clearReconnectTimer(device.id);
     try {
-      const config = requireConfig(device);
-      await this.refresh(device, new HomeAssistantClient(config));
+      await this.refresh(device, clientFor(device));
       if (generation !== this.generationOf(device.id)) return;
+      this.ensureLink(device);
       this.ensurePolling(device.id);
     } catch (err) {
       if (generation !== this.generationOf(device.id)) throw err;
@@ -135,21 +145,67 @@ export class HomeAssistantDriver implements DeviceDriver {
   }
 
   private async refresh(device: Device, client: HomeAssistantClient): Promise<void> {
-    const entity = await client.getEntity(requireConfig(device).entityId);
-    this.setState(device.id, { connection: "connected", values: entityToValues(entity), lastUpdated: Date.now() });
+    const { entityId } = resolveHaTarget(device);
+    this.applyEntity(device.id, await client.getEntity(entityId));
+  }
+
+  private applyEntity(deviceId: string, entity: HomeAssistantEntity): void {
+    this.setState(deviceId, { connection: "connected", values: entityToValues(entity), lastUpdated: Date.now() });
+  }
+
+  // Joins the instance's shared session (one subscription for every device on it) and follows this entity.
+  private ensureLink(device: Device): void {
+    if ((this.listeners.get(device.id)?.size ?? 0) === 0 || this.links.has(device.id)) return;
+    const { instance, entityId } = resolveHaTarget(device);
+    const session = startSession(instance);
+    const unwatchEntity = session.watchEntity(entityId, (entity) => this.onSessionEntity(device, entity));
+    const unwatchStatus = session.onStatus((status) => this.onSessionStatus(device, status));
+    this.links.set(device.id, { unwatchEntity, unwatchStatus, session, instance });
+  }
+
+  private unlink(deviceId: string): void {
+    const link = this.links.get(deviceId);
+    if (!link) return;
+    link.unwatchEntity();
+    link.unwatchStatus();
+    releaseSession(link.instance);
+    this.links.delete(deviceId);
+  }
+
+  private onSessionEntity(device: Device, entity: HomeAssistantEntity | undefined): void {
+    this.applyEntity(device.id, entity ?? { entity_id: resolveHaTarget(device).entityId, state: "unavailable", attributes: {} });
+  }
+
+  private onSessionStatus(device: Device, status: HaSessionStatus): void {
+    if (status === "auth-failed") {
+      this.stopPolling(device.id);
+      this.clearReconnectTimer(device.id);
+      logger.warn(LOG_SCOPE, `${device.name}: Home Assistant rejected the access token`);
+      const current = this.states.get(device.id);
+      this.setState(device.id, { connection: "disconnected", values: { ...(current?.values ?? {}), authError: HA_TOKEN_REJECTED_MESSAGE }, lastUpdated: Date.now() });
+      return;
+    }
+    if (status === "live") this.stopPolling(device.id);
+    else this.ensurePolling(device.id);
+  }
+
+  private isSessionLive(deviceId: string): boolean {
+    return this.links.get(deviceId)?.session.getStatus() === "live";
   }
 
   private ensurePolling(deviceId: string): void {
     const device = this.devices.get(deviceId);
     const hasListeners = (this.listeners.get(deviceId)?.size ?? 0) > 0;
-    if (!device || !hasListeners || this.pollTimers.has(deviceId) || this.states.get(deviceId)?.connection !== "connected") return;
+    if (!device || !hasListeners || this.pollTimers.has(deviceId) || this.isSessionLive(deviceId)) return;
+    if (this.states.get(deviceId)?.connection !== "connected") return;
+    if (this.links.get(deviceId)?.session.getStatus() === "auth-failed") return;
     this.pollTimers.set(deviceId, setInterval(() => void this.poll(device), HOME_ASSISTANT_POLL_INTERVAL_MS));
   }
 
   private async poll(device: Device): Promise<void> {
     const generation = this.generationOf(device.id);
     try {
-      await this.refresh(device, new HomeAssistantClient(requireConfig(device)));
+      await this.refresh(device, clientFor(device));
     } catch {
       if (generation === this.generationOf(device.id)) this.markUnreachable(device);
     }

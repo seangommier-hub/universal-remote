@@ -130,6 +130,17 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  { name: "ha-sync", screen: "ha-sync", assertFit: false },
+  {
+    name: "ha-sync-untick",
+    screen: "ha-sync",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Coffee Maker, selected").click();
+      await page.getByLabel("Toggle all in Garage").click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
   {
     name: "remote-lg-keypad",

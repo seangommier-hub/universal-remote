@@ -100,10 +100,10 @@ describe("commandToServiceCall", () => {
 });
 
 describe("buildHomeAssistantDevice", () => {
-  test("stores the normalized URL, token and entity id in config with the entity's capabilities", () => {
+  test("references the shared instance and entity id, holds no token, and keeps the entity's capabilities", () => {
     const [imported] = importSupportedEntities([entity("light.a", "on", { supported_color_modes: ["brightness"] })]);
-    const device = buildHomeAssistantDevice(imported, "homeassistant.local", " secret ", 1);
-    expect(device.config).toEqual({ baseUrl: "http://homeassistant.local:8123", token: "secret", entityId: "light.a" });
+    const device = buildHomeAssistantDevice(imported, { id: "ha-http-homeassistant.local-8123", baseUrl: "http://homeassistant.local:8123", token: "secret" }, 1);
+    expect(device.config).toEqual({ instanceId: "ha-http-homeassistant.local-8123", entityId: "light.a" });
     expect(device.category).toBe("lighting");
     expect(device.capabilities).toEqual(["power", "setBrightness"]);
   });
