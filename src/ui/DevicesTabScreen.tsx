@@ -14,6 +14,7 @@ import { VacuumControlScreen } from "./VacuumControlScreen";
 import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
+import { WhatLeavesYourHouseScreen } from "./WhatLeavesYourHouseScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
 import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { PairInvite } from "../discovery/pairInvite";
@@ -36,6 +37,7 @@ export type DevicesScreen =
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
+  | { name: "fcc-privacy" }
   | { name: "fcc-join"; invite?: PairInvite }
   | { name: "fcc-remote" }
   | { name: "edit-address"; device: Device }
@@ -251,10 +253,14 @@ export function DevicesTabScreen({
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "list" })}
           onJoinWithCode={() => setScreen({ name: "fcc-join" })}
+          onOpenPrivacy={() => setScreen({ name: "fcc-privacy" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
         />
+      )}
+      {screen.name === "fcc-privacy" && (
+        <WhatLeavesYourHouseScreen devices={devices} onDone={() => setScreen({ name: "fcc-settings" })} />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "edit-activity" && (

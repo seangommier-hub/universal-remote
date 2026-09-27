@@ -15,6 +15,7 @@ interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
   onSaved: () => void;
   onJoinWithCode: () => void;
+  onOpenPrivacy: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
   onDeviceUpdated: (device: Device) => void;
@@ -27,7 +28,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, onOpenPrivacy, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -146,6 +147,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
       {status === "checking" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
 
       <CapabilityButton label="Join with a code instead" variant="ghost" onPress={onJoinWithCode} disabled={status === "checking"} />
+      <CapabilityButton label="What leaves your house" icon="eye-outline" variant="ghost" onPress={onOpenPrivacy} disabled={status === "checking"} />
       {alreadyConnected && <InviteSomeonePanel />}
 
       <DeviceSharePanel devices={devices} onDeviceAdded={onDeviceAdded} onDeviceUpdated={onDeviceUpdated} />
