@@ -5,6 +5,7 @@ import { buildDeviceListModel, DeviceListModel, sectionMateIds } from "../core/l
 import { moveWithinGroup } from "../core/layout/deviceOrdering";
 import { Device } from "../core/types/Device";
 import { devicesVisibleInMode, toggleKidAllowed } from "../core/kidMode/kidModeFilter";
+import { devicesVisibleToGuest, toggleGuestAllowed } from "../core/guestMode/guestModeFilter";
 import { demoDeviceLayout } from "../demo/demoDeviceLayout";
 import { loadDeviceLayout, saveDeviceLayout } from "../runtime/deviceLayoutPersistence";
 
@@ -20,15 +21,23 @@ export interface DeviceLayoutControls {
   toggleRoom: (key: string) => void;
   /** ADR-HEARTH-176: allows or disallows the device in kid mode. */
   toggleKidAllowedFor: (device: Device) => void;
+  /** ADR-HEARTH-189: allows or disallows the device for a guest-role phone. */
+  toggleGuestAllowedFor: (device: Device) => void;
   move: (device: Device, direction: "up" | "down") => void;
   /** Whether the device has a neighbor to swap with in that direction within its section. */
   canMove: (device: Device, direction: "up" | "down") => boolean;
 }
 
-/** This phone's saved rooms, favorites and order, applied to the devices shown (only the kid-allowed ones when `kidRestricted`); changes save at once. */
-export function useDeviceLayout(devices: Device[], kidRestricted = false): DeviceLayoutControls {
+/** This phone's saved rooms, favorites and order, applied to the devices shown (only the kid-allowed
+ * ones when `kidRestricted`, or only the guest-allowed ones when `guestRestricted` -- a phone is
+ * never expected to be both, but if it somehow were, each filter only narrows further, never
+ * leaks); changes save at once. */
+export function useDeviceLayout(devices: Device[], kidRestricted = false, guestRestricted = false): DeviceLayoutControls {
   const [layout, setLayout] = useState<DeviceLayout>(() => demoDeviceLayout(devices) ?? emptyLayout());
-  const visibleDevices = useMemo(() => devicesVisibleInMode(devices, layout.kidAllowed, kidRestricted), [devices, layout.kidAllowed, kidRestricted]);
+  const visibleDevices = useMemo(() => {
+    const afterKid = devicesVisibleInMode(devices, layout.kidAllowed, kidRestricted);
+    return devicesVisibleToGuest(afterKid, layout.guestAllowed, guestRestricted);
+  }, [devices, layout.kidAllowed, layout.guestAllowed, kidRestricted, guestRestricted]);
   const model = useMemo(() => buildDeviceListModel(visibleDevices, layout), [visibleDevices, layout]);
 
   useEffect(() => {
@@ -51,6 +60,7 @@ export function useDeviceLayout(devices: Device[], kidRestricted = false): Devic
   const toggleFavoriteFor = useCallback((device: Device) => update((l) => toggleFavorite(l, device.id)), [update]);
   const toggleRoom = useCallback((key: string) => update((l) => toggleRoomCollapsed(l, key)), [update]);
   const toggleKidAllowedFor = useCallback((device: Device) => update((l) => ({ ...l, kidAllowed: toggleKidAllowed(l.kidAllowed, device.id) })), [update]);
+  const toggleGuestAllowedFor = useCallback((device: Device) => update((l) => ({ ...l, guestAllowed: toggleGuestAllowed(l.guestAllowed, device.id) })), [update]);
   const move = useCallback(
     (device: Device, direction: "up" | "down") => update((l) => ({ ...l, order: moveWithinGroup(l, devices, sectionMateIds(buildDeviceListModel(devices, l), device.id), device.id, direction) })),
     [update, devices]
@@ -64,5 +74,5 @@ export function useDeviceLayout(devices: Device[], kidRestricted = false): Devic
     [model]
   );
 
-  return { layout, visibleDevices, model, setRoom, toggleFavoriteFor, toggleRoom, toggleKidAllowedFor, move, canMove };
+  return { layout, visibleDevices, model, setRoom, toggleFavoriteFor, toggleRoom, toggleKidAllowedFor, toggleGuestAllowedFor, move, canMove };
 }

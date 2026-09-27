@@ -345,6 +345,28 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  {
+    name: "household-phones",
+    screen: "fcc-household-phones",
+    assertFit: false,
+    settleMs: 1200,
+    steps: async (page) => {
+      await page.waitForSelector("text=Leah's iPhone");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "household-phones-guest-invite",
+    screen: "fcc-household-phones",
+    assertFit: false,
+    settleMs: 1200,
+    steps: async (page) => {
+      await page.waitForSelector("text=Leah's iPhone");
+      await page.getByText("Create guest invite", { exact: true }).click();
+      await page.waitForSelector("text=K7M2QX9P");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "post-add",screen: "post-add:lg", assertFit: false },
   { name: "setup-checks", screen: "setup-checks:lg", assertFit: false },
   { name: "add-govee", screen: "add:govee", assertFit: false },

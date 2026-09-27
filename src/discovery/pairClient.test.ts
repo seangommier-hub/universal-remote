@@ -64,4 +64,16 @@ describe("createPairInvite", () => {
     expect(url).toBe("http://192.168.1.5:3210/api/integrations/hearth/pair/code");
     expect(init).toEqual(expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer tok" } }));
   });
+
+  // ADR-HEARTH-189, phase 2: an owner requests a guest invite by passing guestHours.
+  test("passing guestHours asks for a guest invite with a JSON body", async () => {
+    const invite = { code: "K7M2QX9P", expiresAt: "2026-09-26T12:10:00.000Z", publicBaseUrl: null, baseUrl: "http://192.168.1.5:3210" };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => invite });
+
+    await createPairInvite("http://192.168.1.5:3210", "tok", 6);
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(init.headers).toEqual({ Authorization: "Bearer tok", "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toEqual({ role: "guest", guestHours: 6 });
+  });
 });

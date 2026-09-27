@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import {
   FamilyCommandCenterVerificationError,
   loadFamilyCommandCenterConfig,
+  saveOwnRole,
   verifyAndSaveFamilyCommandCenterConfig,
   verifyAndSavePublicUrl,
 } from "./familyCommandCenterConfig";
@@ -149,5 +150,44 @@ describe("loadFamilyCommandCenterConfig / verifyAndSavePublicUrl", () => {
 
     await expect(verifyAndSavePublicUrl("https://hearth-relay.carddna.app")).rejects.toThrow(/rejected/);
     expect(AsyncStorage.setItem).not.toHaveBeenCalledWith("hearth.fcc.publicBaseUrl", expect.anything());
+  });
+});
+
+// ADR-HEARTH-189, phase 2: this phone's own cached household role.
+describe("role (ADR-HEARTH-189)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("loadFamilyCommandCenterConfig returns role as undefined when none was ever saved", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");
+
+    expect((await loadFamilyCommandCenterConfig())?.role).toBeUndefined();
+  });
+
+  test("loadFamilyCommandCenterConfig reads back a saved role", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) =>
+      Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : key === "hearth.fcc.role" ? "guest" : null)
+    );
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");
+
+    expect((await loadFamilyCommandCenterConfig())?.role).toBe("guest");
+  });
+
+  test("saveOwnRole attaches a role to an already-saved config", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");
+
+    await expect(saveOwnRole("owner")).resolves.toBe(true);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.role", "owner");
+  });
+
+  test("saveOwnRole is a no-op, returning false, when there's no saved config yet", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValue(null);
+
+    await expect(saveOwnRole("owner")).resolves.toBe(false);
+    expect(AsyncStorage.setItem).not.toHaveBeenCalledWith("hearth.fcc.role", expect.anything());
   });
 });

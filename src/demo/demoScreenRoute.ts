@@ -23,6 +23,7 @@ export function resolveDemoScreen(param: string | null, devices: Device[]): Devi
     case "discover":
     case "fcc-settings":
     case "fcc-privacy":
+    case "fcc-household-phones":
       return { name };
     case "activity-editor":
       return { name: "edit-activity", editingActivity: demoActivities()[0] };
