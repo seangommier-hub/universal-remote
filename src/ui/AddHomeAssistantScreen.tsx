@@ -12,6 +12,11 @@ import { HaImportCandidate, buildImportCandidates, roomForCandidate } from "../d
 import { loadImportData } from "../drivers/homeAssistant/haImportData";
 import { listHaInstances } from "../drivers/homeAssistant/haInstanceRegistry";
 import { saveHaInstance } from "../drivers/homeAssistant/haInstanceStore";
+import { scheduleHaOAuthRefresh } from "../drivers/homeAssistant/haOAuthRefreshScheduler";
+import { signInWithHomeAssistant } from "../drivers/homeAssistant/haOAuthSignIn";
+import { HaOAuthState } from "../drivers/homeAssistant/haOAuthState";
+import { getHaOAuthState } from "../drivers/homeAssistant/haOAuthStateRegistry";
+import { saveHaOAuthState } from "../drivers/homeAssistant/haOAuthStateStore";
 import { prepareHaImport } from "../runtime/haBulkImport";
 import { applyImportedRooms } from "../runtime/haImportRooms";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
@@ -71,15 +76,56 @@ export function AddHomeAssistantScreen({ driverRegistry, onCancel, onAdded, exis
     return demo ? { name: "syncing", candidates: demo, areasUnavailable: false, importing: false, error: null } : { name: "entering-credentials" };
   });
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  // Re-read on every render rather than cached in state: the registry is the source of truth and can change from
+  // elsewhere (e.g. the refresh scheduler marking needsSignIn while this screen happens to be open).
+  const savedOAuthState: HaOAuthState | undefined = saved ? getHaOAuthState(saved.id) : undefined;
 
   if (showSetupGuide) return <DeviceSetupGuideScreen guide={HOME_ASSISTANT_SETUP_GUIDE} onDone={() => setShowSetupGuide(false)} />;
+
+  async function findDevicesWithToken(accessToken: string) {
+    const { states, registries } = await loadImportData(url, accessToken);
+    const candidates = buildImportCandidates(states, registries, addedEntityIds(existingDevices));
+    setPhase({ name: "picking", candidates, areasUnavailable: registries === null });
+  }
 
   async function handleFindDevices() {
     setPhase({ name: "connecting" });
     try {
-      const { states, registries } = await loadImportData(url, token.trim());
-      const candidates = buildImportCandidates(states, registries, addedEntityIds(existingDevices));
-      setPhase({ name: "picking", candidates, areasUnavailable: registries === null });
+      await findDevicesWithToken(token.trim());
+    } catch (err) {
+      setPhase({ name: "error", message: messageOf(err) });
+    }
+  }
+
+  /** "Sign in with Home Assistant" (ADR-HEARTH-190, Track A step 7 of ADR-HEARTH-174): an alternative to pasting a long-lived token, never a replacement for it. */
+  async function handleSignIn() {
+    if (!url.trim()) {
+      setPhase({ name: "error", message: "Enter the Home Assistant address first." });
+      return;
+    }
+    setPhase({ name: "connecting" });
+    const result = await signInWithHomeAssistant(url);
+    if (result.status === "cancelled") {
+      setPhase({ name: "entering-credentials" });
+      return;
+    }
+    if (result.status === "error") {
+      setPhase({ name: "error", message: result.message });
+      return;
+    }
+    try {
+      const instance = await saveHaInstance(url, result.tokens.accessToken);
+      const oauthState: HaOAuthState = {
+        instanceId: instance.id,
+        refreshToken: result.tokens.refreshToken,
+        issuedAt: result.tokens.issuedAt,
+        expiresAt: result.tokens.expiresAt,
+        needsSignIn: false,
+      };
+      await saveHaOAuthState(oauthState);
+      scheduleHaOAuthRefresh(instance.baseUrl, oauthState);
+      setToken(result.tokens.accessToken);
+      await findDevicesWithToken(result.tokens.accessToken);
     } catch (err) {
       setPhase({ name: "error", message: messageOf(err) });
     }
@@ -154,6 +200,15 @@ export function AddHomeAssistantScreen({ driverRegistry, onCancel, onAdded, exis
         <TextInput style={styles.input} value={url} onChangeText={setUrl} placeholder={HOME_ASSISTANT_URL_PLACEHOLDER} placeholderTextColor={theme.textTertiary} autoCapitalize="none" autoCorrect={false} keyboardType="url" editable={!busy} />
         <Text style={styles.label}>Long-lived access token</Text>
         <TextInput style={styles.input} value={token} onChangeText={setToken} placeholder="Paste the token you created" placeholderTextColor={theme.textTertiary} autoCapitalize="none" autoCorrect={false} secureTextEntry editable={!busy} />
+        <Text style={styles.hint}>Or, if this Home Assistant supports it:</Text>
+        <CapabilityButton label="Sign in with Home Assistant" variant="ghost" onPress={() => void handleSignIn()} disabled={!url.trim() || busy} />
+
+        {savedOAuthState?.needsSignIn && (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
+            <Text style={styles.error}>Your Home Assistant sign-in expired. Sign in again above to keep syncing.</Text>
+          </View>
+        )}
 
         {phase.name === "error" && (
           <View style={styles.errorCard}>
