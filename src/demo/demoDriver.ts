@@ -4,7 +4,8 @@ import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { MediaBrowseNode } from "../core/types/MediaBrowse";
 import { SnapshotImage } from "../core/types/Snapshot";
-import { DEMO_CAMERA_SNAPSHOT, applyEntityCommand, demoBrowseMedia } from "./demoEntityDevices";
+import { applyEntityCommand, demoBrowseMedia } from "./demoEntityDevices";
+import { demoSnapshotFor } from "./demoFccCameras";
 import { DEMO_DEVICE_SCRIPTS, DemoDeviceScript } from "./demoHousehold";
 
 const VOLUME_STEP = 2;
@@ -52,9 +53,11 @@ export function createDemoDriver(real: DeviceDriver, scripts: Record<string, Dem
     displayName: real.displayName,
     hasDynamicCapabilities: real.hasDynamicCapabilities,
     getCapabilities: () => real.getCapabilities(),
-    // ADR-HEARTH-182: forwarded only when the wrapped driver actually implements them (Home Assistant), same
-    // optional-passthrough pattern as hasDynamicCapabilities above. Real network access stays disabled either way.
-    ...(real.fetchSnapshot ? { fetchSnapshot: async (): Promise<SnapshotImage> => DEMO_CAMERA_SNAPSHOT } : {}),
+    // ADR-HEARTH-182/191: forwarded only when the wrapped driver actually implements them (Home
+    // Assistant, Family Command Center cameras), same optional-passthrough pattern as
+    // hasDynamicCapabilities above. Real network access stays disabled either way — demoSnapshotFor
+    // routes per-device so a Ring camera with no snapshotUrl still renders as a placeholder here.
+    ...(real.fetchSnapshot ? { fetchSnapshot: async (device: Device): Promise<SnapshotImage> => demoSnapshotFor(device) } : {}),
     ...(real.browseMedia ? { browseMedia: async (_device: Device, mediaContentId?: string): Promise<MediaBrowseNode> => demoBrowseMedia(mediaContentId) } : {}),
 
     async connect(device: Device): Promise<void> {

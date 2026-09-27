@@ -210,6 +210,7 @@ export function DevicesTabScreen({
           device={screen.device}
           commandEngine={runtime.commandEngine}
           stateStore={runtime.stateStore}
+          driverRegistry={runtime.driverRegistry}
           onReconnect={() => onReconnect(screen.device)}
           onRename={handleRename}
           onBack={() => setScreen({ name: "list" })}

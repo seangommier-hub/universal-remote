@@ -6,6 +6,7 @@ import { emptyLocalState } from "../core/activities/activityLocalState";
 import { createDemoDriver } from "./demoDriver";
 import { DEMO_FCC_BASE_URL, DEMO_FCC_TOKEN, installDemoFetch } from "./demoFetch";
 import { demoEntityDevicesForUrl } from "./demoEntityDevices";
+import { demoFccCameraDevicesForUrl } from "./demoFccCameras";
 import { demoActivities, demoDevices } from "./demoHousehold";
 
 /** Replaces every registered driver with its offline demo twin (same id and capabilities). */
@@ -24,7 +25,12 @@ export async function startDemoEnvironment(): Promise<void> {
   await saveActivityState({ ...emptyLocalState(), activities: demoActivities() });
 }
 
-/** The demo household's devices, loaded in place of the persisted list. */
+/** The demo household's devices, loaded in place of the persisted list. A camera screen
+ * (?screen=cameras or ?screen=remote:fcc-camera-*, ADR-HEARTH-191) gets ONLY the six demo Ring
+ * cameras — a focused, uncluttered screenshot — instead of joining the fixed six-device household
+ * the way `demoEntityDevicesForUrl`'s Home Assistant rows do. */
 export function loadDemoDevices(): Device[] {
+  const cameras = demoFccCameraDevicesForUrl();
+  if (cameras.length > 0) return cameras;
   return [...demoDevices(), ...demoEntityDevicesForUrl()];
 }

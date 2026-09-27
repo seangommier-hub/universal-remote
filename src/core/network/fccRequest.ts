@@ -14,9 +14,17 @@ interface Attempt {
   baseUrl: string;
 }
 
-function orderAttempts(config: FamilyCommandCenterConfig): Attempt[] {
+interface FccFetchOptions {
+  /** ADR-HEARTH-191: some routes (Family Command Center's Ring camera endpoints) only exist on
+   * the LAN — the Pi 404s them through the public tunnel by design, so falling back there would
+   * just trade an honest "unreachable" for a confusing 404. Skips `orderAttempts`'s public leg
+   * entirely, never touching `config.publicBaseUrl` even when it's configured and preferred. */
+  lanOnly?: boolean;
+}
+
+function orderAttempts(config: FamilyCommandCenterConfig, options: FccFetchOptions): Attempt[] {
   const lan: Attempt = { route: "lan", baseUrl: config.baseUrl };
-  if (!config.publicBaseUrl) return [lan];
+  if (options.lanOnly || !config.publicBaseUrl) return [lan];
   const publicAttempt: Attempt = { route: "public", baseUrl: config.publicBaseUrl };
   return shouldPreferPublicRoute() ? [publicAttempt, lan] : [lan, publicAttempt];
 }
@@ -62,7 +70,8 @@ export async function fccFetch(
   config: FamilyCommandCenterConfig,
   path: string,
   init: RequestInit = {},
-  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+  options: FccFetchOptions = {}
 ): Promise<Response> {
   const request: RequestInit = {
     ...init,
@@ -73,7 +82,7 @@ export async function fccFetch(
     },
   };
   let lastError: unknown;
-  const attempts = orderAttempts(config);
+  const attempts = orderAttempts(config, options);
   for (const [index, { route, baseUrl }] of attempts.entries()) {
     const isLastAttempt = index === attempts.length - 1;
     try {

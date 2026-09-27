@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { ConfirmationPrompt, confirmationFor } from "../core/engine/commandConfirmation";
+import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { CapabilityId } from "../core/types/Capability";
 import { Device, DeviceCategory } from "../core/types/Device";
@@ -28,6 +29,8 @@ interface EntityControlScreenProps {
   device: Device;
   commandEngine: CommandEngine;
   stateStore: StateStore;
+  /** ADR-HEARTH-191: forwarded to CameraControls only, to look up its own driver instance. */
+  driverRegistry: DriverRegistry;
   onReconnect: () => Promise<void>;
   onRename: (device: Device, newName: string) => void;
   onBack: () => void;
@@ -64,7 +67,7 @@ function availabilityText(state: DeviceState): string | null {
 }
 
 /** The generic control screen for Home Assistant covers, locks, climate, fans, sensors and run-once actions (ADR-HEARTH-178). */
-export function EntityControlScreen({ device, commandEngine, stateStore, onReconnect, onRename, onBack }: EntityControlScreenProps) {
+export function EntityControlScreen({ device, commandEngine, stateStore, driverRegistry, onReconnect, onRename, onBack }: EntityControlScreenProps) {
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [editingName, setEditingName] = useState(false);
@@ -176,7 +179,9 @@ export function EntityControlScreen({ device, commandEngine, stateStore, onRecon
           </View>
         )}
 
-        {Controls && <Controls device={device} state={state} disabled={!isConnected} onPress={press} fetchSnapshot={(deviceId) => commandEngine.fetchSnapshot(deviceId)} />}
+        {Controls && (
+          <Controls device={device} state={state} disabled={!isConnected} onPress={press} fetchSnapshot={(deviceId) => commandEngine.fetchSnapshot(deviceId)} driverRegistry={driverRegistry} />
+        )}
       </ScrollView>
     </View>
   );

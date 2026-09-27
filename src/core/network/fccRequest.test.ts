@@ -59,6 +59,26 @@ describe("fccFetch", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  // ADR-HEARTH-191: the Ring camera routes only exist on the LAN — the Pi 404s them through the
+  // public tunnel by design, so `lanOnly` must skip that leg entirely, even with a public address
+  // configured and even in away mode (where the public leg would otherwise be tried first).
+  describe("lanOnly", () => {
+    test("never tries the public address, even when one is configured", async () => {
+      (global.fetch as jest.Mock).mockRejectedValue(new TypeError("Network request failed"));
+      await expect(fccFetch(CONFIG, PATH, {}, DEFAULT_FETCH_TIMEOUT_MS, { lanOnly: true })).rejects.toBeInstanceOf(FccUnreachableError);
+      expect(urlsCalled()).toEqual([`${LAN_URL}${PATH}`]);
+    });
+
+    test("still skips the public address after away-mode memory would otherwise prefer it", async () => {
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError("down")).mockResolvedValueOnce(ok());
+      await fccFetch(CONFIG, PATH); // learns "away"
+      (global.fetch as jest.Mock).mockClear();
+      (global.fetch as jest.Mock).mockResolvedValue(ok());
+      await fccFetch(CONFIG, PATH, {}, DEFAULT_FETCH_TIMEOUT_MS, { lanOnly: true });
+      expect(urlsCalled()).toEqual([`${LAN_URL}${PATH}`]);
+    });
+  });
+
   describe("away-mode memory", () => {
     beforeEach(async () => {
       (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError("down")).mockResolvedValueOnce(ok());
