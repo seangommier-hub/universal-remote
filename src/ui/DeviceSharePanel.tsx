@@ -65,7 +65,11 @@ export function DeviceSharePanel({ devices, onDeviceAdded, onDeviceUpdated }: De
           <Text style={[styles.hint, { flex: 1 }]} numberOfLines={1}>
             {device.name}
           </Text>
-          <Switch value={isShared(device)} onValueChange={(value) => onDeviceUpdated({ ...device, shared: value })} />
+          <Switch
+            value={isShared(device)}
+            onValueChange={(value) => onDeviceUpdated({ ...device, shared: value })}
+            accessibilityLabel={`Share ${device.name}`}
+          />
         </View>
       ))}
 

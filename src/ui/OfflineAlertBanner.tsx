@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect } from "react";
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from "react-native";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
@@ -23,12 +24,20 @@ function canWake(device: Device, driverRegistry: DriverRegistry): boolean {
 /** Calm, dismissible one-line banner for a silent failure: the relay not answering, or a device that has stopped answering (ADR-HEARTH-172). Renders nothing while healthy. */
 export function OfflineAlertBanner({ devices, stateStore, driverRegistry, commandEngine, fccConfigured, onReconnect }: OfflineAlertBannerProps) {
   const { alert, dismiss, recheckFcc } = useOfflineAlert({ devices, stateStore, fccConfigured });
+  // ADR-HEARTH-180: this banner can appear, change message (relay unreachable -> a specific
+  // device gone silent) or disappear with nobody looking at the screen — accessibilityRole="alert"
+  // alone isn't a reliable cross-platform announcement trigger, so an explicit
+  // announceForAccessibility call covers VoiceOver (iOS) while accessibilityLiveRegion below covers
+  // TalkBack (Android) for the same text change.
+  useEffect(() => {
+    if (alert) AccessibilityInfo.announceForAccessibility(alert.message);
+  }, [alert?.message]);
   if (!alert) return null;
   const device = alert.kind === "device" ? devices.find((candidate) => candidate.id === alert.deviceId) : undefined;
   const showWake = device !== undefined && canWake(device, driverRegistry);
 
   return (
-    <View style={styles.banner} accessibilityRole="alert">
+    <View style={styles.banner} accessibilityRole="alert" accessibilityLiveRegion="polite">
       <Ionicons name={alert.kind === "fcc" ? "cloud-offline-outline" : "time-outline"} size={16} color={theme.textTertiary} />
       <Text style={styles.text}>{alert.message}</Text>
       {alert.kind === "fcc" && <ActionButton label="Retry" onPress={recheckFcc} />}

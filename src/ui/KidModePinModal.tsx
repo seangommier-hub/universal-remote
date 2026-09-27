@@ -97,8 +97,12 @@ export function KidModePinModal({ visible, mode, vault, onSuccess, onCancel }: K
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={modal.backdrop} onPress={onCancel}>
-        <Pressable style={modal.card} onPress={(e) => e.stopPropagation()}>
+      {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults to
+          accessible=true, which collapses every descendant into ONE opaque VoiceOver/TalkBack node
+          — without this, the PIN field, Next/Unlock button and Cancel link inside would never be
+          individually reachable by a screen reader, only the whole modal as one unlabeled blob. */}
+      <Pressable style={modal.backdrop} onPress={onCancel} accessible={false}>
+        <Pressable style={modal.card} onPress={(e) => e.stopPropagation()} accessible={false}>
           <Text style={modal.title}>{title}</Text>
           <Text style={styles.help}>{help}</Text>
           {step === "forgot" ? (

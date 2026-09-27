@@ -219,12 +219,22 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
 
       {status === "connected" && (
         <>
+          {/* ADR-HEARTH-180 (known, documented limitation): a free-form drag gesture has no real
+              VoiceOver-compatible equivalent — when VoiceOver is on, iOS intercepts standard touch
+              gestures for its own navigation, so this surface's raw drag-to-move won't reach the
+              responder handlers below at all. The label/hint at least announce what the control is
+              and point at the arrow-key keyboard (fully accessible CapabilityButtons) as the
+              working alternative for someone using VoiceOver, rather than leaving an unlabeled,
+              silently-non-functional surface. */}
           <View
             style={styles.trackpad}
             onStartShouldSetResponder={() => true}
             onResponderGrant={handleTrackpadGrant}
             onResponderMove={handleTrackpadMove}
             onResponderRelease={handleTrackpadRelease}
+            accessible
+            accessibilityLabel="Trackpad"
+            accessibilityHint="Drag to move the cursor, tap to click. If you can't drag with VoiceOver on, open the keyboard below and use its arrow keys instead."
           >
             <Text style={styles.trackpadHint}>Drag to move • Tap to click</Text>
           </View>

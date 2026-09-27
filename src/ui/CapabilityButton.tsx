@@ -47,6 +47,12 @@ interface CapabilityButtonProps {
    * existing call site is unaffected. No effect on shape="circle", which is a single glyph/digit
    * and never has this problem. */
   numberOfLines?: number;
+  /** ADR-HEARTH-180: marks this button as the "on" state of a toggle (e.g. Mute, the active
+   * remote-tab, the currently-selected input/source, an armed sleep timer) — passed straight
+   * through to accessibilityState.selected so VoiceOver/TalkBack announce "selected" the same
+   * way sighted users read the accent-colored variant. Undefined (the default) omits the state
+   * entirely, exactly as before this prop existed, for every plain action button. */
+  selected?: boolean;
 }
 
 /** A single tappable control in a Universal remote screen. Rendering which of these appear is the UI's only per-device logic — everything else comes from the device's declared capabilities. */
@@ -62,6 +68,7 @@ export function CapabilityButton({
   containerStyle,
   scale = 1,
   numberOfLines,
+  selected,
 }: CapabilityButtonProps) {
   const isCircle = shape === "circle";
   const isLarge = isCircle && size === "lg";
@@ -88,6 +95,7 @@ export function CapabilityButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={selected === undefined ? undefined : { selected }}
       style={({ pressed }) => [
         styles.button,
         isCircle && styles.circleButton,

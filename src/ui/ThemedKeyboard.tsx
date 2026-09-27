@@ -58,6 +58,7 @@ export function ThemedKeyboard({ value, onChange, onDone }: ThemedKeyboardProps)
               style={[styles.key, styles.wideKey, shift && styles.keyActive]}
               accessibilityRole="button"
               accessibilityLabel="Shift"
+              accessibilityState={{ selected: shift }}
             >
               <Ionicons name="arrow-up-outline" size={18} color={shift ? theme.background : theme.textPrimary} />
             </Pressable>
