@@ -70,9 +70,9 @@ describe("joinHousehold", () => {
 
     await joinHousehold({ code: "K7M2QX9P", server: PUBLIC });
 
-    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith("hearth.fcc.publicBaseUrl", PUBLIC);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.publicBaseUrl", PUBLIC);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.baseUrl", LAN);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("hearth.fcc.token", "tok");
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith("hearth.fcc.tokenKind", "personal");
+    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith("hearth.fcc.tokenKind", "personal");
   });
 });
