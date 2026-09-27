@@ -9,3 +9,4 @@ export const WAIT_TIMEOUT_MAX_MS = 120_000;
 export const DEFAULT_DELAY_MS = 3_000;
 export const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 export const MAX_RETRIES = 3;
+export const MAX_SCHEDULES_PER_ACTIVITY = 10;

@@ -208,6 +208,17 @@ export const SCENARIOS = [
     },
   },
   { name: "activity-editor", screen: "activity-editor", assertFit: false },
+  {
+    name: "activity-editor-schedule",
+    screen: "activity-scheduled",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Schedule (optional)", { exact: true }).scrollIntoViewIfNeeded();
+      await page.getByLabel("Add a schedule").click();
+      await page.getByLabel("Fri").last().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
   {
     name: "fcc-settings-activity",

@@ -11,3 +11,8 @@ export function setFccConnection(next: FccConnection | null): void {
 export async function loadFamilyCommandCenterConfig(): Promise<FccConnection | null> {
   return connection;
 }
+
+/** Demo-mode only (src/demo/demoRuntime.ts); the runner is never in demo mode, so reaching this is a bug and fails loudly. */
+export async function saveFamilyCommandCenterConfig(): Promise<void> {
+  throw new Error("The runner never saves Family Command Center config; it is read-only from its own config file.");
+}

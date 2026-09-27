@@ -7,10 +7,12 @@ import { ACTIVITY_NAME_MAX } from "../core/activities/activityLimits";
 import { validateActivity } from "../core/activities/activityModel";
 import { appendStep, moveStep, newActivityDraft, newDelayStep, newWaitStep, removeStepAt, replaceStep } from "../core/activities/activityStepEditing";
 import { StateStore } from "../core/state/StateStore";
-import { Activity, ActivityStep } from "../core/types/Activity";
+import { unsupportedHeadlessSteps } from "../core/activities/headlessSupport";
+import { Activity, ActivitySchedule, ActivityStep } from "../core/types/Activity";
 import { Device } from "../core/types/Device";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { ActivityResultsCard } from "./ActivityResultsCard";
+import { ActivityScheduleSection } from "./ActivityScheduleSection";
 import { ActivityStepRow } from "./ActivityStepRow";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
@@ -46,16 +48,23 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(editingActivity?.name ?? "");
   const [steps, setSteps] = useState<ActivityStep[]>(editingActivity?.steps ?? []);
+  const [schedules, setSchedules] = useState<ActivitySchedule[]>(editingActivity?.schedules ?? []);
   const [draftId] = useState(() => editingActivity?.id ?? newActivityId());
   const isEditing = editingActivity !== undefined;
   const inputsOf = (deviceId: string) => stateStore.get(deviceId).values.inputs;
 
   function buildDraft(): Activity {
     const base = editingActivity ?? newActivityDraft(draftId, name, steps, new Date().toISOString());
-    return { ...base, name: name.trim(), steps };
+    const keepsSchedules = schedules.length > 0 || editingActivity?.schedules !== undefined;
+    return { ...base, name: name.trim(), steps, ...(keepsSchedules ? { schedules } : {}) };
   }
 
-  const draftProblem = validateActivity({ ...(editingActivity ?? newActivityDraft("draft", name, steps, "")), name, steps });
+  const driverIdOf = (deviceId: string) => devices.find((device) => device.id === deviceId)?.driverId;
+  const skippedStepNotes = unsupportedHeadlessSteps({ ...newActivityDraft("draft", name, steps, ""), steps }, driverIdOf).map(
+    ({ index, reason }) => `Step ${index + 1} will be skipped on a schedule: ${reason}.`
+  );
+
+  const draftProblem = validateActivity({ ...(editingActivity ?? newActivityDraft("draft", name, steps, "")), name, steps, schedules });
   const isRunning = progress !== null;
   const inlineRun = lastRun && lastRun.surface === "inline" && lastRun.activity.id === draftId ? lastRun : null;
   const usableDevices = devices.filter((device) => commandChoicesFor(device, inputsOf(device.id)).length > 0);
@@ -123,6 +132,8 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
             </View>
           </View>
         ))}
+
+        <ActivityScheduleSection schedules={schedules} onChange={setSchedules} newId={newActivityId} skippedStepNotes={skippedStepNotes} />
 
         {draftProblem && steps.length > 0 && <Text style={editorStyles.problem}>{draftProblem}</Text>}
         {isRunning && (

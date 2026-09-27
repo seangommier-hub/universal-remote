@@ -33,12 +33,22 @@ export interface WaitForStep {
 
 export type ActivityStep = CommandStep | DelayStep | WaitForStep;
 
+/** One repeating time an Activity runs on its own on the Family Command Center (ADR-HEARTH-177). `days` are 0 (Sunday) to 6 (Saturday); `at` is "HH:MM" 24-hour in the Pi's timezone. */
+export interface ActivitySchedule {
+  id: string;
+  days: number[];
+  at: string;
+  enabled: boolean;
+}
+
 /** A named, ordered, household-shared sequence of steps, e.g. "Movie Night" (ADR-HEARTH-150). `version` is the last server version this copy is based on (0 = never synced). */
 export interface Activity {
   id: string;
   name: string;
   icon?: string;
   steps: ActivityStep[];
+  /** Optional automatic run times (ADR-HEARTH-177); absent on activities saved before schedules existed. */
+  schedules?: ActivitySchedule[];
   version: number;
   updatedAt: string;
   updatedBy?: string;

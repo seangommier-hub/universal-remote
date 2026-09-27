@@ -71,7 +71,9 @@ async function fetchSnapshot(): Promise<ActivitiesSnapshot> {
 }
 
 async function putActivity(activity: Activity, baseVersion: number): Promise<PutActivityOutcome> {
-  const response = await request(`${ACTIVITIES_PATH}/${encodeURIComponent(activity.id)}`, jsonInit("PUT", { ...activity, baseVersion }));
+  // The Pi's schema is strict: it takes only the editable fields plus baseVersion, and rejects id/version/updatedAt with a 400.
+  const { id, version: _version, updatedAt: _updatedAt, ...editable } = activity;
+  const response = await request(`${ACTIVITIES_PATH}/${encodeURIComponent(id)}`, jsonInit("PUT", { ...editable, baseVersion }));
   if (response.status === HTTP_CONFLICT) return { kind: "conflict", server: unwrapActivity(await response.json()) };
   if (!response.ok) throw new ActivitiesRequestError(`Family Command Center returned ${response.status}.`);
   return { kind: "saved", activity: unwrapActivity(await response.json()) };

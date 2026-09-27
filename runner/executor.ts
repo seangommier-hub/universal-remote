@@ -23,7 +23,7 @@ export class DeviceExecutor {
 
   /** Runs one capability on one device; never throws, failures come back as a CommandResult. */
   async execute(deviceId: string, capability: CapabilityId, args?: Record<string, unknown>): Promise<CommandResult> {
-    const connectError = await this.ensureConnected(deviceId);
+    const connectError = await this.connect(deviceId);
     if (connectError) {
       return { success: false, deviceId, capability, timestamp: Date.now(), error: { code: "driver_error", message: connectError } };
     }
@@ -43,7 +43,7 @@ export class DeviceExecutor {
   /** Connects every device now so heartbeats, reconnects and state pushes run without waiting for a command. */
   async connectAll(): Promise<void> {
     const ids = this.runtime.deviceRegistry.list().map((device) => device.id);
-    await Promise.all(ids.map((id) => this.ensureConnected(id)));
+    await Promise.all(ids.map((id) => this.connect(id)));
   }
 
   /** Disconnects every device and stops state listeners. */
@@ -54,7 +54,8 @@ export class DeviceExecutor {
     );
   }
 
-  private async ensureConnected(deviceId: string): Promise<string | null> {
+  /** Connects the device if needed; resolves to an error message, or null when connected (or unknown to the runner, which the engine reports itself). */
+  async connect(deviceId: string): Promise<string | null> {
     const device = this.runtime.deviceRegistry.get(deviceId);
     const driver = device && this.runtime.driverRegistry.get(device.driverId);
     if (!device || !driver) return null; // CommandEngine reports device_not_found / driver_not_found itself

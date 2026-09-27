@@ -49,7 +49,11 @@ test("putActivity sends the body with baseVersion to an encoded id path", async 
   const [, path, init] = fetchMock.mock.calls[0];
   expect(path).toBe("/api/integrations/hearth/activities/a%20b");
   expect(init.method).toBe("PUT");
-  expect(JSON.parse(init.body)).toMatchObject({ id: "a b", baseVersion: 2 });
+  const body = JSON.parse(init.body);
+  expect(body).toMatchObject({ baseVersion: 2, name: ACTIVITY.name });
+  expect(Object.keys(body)).not.toEqual(expect.arrayContaining(["id"]));
+  expect(body).not.toHaveProperty("version");
+  expect(body).not.toHaveProperty("updatedAt");
   expect(outcome).toEqual({ kind: "saved", activity: { ...ACTIVITY, version: 3 } });
 });
 

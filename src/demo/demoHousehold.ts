@@ -71,6 +71,21 @@ function activity(id: string, name: string, icon: string, steps: Activity["steps
   return { id, name, icon, steps, version: 1, updatedAt: FIXED_TIMESTAMP, updatedBy: "Demo" };
 }
 
+/** A scheduled Activity for the editor's Schedule section: school-night bedtime plus a paused weekend schedule; the Samsung volume step cannot run unattended, so its warning shows. */
+export function demoBedtimeActivity(): Activity {
+  return {
+    ...activity("demo-bedtime", "Bedtime", "moon-outline", [
+      { kind: "command", deviceId: DEMO_LG_ID, capability: "powerOff" },
+      { kind: "delay", ms: 2000 },
+      { kind: "command", deviceId: DEMO_SAMSUNG_ID, capability: "volumeDown" },
+    ]),
+    schedules: [
+      { id: "demo-school-nights", days: [0, 1, 2, 3, 4], at: "20:30", enabled: true },
+      { id: "demo-weekend", days: [5, 6], at: "21:30", enabled: false },
+    ],
+  };
+}
+
 /** Household Activities shown on the Devices home and in the editor. */
 export function demoActivities(): Activity[] {
   return [

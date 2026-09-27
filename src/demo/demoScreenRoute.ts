@@ -1,7 +1,7 @@
 import { Device } from "../core/types/Device";
 import type { DevicesScreen } from "../ui/DevicesTabScreen";
 import { BrandId, isBrandId } from "../discovery/brandRegistry";
-import { demoActivities } from "./demoHousehold";
+import { demoActivities, demoBedtimeActivity } from "./demoHousehold";
 import { demoScreenParam } from "./demoMode";
 
 // ADR-HEARTH-157: demo-only deep entry (?demo=1&screen=...). The app navigates by internal state, not URLs.
@@ -25,6 +25,8 @@ export function resolveDemoScreen(param: string | null, devices: Device[]): Devi
       return { name };
     case "activity-editor":
       return { name: "edit-activity", editingActivity: demoActivities()[0] };
+    case "activity-scheduled":
+      return { name: "edit-activity", editingActivity: demoBedtimeActivity() };
     case "remote":
       return device ? { name: "remote", device } : null;
     case "post-add":

@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   setFccConnection(loadRunnerConfig(process.env));
   const executor = new DeviceExecutor(createHearthRuntime(), loadDevicesFile(devicesPath));
   const port = Number(process.env.HEARTH_RUNNER_PORT ?? DEFAULT_PORT);
-  const server = createRunnerServer(executor);
+  const server = createRunnerServer(executor, process.env.HEARTH_RUNNER_SECRET);
   server.listen(port, LOOPBACK_HOST, () => logger.info(LOG_SCOPE, `Listening on ${LOOPBACK_HOST}:${port}`));
 
   if (process.env.HEARTH_RUNNER_EAGER_CONNECT === "1") void executor.connectAll();
