@@ -14,6 +14,9 @@ import { shouldReconnectOnNetworkChange } from "./src/runtime/networkReconnectPo
 import { createHearthRuntime } from "./src/runtime/bootstrap";
 import { loadDevices, removeDevice, saveDevice } from "./src/runtime/persistence";
 import { hydrateHaInstances } from "./src/drivers/homeAssistant/haInstanceStore";
+import { getHaInstance } from "./src/drivers/homeAssistant/haInstanceRegistry";
+import { scheduleHaOAuthRefresh } from "./src/drivers/homeAssistant/haOAuthRefreshScheduler";
+import { hydrateHaOAuthStates } from "./src/drivers/homeAssistant/haOAuthStateStore";
 import { migrateHaDevices } from "./src/runtime/haDeviceMigration";
 import { startClientLogShipper } from "./src/runtime/clientLogShipper";
 import { startActivityLog } from "./src/runtime/startActivityLog";
@@ -199,6 +202,12 @@ function HearthApp() {
           persisted = loadDemoDevices();
         } else {
           await hydrateHaInstances(); // ADR-HEARTH-175: shared Home Assistant credentials must be known before any HA device connects
+          // ADR-HEARTH-190: an instance signed in via OAuth needs its proactive-refresh timer re-armed on every
+          // launch (the timer itself does not persist); one that only ever had a pasted token has no OAuth state.
+          (await hydrateHaOAuthStates()).forEach((state) => {
+            const instance = getHaInstance(state.instanceId);
+            if (instance) scheduleHaOAuthRefresh(instance.baseUrl, state);
+          });
           persisted = await migrateHaDevices(await loadDevices());
         }
         persisted.forEach((device) => {
