@@ -13,6 +13,6 @@ export function buildHomeAssistantDevice(entity: ImportedHaEntity, instance: HaI
     model: entity.domain,
     driverId: HOME_ASSISTANT_DRIVER_ID,
     capabilities: entity.capabilities,
-    config: { instanceId: instance.id, entityId: entity.entityId },
+    config: { instanceId: instance.id, entityId: entity.entityId, ...(entity.deviceClass ? { deviceClass: entity.deviceClass } : {}) },
   };
 }

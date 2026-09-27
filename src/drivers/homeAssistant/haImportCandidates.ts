@@ -69,9 +69,12 @@ export function groupByArea(candidates: HaImportCandidate[]): HaAreaGroup[] {
   });
 }
 
-/** The default checkbox state: everything supported that is not already a Hearth device. */
+/** Read-only sensors are offered but start unticked: a home can have hundreds and most are not worth a tile. */
+const OPT_IN_DOMAINS: readonly string[] = ["sensor", "binary_sensor"];
+
+/** The default checkbox state: everything supported that is not already a Hearth device, except opt-in sensors. */
 export function defaultSelection(candidates: HaImportCandidate[]): Set<string> {
-  return new Set(candidates.filter((candidate) => !candidate.alreadyAdded).map((candidate) => candidate.entityId));
+  return new Set(candidates.filter((candidate) => !candidate.alreadyAdded && !OPT_IN_DOMAINS.includes(candidate.domain)).map((candidate) => candidate.entityId));
 }
 
 /** The Hearth room a candidate's Home Assistant area becomes (ADR-HEARTH-173 layout), or "" for none. */

@@ -66,7 +66,8 @@ export function HomeAssistantSyncScreen({ candidates, areasUnavailable, busy, er
               ? "Everything Home Assistant can share with Hearth is already added."
               : `${plural(newCount, "new device")} found. Each Home Assistant area becomes a room in Hearth. Untick anything you do not want.`}
           </Text>
-          {areasUnavailable && <Text style={styles.hint}>Home Assistant's area list could not be read, so no rooms will be set.</Text>}
+          {candidates.some((c) => c.category === "sensor" && !c.alreadyAdded) && <Text style={styles.hint}>Sensors are unticked to start with. Tick the ones you want as read-only tiles.</Text>}
+          {areasUnavailable &&<Text style={styles.hint}>Home Assistant's area list could not be read, so no rooms will be set.</Text>}
         </View>
 
         {groups.map((group) => (
@@ -82,7 +83,7 @@ export function HomeAssistantSyncScreen({ candidates, areasUnavailable, busy, er
             ))}
           </View>
         ))}
-        {candidates.length === 0 && <Text style={styles.hint}>No switches, lights, media players or remotes were found in this Home Assistant.</Text>}
+        {candidates.length === 0 && <Text style={styles.hint}>Nothing that Hearth can control was found in this Home Assistant.</Text>}
 
         {error && (
           <View style={styles.errorCard}>

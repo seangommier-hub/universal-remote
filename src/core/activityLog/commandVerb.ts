@@ -47,6 +47,17 @@ const VERBS: Record<CapabilityId, string> = {
   vacuumStop: "stopped",
   vacuumDock: "docked",
   setSuctionPower: "changed the suction of",
+  open: "opened",
+  close: "closed",
+  stop: "stopped",
+  setPosition: "moved",
+  lock: "locked",
+  unlock: "unlocked",
+  trigger: "ran",
+  setTemperature: "changed the temperature on",
+  setHvacMode: "changed the mode on",
+  setFanSpeed: "changed the fan speed on",
+  setFanPreset: "changed the fan mode on",
 };
 
 /** Buttons pressed dozens of times while navigating; a successful press is not worth a line (failures still are). */

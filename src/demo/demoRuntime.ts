@@ -5,6 +5,7 @@ import { saveActivityState } from "../runtime/activityPersistence";
 import { emptyLocalState } from "../core/activities/activityLocalState";
 import { createDemoDriver } from "./demoDriver";
 import { DEMO_FCC_BASE_URL, DEMO_FCC_TOKEN, installDemoFetch } from "./demoFetch";
+import { demoEntityDevicesForUrl } from "./demoEntityDevices";
 import { demoActivities, demoDevices } from "./demoHousehold";
 
 /** Replaces every registered driver with its offline demo twin (same id and capabilities). */
@@ -25,5 +26,5 @@ export async function startDemoEnvironment(): Promise<void> {
 
 /** The demo household's devices, loaded in place of the persisted list. */
 export function loadDemoDevices(): Device[] {
-  return demoDevices();
+  return [...demoDevices(), ...demoEntityDevicesForUrl()];
 }

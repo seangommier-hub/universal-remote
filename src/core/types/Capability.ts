@@ -158,7 +158,20 @@ export type CapabilityId =
   | "vacuumStart"
   | "vacuumStop"
   | "vacuumDock"
-  | "setSuctionPower";
+  | "setSuctionPower"
+  // ADR-HEARTH-178: Home Assistant domains beyond switch/light/media_player/remote. Each id is used by
+  // haCommandMapping.ts and by the entity control screen, and by nothing else yet.
+  | "open"
+  | "close"
+  | "stop"
+  | "setPosition"
+  | "lock"
+  | "unlock"
+  | "trigger"
+  | "setTemperature"
+  | "setHvacMode"
+  | "setFanSpeed"
+  | "setFanPreset";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

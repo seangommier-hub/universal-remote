@@ -206,7 +206,7 @@ export const BRAND_REGISTRY: BrandEntry[] = [
   {
     id: "homeassistant", label: "Sync from Home Assistant", driverId: HOME_ASSISTANT_DRIVER_ID, manufacturer: "Home Assistant", category: "other", icon: "home-outline", defaultName: "Home Assistant device",
     addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false,
-    hint: "Adds your Home Assistant lights, switches, media players and remotes. Needs its address and a long-lived access token (Home Assistant profile > Security).",
+    hint: "Adds your Home Assistant lights, switches, covers, locks, climate, fans, vacuums, scenes and sensors. Needs its address and a long-lived access token (Home Assistant profile > Security).",
     vendorPattern: null, inAddPicker: true,
   },
 ];

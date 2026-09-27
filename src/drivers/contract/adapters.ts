@@ -122,8 +122,23 @@ const kasaResponder: Responder = (url) => (url.includes("sysinfo") ? { json: { r
 
 const smartThingsResponder: Responder = (url, init) => (init?.method === "POST" ? { json: {} } : { json: { outlets: [{ id: "st-1", state: "on" }] } });
 
-const homeAssistantResponder: Responder = (url, init) =>
-  init?.method === "POST" ? { json: [] } : url.includes("/api/states/") ? { json: { entity_id: "switch.lamp", state: "on", attributes: { friendly_name: "Lamp" } } } : { json: [] };
+const HA_CONTRACT_STATES: Record<string, { state: string; attributes: Record<string, unknown> }> = {
+  "switch.lamp": { state: "on", attributes: { friendly_name: "Lamp" } },
+  "cover.garage": { state: "closed", attributes: { friendly_name: "Garage", current_cover_position: 0, device_class: "garage" } },
+  "lock.front": { state: "locked", attributes: { friendly_name: "Front Door" } },
+  "climate.hall": { state: "heat", attributes: { friendly_name: "Hall", temperature: 70, hvac_modes: ["off", "heat"] } },
+};
+
+const homeAssistantResponder: Responder = (url, init) => {
+  if (init?.method === "POST") return { json: [] };
+  if (url.endsWith("/api/config")) return { json: { unit_system: { temperature: "°F" } } };
+  const entityId = url.split("/api/states/")[1];
+  return entityId ? { json: { entity_id: entityId, ...HA_CONTRACT_STATES[entityId] } } : { json: [] };
+};
+
+const haAdapter = (name: string, entityId: string, capability: Command["capability"], args?: Command["args"]): DriverAdapter => ({
+  name, createDriver: () => new HomeAssistantDriver(), createDevice: device(`ha-${entityId}`, { baseUrl: "http://ha.test:8123", token: "contract-token", entityId }), responder: homeAssistantResponder, usesFcc: false, command: { ...anyCommand(capability), args }, exemptions: {},
+});
 
 const vizioResponder: Responder = (_url, init) => {
   const { path } = JSON.parse(bodyOf(init) || "{}") as { path?: string };
@@ -171,6 +186,9 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
   { name: "SquirrelFeederDriver", createDriver: () => new SquirrelFeederDriver(), createDevice: device("feeder-1", { ipAddress: "192.168.1.84" }), responder: feederResponder, usesFcc: false, command: anyCommand("dispense"), exemptions: { retryAfterFailure: STATELESS_HTTP_RETRY_EXEMPTION } },
   { name: "SwitchBotVacuumDriver", createDriver: () => new SwitchBotVacuumDriver(), createDevice: device("sb-1", { token: "t", secret: "s", deviceId: "sb-1" }), responder: () => switchBotReply, usesFcc: false, command: anyCommand("vacuumStart"), exemptions: {} },
   { name: "HomeAssistantDriver", createDriver: () => new HomeAssistantDriver(), createDevice: device("ha-1", { baseUrl: "http://ha.test:8123", token: "contract-token", entityId: "switch.lamp" }), responder: homeAssistantResponder, usesFcc: false, command: anyCommand("power"), exemptions: {} },
+  haAdapter("HomeAssistantDriver (cover)", "cover.garage", "open"),
+  haAdapter("HomeAssistantDriver (lock)", "lock.front", "unlock"),
+  haAdapter("HomeAssistantDriver (climate)", "climate.hall", "setTemperature", { temperature: 68 }),
   { name: "BroadlinkIrDriver", createDriver: () => new BroadlinkIrDriver(), createDevice: device("bl-1", { ipAddress: "192.168.1.85", codes: { power: "2600" } }), responder: () => ({ json: {} }), usesFcc: true, command: anyCommand("power"), exemptions: {
       ...NO_PROBE_DRIVER_EXEMPTIONS,
       ...{},

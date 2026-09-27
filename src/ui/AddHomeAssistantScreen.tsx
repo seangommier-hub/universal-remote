@@ -170,7 +170,7 @@ export function AddHomeAssistantScreen({ driverRegistry, onCancel, onAdded, exis
             {phase.candidates.filter((c) => !c.alreadyAdded).map((candidate) => (
               <CapabilityButton key={candidate.entityId} label={`${candidate.name} (${candidate.domain})`} onPress={() => handleSelect(candidate)} containerStyle={localStyles.button} />
             ))}
-            {newCount === 0 && <Text style={styles.hint}>No new switches, lights, media players or remotes were found in this Home Assistant.</Text>}
+            {newCount === 0 && <Text style={styles.hint}>Nothing new that Hearth can control was found in this Home Assistant.</Text>}
           </View>
         )}
 

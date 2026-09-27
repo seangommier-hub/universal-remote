@@ -13,6 +13,7 @@ import { renderAddScreen } from "./renderAddScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
 import { LightControlScreen } from "./LightControlScreen";
 import { VacuumControlScreen } from "./VacuumControlScreen";
+import { ENTITY_SCREEN_CATEGORIES, EntityControlScreen } from "./EntityControlScreen";
 import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
@@ -199,7 +200,18 @@ export function DevicesTabScreen({
           onBack={() => setScreen({ name: "list" })}
         />
       )}
-      {screen.name === "remote" && screen.device.category !== "lighting" && screen.device.category !== "vacuum" && (
+      {screen.name === "remote" && ENTITY_SCREEN_CATEGORIES.has(screen.device.category) && (
+        <EntityControlScreen
+          key={screen.device.id}
+          device={screen.device}
+          commandEngine={runtime.commandEngine}
+          stateStore={runtime.stateStore}
+          onReconnect={() => onReconnect(screen.device)}
+          onRename={handleRename}
+          onBack={() => setScreen({ name: "list" })}
+        />
+      )}
+      {screen.name === "remote" && screen.device.category !== "lighting" && screen.device.category !== "vacuum" && !ENTITY_SCREEN_CATEGORIES.has(screen.device.category) && (
         <UniversalTvRemote
           // Real gap found live (2026-09-20): with no key, switching from one device's remote
           // screen to a different device's (e.g. Roku -> LG) re-rendered the SAME component
