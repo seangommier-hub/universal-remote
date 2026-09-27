@@ -171,7 +171,20 @@ export type CapabilityId =
   | "setTemperature"
   | "setHvacMode"
   | "setFanSpeed"
-  | "setFanPreset";
+  | "setFanPreset"
+  // ADR-HEARTH-182: Home Assistant alarm_control_panel (developers.home-assistant.io/docs/core/entity/alarm-control-panel,
+  // fetched 2026-09-27) and media_player browse_media/play_media. "disarm" is always offered; the three arm modes
+  // are each gated on their own AlarmControlPanelEntityFeature bit (ADR-178-style: bit values are from Home
+  // Assistant's source, not documented on the fetched page — see the ADR's "Unverified").
+  | "armHome"
+  | "armAway"
+  | "armNight"
+  | "disarm"
+  // "browseMedia" is a UI-only signal (gates showing the Browse button); the browse itself is a WebSocket query
+  // through CommandEngine.browseMedia, never a dispatched Command (there is nothing to confirm or undo). "playMedia"
+  // is a real dispatched command (HA's media_player.play_media service).
+  | "browseMedia"
+  | "playMedia";
 
 /** Streaming services the launchApp capability can target — each driver maps these to its own protocol's real app/channel id. */
 export type StreamingService = "netflix" | "hulu" | "primeVideo" | "youtube";

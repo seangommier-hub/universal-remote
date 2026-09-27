@@ -11,8 +11,14 @@ const WAIT_POLL_INTERVAL_MS = 500;
 const RETRY_BACKOFF_STEP_MS = 750;
 const RETRY_POLICY_PREFIX = "retry:";
 
-/** Capabilities that must always be a deliberate tap on the device's own screen (which confirms first), never an unattended step (ADR-HEARTH-178 follow-up). */
-const NEVER_IN_ACTIVITY_CAPABILITIES: ReadonlySet<CapabilityId> = new Set(["unlock"]);
+/**
+ * Capabilities that must always be a deliberate tap on the device's own screen (which confirms first), never an
+ * unattended step (ADR-HEARTH-178 follow-up; extended by ADR-HEARTH-182 for the alarm panel — arming/disarming
+ * unattended is exactly the "too dangerous" case this list exists for). A camera's snapshot has no capability
+ * id at all (fetching one is a read through CommandEngine.fetchSnapshot, never a dispatched Command), so it
+ * cannot appear as an Activity step in the first place and needs no entry here.
+ */
+const NEVER_IN_ACTIVITY_CAPABILITIES: ReadonlySet<CapabilityId> = new Set(["unlock", "armHome", "armAway", "armNight", "disarm"]);
 
 /**
  * Capabilities that toggle or step relative to the device's current state. Re-sending one after a

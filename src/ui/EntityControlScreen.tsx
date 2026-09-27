@@ -10,6 +10,8 @@ import { Device, DeviceCategory } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
 import { CapabilityButton } from "./CapabilityButton";
 import { ActionControls } from "./entityControls/ActionControls";
+import { AlarmControls } from "./entityControls/AlarmControls";
+import { CameraControls } from "./entityControls/CameraControls";
 import { ClimateControls } from "./entityControls/ClimateControls";
 import { ConfirmCard } from "./entityControls/ConfirmCard";
 import { CoverControls } from "./entityControls/CoverControls";
@@ -31,8 +33,8 @@ interface EntityControlScreenProps {
   onBack: () => void;
 }
 
-/** Device categories drawn by this screen instead of the TV remote, light or vacuum screens (ADR-HEARTH-178). */
-export const ENTITY_SCREEN_CATEGORIES: ReadonlySet<DeviceCategory> = new Set<DeviceCategory>(["cover", "lock", "climate", "fan", "sensor", "action"]);
+/** Device categories drawn by this screen instead of the TV remote, light or vacuum screens (ADR-HEARTH-178; camera and alarm added by ADR-HEARTH-182). */
+export const ENTITY_SCREEN_CATEGORIES: ReadonlySet<DeviceCategory> = new Set<DeviceCategory>(["cover", "lock", "climate", "fan", "sensor", "action", "camera", "alarm"]);
 
 const CONTROLS: Partial<Record<DeviceCategory, ComponentType<EntityControlProps>>> = {
   cover: CoverControls,
@@ -41,6 +43,8 @@ const CONTROLS: Partial<Record<DeviceCategory, ComponentType<EntityControlProps>
   fan: FanControls,
   sensor: SensorTile,
   action: ActionControls,
+  camera: CameraControls,
+  alarm: AlarmControls,
 };
 
 interface Toast {
@@ -172,7 +176,7 @@ export function EntityControlScreen({ device, commandEngine, stateStore, onRecon
           </View>
         )}
 
-        {Controls && <Controls device={device} state={state} disabled={!isConnected} onPress={press} />}
+        {Controls && <Controls device={device} state={state} disabled={!isConnected} onPress={press} fetchSnapshot={(deviceId) => commandEngine.fetchSnapshot(deviceId)} />}
       </ScrollView>
     </View>
   );

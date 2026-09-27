@@ -78,6 +78,15 @@ describe("runActivity command steps", () => {
     expect(result.steps[1].status).toBe("ok");
     expect(engine.execute).toHaveBeenCalledTimes(1);
   });
+
+  test.each<[CapabilityId]>([["armHome"], ["armAway"], ["armNight"], ["disarm"]])("an alarm %s step is refused and never reaches the engine (ADR-HEARTH-182)", async (capability) => {
+    const { deps, engine } = makeDeps(alwaysOk);
+    const result = await runActivity(makeActivity([cmd("alarm", capability), cmd("rx", "mute")]), deps);
+    expect(result.steps[0].status).toBe("failed");
+    expect(result.steps[0].error).toMatch(/can't run inside an Activity/);
+    expect(result.steps[1].status).toBe("ok");
+    expect(engine.execute).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("runActivity retries", () => {

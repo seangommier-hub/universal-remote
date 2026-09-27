@@ -138,6 +138,41 @@ describe("HomeAssistantDriver over the shared WebSocket session", () => {
   });
 });
 
+describe("browseMedia (ADR-HEARTH-182)", () => {
+  function mediaDevice(instanceId: string): Device {
+    return { id: "dev-media", name: "Speaker", category: "streaming", manufacturer: "Home Assistant", driverId: HOME_ASSISTANT_DRIVER_ID, capabilities: ["browseMedia", "playMedia"], config: { instanceId, entityId: "media_player.speaker" } };
+  }
+
+  test("browses over the device's already-open session, mapping the reply's own fields", async () => {
+    const instance = registerHaInstance(BASE, TOKEN);
+    const driver = new HomeAssistantDriver();
+    const device = mediaDevice(instance.id);
+    driver.subscribeToState(device, () => undefined);
+    await driver.connect(device);
+    await settle();
+    fakeHa.registryReplies["media_player/browse_media"] = {
+      title: "Speaker", media_content_id: "", media_content_type: "", can_play: false, can_expand: true,
+      children: [{ title: "Jazz", media_content_id: "track-1", media_content_type: "music", can_play: true, can_expand: false }],
+    };
+
+    const promise = driver.browseMedia(device);
+    await settle();
+    const node = await promise;
+
+    expect(node).toEqual({
+      title: "Speaker", mediaContentId: "", mediaContentType: "", canPlay: false, canExpand: true,
+      children: [{ title: "Jazz", mediaContentId: "track-1", mediaContentType: "music", canPlay: true, canExpand: false }],
+    });
+    expect(fakeHa.requestLog).toContain("media_player/browse_media");
+  });
+
+  test("a device with no session live yet gets a friendly error instead of hanging", async () => {
+    const instance = registerHaInstance(BASE, TOKEN);
+    const driver = new HomeAssistantDriver();
+    await expect(driver.browseMedia(mediaDevice(instance.id))).rejects.toThrow(/not connected/);
+  });
+});
+
 describe("resolveHaTarget", () => {
   test("accepts the old per-entity {baseUrl, token, entityId} shape by registering its instance", () => {
     const device: Device = { ...deviceFor("unused", "light.a"), config: { baseUrl: "ha.test", token: TOKEN, entityId: "light.a" } };

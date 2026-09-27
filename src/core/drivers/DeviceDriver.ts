@@ -2,6 +2,8 @@ import { CapabilityId } from "../types/Capability";
 import { Command, CommandResult } from "../types/Command";
 import { Device } from "../types/Device";
 import { DeviceState } from "../types/DeviceState";
+import { MediaBrowseNode } from "../types/MediaBrowse";
+import { SnapshotImage } from "../types/Snapshot";
 
 /** A callback a driver invokes whenever it learns a device's state changed, whether from a command it issued or a push update from the device itself. */
 export type StateChangeListener = (deviceId: string, state: DeviceState) => void;
@@ -38,4 +40,14 @@ export interface DeviceDriver {
 
   /** Subscribe to state changes for a device. Returns an unsubscribe function. */
   subscribeToState(device: Device, listener: StateChangeListener): () => void;
+
+  /** Optional (ADR-HEARTH-182): fetches a fresh snapshot image for a camera-category device. Only Home Assistant
+   * camera entities implement this today; omitted means the device has no snapshot. Never called automatically —
+   * only when the UI's own open/refresh asks for one, so a camera is never polled for imagery in the background. */
+  fetchSnapshot?(device: Device): Promise<SnapshotImage>;
+
+  /** Optional (ADR-HEARTH-182): browses one level of a media_player's media tree (Home Assistant's
+   * `media_player/browse_media`), the server's own root when both arguments are omitted. Only implemented by
+   * drivers whose entity actually declares the "browseMedia" capability. */
+  browseMedia?(device: Device, mediaContentId?: string, mediaContentType?: string): Promise<MediaBrowseNode>;
 }

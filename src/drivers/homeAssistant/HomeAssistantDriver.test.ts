@@ -145,6 +145,27 @@ describe("HomeAssistantDriver", () => {
     expect((await driver.getState(device)).connection).toBe("connected");
   });
 
+  describe("fetchSnapshot (ADR-HEARTH-182)", () => {
+    function cameraDevice(): Device {
+      return { id: "ha-cam", name: "Porch Camera", category: "camera", manufacturer: "Home Assistant", driverId: HOME_ASSISTANT_DRIVER_ID, capabilities: [], config: { baseUrl: BASE, token: TOKEN, entityId: "camera.porch" } };
+    }
+
+    test("prefers the entity_picture's own short-lived token, reading the entity fresh each time", async () => {
+      const driver = new HomeAssistantDriver();
+      entityState = { state: "idle", attributes: { entity_picture: "/api/camera_proxy/camera.porch?token=short-lived" } };
+      const image = await driver.fetchSnapshot(cameraDevice());
+      expect(image).toEqual({ uri: `${BASE}/api/camera_proxy/camera.porch?token=short-lived` });
+      expect(calls[calls.length - 1].url).toBe(`${BASE}/api/states/camera.porch`);
+    });
+
+    test("falls back to the REST proxy path with the shared Bearer token when there is no entity_picture", async () => {
+      const driver = new HomeAssistantDriver();
+      entityState = { state: "idle", attributes: {} };
+      const image = await driver.fetchSnapshot(cameraDevice());
+      expect(image).toEqual({ uri: `${BASE}/api/camera_proxy/camera.porch`, headers: { Authorization: `Bearer ${TOKEN}` } });
+    });
+  });
+
   test("the token never appears in any log line", async () => {
     const logged: string[] = [];
     for (const level of ["debug", "info", "warn", "error"] as const) jest.spyOn(logger, level).mockImplementation((_scope: string, message: string, meta?: Record<string, unknown>) => void logged.push(`${message}${JSON.stringify(meta ?? {})}`));

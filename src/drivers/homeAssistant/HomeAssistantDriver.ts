@@ -4,16 +4,22 @@ import { CapabilityId } from "../../core/types/Capability";
 import { Command, CommandResult } from "../../core/types/Command";
 import { Device } from "../../core/types/Device";
 import { DeviceState } from "../../core/types/DeviceState";
+import { MediaBrowseNode } from "../../core/types/MediaBrowse";
+import { SnapshotImage } from "../../core/types/Snapshot";
 import { withBackoffJitter } from "../shared/backoffJitter";
 import { HomeAssistantClient, HomeAssistantEntity } from "./HomeAssistantClient";
 import { HaCommandValidationError, commandToServiceCall } from "./haCommandMapping";
+import { cameraSnapshotSource } from "./haCameraSnapshot";
 import { resolveHaTarget } from "./haDeviceConfig";
 import { HaInstance } from "./haInstance";
 import { releaseSession, startSession } from "./haInstanceHub";
+import { normalizeBrowseNode, HaBrowseMediaRaw } from "./haMediaBrowse";
 import { HA_TOKEN_REJECTED_MESSAGE, HaSession, HaSessionStatus } from "./haSession";
 import { domainOf } from "./haEntityMapping";
 import { entityConnection, entityToValues } from "./haStateMapping";
 import { cachedTemperatureUnit, loadTemperatureUnit } from "./haUnitSystem";
+
+const BROWSE_MEDIA_REQUEST = "media_player/browse_media";
 
 const LOG_SCOPE = "HomeAssistantDriver";
 export const HOME_ASSISTANT_DRIVER_ID = "home-assistant";
@@ -29,6 +35,7 @@ const HOME_ASSISTANT_CAPABILITIES: CapabilityId[] = [
   "playPause", "inputSelection", "directionalNavigation", "select", "back", "home", "menu",
   "open", "close", "stop", "setPosition", "lock", "unlock", "trigger", "setTemperature", "setHvacMode", "setFanSpeed", "setFanPreset",
   "vacuumStart", "vacuumStop", "vacuumDock", "setSuctionPower",
+  "armHome", "armAway", "armNight", "disarm", "browseMedia", "playMedia",
 ];
 
 interface LiveLink {
@@ -109,6 +116,32 @@ export class HomeAssistantDriver implements DeviceDriver {
     }
     const state = this.states.get(device.id)!;
     return { success: true, deviceId: device.id, capability: command.capability, timestamp: Date.now(), state: state.values };
+  }
+
+  /** Reads the entity fresh (never from the cached/polled state) and builds its snapshot source (ADR-HEARTH-182). */
+  async fetchSnapshot(device: Device): Promise<SnapshotImage> {
+    const { instance, entityId } = resolveHaTarget(device);
+    const entity = await clientFor(device).getEntity(entityId);
+    const entityPicture = typeof entity.attributes.entity_picture === "string" ? entity.attributes.entity_picture : undefined;
+    return cameraSnapshotSource(instance, entityId, entityPicture);
+  }
+
+  /** Browses one level of a media_player's tree over the shared WebSocket session (ADR-HEARTH-182); commands still go over REST, this is a read. Reuses this device's already-open session link when it has one, otherwise opens (and releases) a short-lived one. */
+  async browseMedia(device: Device, mediaContentId?: string, mediaContentType?: string): Promise<MediaBrowseNode> {
+    const { instance, entityId } = resolveHaTarget(device);
+    const existingLink = this.links.get(device.id);
+    const session = existingLink?.session ?? startSession(instance);
+    try {
+      if (session.getStatus() !== "live") throw new Error(`${device.name} is not connected to Home Assistant right now.`);
+      const raw = await session.request<HaBrowseMediaRaw>(BROWSE_MEDIA_REQUEST, {
+        entity_id: entityId,
+        ...(mediaContentId ? { media_content_id: mediaContentId } : {}),
+        ...(mediaContentType ? { media_content_type: mediaContentType } : {}),
+      });
+      return normalizeBrowseNode(raw);
+    } finally {
+      if (!existingLink) releaseSession(instance);
+    }
   }
 
   subscribeToState(device: Device, listener: StateChangeListener): () => void {

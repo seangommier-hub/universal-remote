@@ -58,6 +58,12 @@ const VERBS: Record<CapabilityId, string> = {
   setHvacMode: "changed the mode on",
   setFanSpeed: "changed the fan speed on",
   setFanPreset: "changed the fan mode on",
+  armHome: "armed (Home mode)",
+  armAway: "armed (Away mode)",
+  armNight: "armed (Night mode)",
+  disarm: "disarmed",
+  browseMedia: "browsed media on",
+  playMedia: "played media on",
 };
 
 /** Buttons pressed dozens of times while navigating; a successful press is not worth a line (failures still are). */

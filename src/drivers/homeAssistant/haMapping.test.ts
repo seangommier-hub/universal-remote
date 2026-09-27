@@ -39,6 +39,11 @@ describe("capabilitiesForEntity", () => {
   test("a media player with no supported_features gets nothing", () => {
     expect(capabilitiesForEntity(entity("media_player.bare"))).toEqual([]);
   });
+
+  test("browseMedia and playMedia each follow their own feature bit (ADR-HEARTH-182)", () => {
+    expect(capabilitiesForEntity(entity("media_player.spk", "on", { supported_features: 512 | 131072 }))).toEqual(["playMedia", "browseMedia"]);
+    expect(capabilitiesForEntity(entity("media_player.playonly", "on", { supported_features: 512 }))).toEqual(["playMedia"]);
+  });
 });
 
 describe("importSupportedEntities", () => {
@@ -96,6 +101,14 @@ describe("commandToServiceCall", () => {
   test("a missing argument or unsupported capability is a validation error", () => {
     expect(() => commandToServiceCall({ deviceId: "d", capability: "setVolume" }, "media_player.tv", {})).toThrow(HaCommandValidationError);
     expect(() => commandToServiceCall({ deviceId: "d", capability: "volumeUp" }, "switch.a", {})).toThrow(HaCommandValidationError);
+  });
+
+  test("playMedia sends the content id and an optional type (ADR-HEARTH-182)", () => {
+    expect(commandToServiceCall({ deviceId: "d", capability: "playMedia", args: { mediaContentId: "track-1" } }, "media_player.tv", {}).data).toEqual({ entity_id: "media_player.tv", media_content_id: "track-1" });
+    expect(commandToServiceCall({ deviceId: "d", capability: "playMedia", args: { mediaContentId: "track-1", mediaContentType: "music" } }, "media_player.tv", {}).data).toEqual({
+      entity_id: "media_player.tv", media_content_id: "track-1", media_content_type: "music",
+    });
+    expect(() => commandToServiceCall({ deviceId: "d", capability: "playMedia" }, "media_player.tv", {})).toThrow(HaCommandValidationError);
   });
 });
 

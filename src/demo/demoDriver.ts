@@ -2,7 +2,9 @@ import { DeviceDriver, StateChangeListener } from "../core/drivers/DeviceDriver"
 import { Command, CommandResult } from "../core/types/Command";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
-import { applyEntityCommand } from "./demoEntityDevices";
+import { MediaBrowseNode } from "../core/types/MediaBrowse";
+import { SnapshotImage } from "../core/types/Snapshot";
+import { DEMO_CAMERA_SNAPSHOT, applyEntityCommand, demoBrowseMedia } from "./demoEntityDevices";
 import { DEMO_DEVICE_SCRIPTS, DemoDeviceScript } from "./demoHousehold";
 
 const VOLUME_STEP = 2;
@@ -50,6 +52,10 @@ export function createDemoDriver(real: DeviceDriver, scripts: Record<string, Dem
     displayName: real.displayName,
     hasDynamicCapabilities: real.hasDynamicCapabilities,
     getCapabilities: () => real.getCapabilities(),
+    // ADR-HEARTH-182: forwarded only when the wrapped driver actually implements them (Home Assistant), same
+    // optional-passthrough pattern as hasDynamicCapabilities above. Real network access stays disabled either way.
+    ...(real.fetchSnapshot ? { fetchSnapshot: async (): Promise<SnapshotImage> => DEMO_CAMERA_SNAPSHOT } : {}),
+    ...(real.browseMedia ? { browseMedia: async (_device: Device, mediaContentId?: string): Promise<MediaBrowseNode> => demoBrowseMedia(mediaContentId) } : {}),
 
     async connect(device: Device): Promise<void> {
       const script = scriptFor(device);

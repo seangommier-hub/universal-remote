@@ -193,6 +193,48 @@ export const SCENARIOS = [
   },
   { name: "entity-sensor", screen: "remote:ha-temp", assertFit: false },
   { name: "entity-sensor-unavailable", screen: "remote:ha-offline", assertFit: false },
+  { name: "entity-camera", screen: "remote:ha-camera", assertFit: false },
+  { name: "entity-alarm", screen: "remote:ha-alarm", assertFit: false },
+  {
+    name: "entity-alarm-code-pad",
+    screen: "remote:ha-alarm",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Arm Away", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "entity-alarm-armed",
+    screen: "remote:ha-alarm",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Arm Away", { exact: true }).click();
+      await page.getByLabel("Alarm code", { exact: true }).fill("1234");
+      await page.getByText("Continue", { exact: true }).click();
+      await page.getByText("Arm Away", { exact: true }).first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "media-browse-root",
+    screen: "remote:ha-media",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Browse", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "media-browse-folder",
+    screen: "remote:ha-media",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Browse", { exact: true }).click();
+      await page.getByLabel("Playlists", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
   {
     name: "remote-lg-keypad",
