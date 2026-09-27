@@ -345,6 +345,7 @@ export function DeviceListScreen({
         nameSuggestion={nameSuggestion}
         isFavorite={actionsTarget ? layout.layout.favorites.includes(actionsTarget.id) : false}
         isKidAllowed={actionsTarget ? layout.layout.kidAllowed.includes(actionsTarget.id) : false}
+        isGuestAllowed={actionsTarget ? layout.layout.guestAllowed.includes(actionsTarget.id) : false}
         currentRoom={actionsTarget ? layout.layout.rooms[actionsTarget.id] : undefined}
         roomChoices={roomChoices(layout.layout)}
         canMoveUp={actionsTarget ? layout.canMove(actionsTarget, "up") : false}
@@ -358,6 +359,7 @@ export function DeviceListScreen({
           onRemove: handleRemovePress,
           onToggleFavorite: layout.toggleFavoriteFor,
           onToggleKidAllowed: layout.toggleKidAllowedFor,
+          onToggleGuestAllowed: layout.toggleGuestAllowedFor,
           onSetRoom: layout.setRoom,
           onMove: layout.move,
         }}

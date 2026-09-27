@@ -10,10 +10,17 @@ const BASE_URL_KEY = "hearth.fcc.baseUrl";
 const PUBLIC_BASE_URL_KEY = "hearth.fcc.publicBaseUrl";
 const TOKEN_KEY = "hearth.fcc.token";
 const TOKEN_KIND_KEY = "hearth.fcc.tokenKind";
+const ROLE_KEY = "hearth.fcc.role";
 
 /** Whether the saved token is the one household HEARTH_API_TOKEN every phone used to share, or a
  * personal one issued to this phone alone by pair/redeem (ADR-HEARTH-181, phase 1). */
 export type TokenKind = "legacy" | "personal";
+
+/** This phone's own role on the household's Family Command Center (ADR-HEARTH-189, phase 2) --
+ * cached locally so the app can decide what to show (e.g. the "Household phones" settings entry,
+ * guest device filtering) without a network round trip on every render. Refreshed by
+ * `refreshOwnRole()` (see householdPhones.ts); undefined until the first successful refresh. */
+export type HouseholdRole = "owner" | "adult" | "guest";
 
 export interface FamilyCommandCenterConfig {
   baseUrl: string;
@@ -30,17 +37,28 @@ export interface FamilyCommandCenterConfig {
    * both need the same one-time nudge to re-pair for a personal token. Plain AsyncStorage: it
    * says something about the token, not the token itself. */
   tokenKind?: TokenKind;
+  /** This phone's own household role, last refreshed from the Pi (ADR-HEARTH-189); undefined until
+   * the first successful `refreshOwnRole()` call, same "undefined means not known yet, not any
+   * particular role" treatment as an unset `tokenKind`. */
+  role?: HouseholdRole;
 }
 
 export async function loadFamilyCommandCenterConfig(): Promise<FamilyCommandCenterConfig | null> {
-  const [baseUrl, publicBaseUrl, token, tokenKind] = await Promise.all([
+  const [baseUrl, publicBaseUrl, token, tokenKind, role] = await Promise.all([
     AsyncStorage.getItem(BASE_URL_KEY),
     AsyncStorage.getItem(PUBLIC_BASE_URL_KEY),
     SecureStore.getItemAsync(TOKEN_KEY),
     AsyncStorage.getItem(TOKEN_KIND_KEY),
+    AsyncStorage.getItem(ROLE_KEY),
   ]);
   if (!baseUrl || !token) return null;
-  return { baseUrl, token, publicBaseUrl: publicBaseUrl ?? undefined, tokenKind: tokenKind === "personal" ? "personal" : tokenKind === "legacy" ? "legacy" : undefined };
+  return {
+    baseUrl,
+    token,
+    publicBaseUrl: publicBaseUrl ?? undefined,
+    tokenKind: tokenKind === "personal" ? "personal" : tokenKind === "legacy" ? "legacy" : undefined,
+    role: role === "owner" || role === "adult" || role === "guest" ? role : undefined,
+  };
 }
 
 export async function saveFamilyCommandCenterConfig(config: FamilyCommandCenterConfig): Promise<void> {
@@ -49,7 +67,17 @@ export async function saveFamilyCommandCenterConfig(config: FamilyCommandCenterC
     config.publicBaseUrl ? AsyncStorage.setItem(PUBLIC_BASE_URL_KEY, config.publicBaseUrl) : AsyncStorage.removeItem(PUBLIC_BASE_URL_KEY),
     SecureStore.setItemAsync(TOKEN_KEY, config.token),
     config.tokenKind ? AsyncStorage.setItem(TOKEN_KIND_KEY, config.tokenKind) : AsyncStorage.removeItem(TOKEN_KIND_KEY),
+    config.role ? AsyncStorage.setItem(ROLE_KEY, config.role) : AsyncStorage.removeItem(ROLE_KEY),
   ]);
+}
+
+/** Updates only the cached role on an already-saved config (used by `refreshOwnRole()`); a no-op,
+ * returning false, when there is no saved config to attach a role to. */
+export async function saveOwnRole(role: HouseholdRole): Promise<boolean> {
+  const existing = await loadFamilyCommandCenterConfig();
+  if (!existing) return false;
+  await saveFamilyCommandCenterConfig({ ...existing, role });
+  return true;
 }
 
 export class FamilyCommandCenterVerificationError extends Error {}
@@ -69,7 +97,7 @@ export async function verifyAndSaveFamilyCommandCenterConfig(baseUrl: string, to
   // Preserves an already-saved publicBaseUrl (e.g. re-verifying the LAN address alone shouldn't
   // silently drop the away-from-home one already configured).
   const existing = await loadFamilyCommandCenterConfig();
-  await saveFamilyCommandCenterConfig({ baseUrl: trimmedUrl, token: trimmedToken, publicBaseUrl: existing?.publicBaseUrl, tokenKind });
+  await saveFamilyCommandCenterConfig({ baseUrl: trimmedUrl, token: trimmedToken, publicBaseUrl: existing?.publicBaseUrl, tokenKind, role: existing?.role });
 }
 
 /** Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used even

@@ -41,11 +41,15 @@ async function send(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-/** Asks the server (with the saved token) for a fresh single-use invite code. */
-export async function createPairInvite(baseUrl: string, token: string): Promise<CreatedInvite> {
+/** Asks the server (with the saved token) for a fresh single-use invite code. Passing `guestHours`
+ * (ADR-HEARTH-189, phase 2) asks for a GUEST invite instead of an ordinary one -- owner-gated on
+ * the server, so this throws a plain "Server returned 403" for a non-owner caller, same as any
+ * other rejected status here. Omitting it keeps this function's exact phase-1 behavior. */
+export async function createPairInvite(baseUrl: string, token: string, guestHours?: number): Promise<CreatedInvite> {
   const response = await send(`${trimTrailingSlash(baseUrl)}${CODE_PATH}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...(guestHours ? { "Content-Type": "application/json" } : {}) },
+    body: guestHours ? JSON.stringify({ role: "guest", guestHours }) : undefined,
   });
   if (!response.ok) throw new Error(`Server returned ${response.status}.`);
   return (await response.json()) as CreatedInvite;

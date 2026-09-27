@@ -8,6 +8,8 @@ import { Activity } from "../core/types/Activity";
 import { BrandId } from "../discovery/brandRegistry";
 import { DeviceListScreen } from "./DeviceListScreen";
 import { KidDeviceListScreen } from "./KidDeviceListScreen";
+import { GuestDeviceListScreen } from "./GuestDeviceListScreen";
+import { refreshOwnRole } from "../discovery/householdPhones";
 import type { KidModeControls } from "./useKidMode";
 import { renderAddScreen } from "./renderAddScreen";
 import { UniversalTvRemote } from "./UniversalTvRemote";
@@ -18,6 +20,7 @@ import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
 import { WhatLeavesYourHouseScreen } from "./WhatLeavesYourHouseScreen";
+import { HouseholdPhonesScreen } from "./HouseholdPhonesScreen";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
 import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { PairInvite } from "../discovery/pairInvite";
@@ -42,6 +45,7 @@ export type DevicesScreen =
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
   | { name: "fcc-privacy" }
+  | { name: "fcc-household-phones" }
   | { name: "fcc-join"; invite?: PairInvite }
   | { name: "fcc-remote" }
   | { name: "ha-assist"; instanceId: string }
@@ -91,9 +95,15 @@ export function DevicesTabScreen({
   onRemoveDevice,
   kid,
 }: DevicesTabScreenProps) {
-  const restricted = kid.status === "restricted";
+  const kidRestricted = kid.status === "restricted";
+  // ADR-HEARTH-189 (phase 2): a guest-role phone gets the exact same restriction TREATMENT as kid
+  // mode (only the list/remote screens reachable, only guest-allowed devices shown) but driven by
+  // this phone's own token role on the Pi, not a local toggle -- there is no "leave guest mode"
+  // here, unlike kid mode's PIN.
+  const [guestRestricted, setGuestRestricted] = useState(false);
+  const restricted = kidRestricted || guestRestricted;
   const [requestedScreen, setScreen] = useState<DevicesScreen>(() => demoStartingScreen(devices) ?? { name: "list" });
-  const screen = restricted ? kidSafeScreen(requestedScreen) : requestedScreen;
+  const screen = restricted ? restrictedSafeScreen(requestedScreen) : requestedScreen;
   // Real gap found live (2026-09-21): the header's "Connect Family Command Center" button always
   // opened the QR-scan screen, meant for *first-time* pairing (a camera view + a "manual entry"
   // text link buried inside it) -- the only way this app ever exposed the settings screen at all.
@@ -106,7 +116,22 @@ export function DevicesTabScreen({
   const [fccConfigured, setFccConfigured] = useState(false);
 
   useEffect(() => {
-    loadFamilyCommandCenterConfig().then((config) => setFccConfigured(config !== null));
+    let cancelled = false;
+    loadFamilyCommandCenterConfig().then((config) => {
+      if (cancelled) return;
+      setFccConfigured(config !== null);
+      setGuestRestricted(config?.role === "guest");
+    });
+    // Refreshes from the Pi in the background so a role change (promoted, demoted, or this guest
+    // token's own expiry) takes effect without waiting for the next app restart; never blocks
+    // rendering and is silently ignored when unreachable (refreshOwnRole never throws).
+    refreshOwnRole().then((role) => {
+      if (cancelled || role === null) return;
+      setGuestRestricted(role === "guest");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [screen.name]);
 
   // ADR-HEARTH-160: a hearth://pair link only opens the Join screen prefilled (cold start picks up
@@ -289,6 +314,7 @@ export function DevicesTabScreen({
           kid={kid}
           onKidModeOn={() => setScreen({ name: "list" })}
           onOpenPrivacy={() => setScreen({ name: "fcc-privacy" })}
+          onOpenHouseholdPhones={() => setScreen({ name: "fcc-household-phones" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
@@ -297,6 +323,7 @@ export function DevicesTabScreen({
       {screen.name === "fcc-privacy" && (
         <WhatLeavesYourHouseScreen devices={devices} onDone={() => setScreen({ name: "fcc-settings" })} />
       )}
+      {screen.name === "fcc-household-phones" && <HouseholdPhonesScreen onDone={() => setScreen({ name: "fcc-settings" })} />}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "ha-assist" && <HomeAssistantAssistScreen instanceId={screen.instanceId} onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "edit-activity" && (
@@ -335,7 +362,10 @@ export function DevicesTabScreen({
           }}
         />
       )}
-      {screen.name === "list" && restricted && <KidDeviceListScreen devices={devices} stateStore={runtime.stateStore} commandEngine={runtime.commandEngine} kid={kid} onSelect={(device) => setScreen({ name: "remote", device })} />}
+      {screen.name === "list" && kidRestricted && <KidDeviceListScreen devices={devices} stateStore={runtime.stateStore} commandEngine={runtime.commandEngine} kid={kid} onSelect={(device) => setScreen({ name: "remote", device })} />}
+      {screen.name === "list" && !kidRestricted && guestRestricted && (
+        <GuestDeviceListScreen devices={devices} stateStore={runtime.stateStore} commandEngine={runtime.commandEngine} onSelect={(device) => setScreen({ name: "remote", device })} />
+      )}
       {screen.name === "list" && !restricted && (
         <DeviceListScreen
           devices={devices}
@@ -376,8 +406,8 @@ export function DevicesTabScreen({
   );
 }
 
-/** In kid mode only the list and a device's remote may be shown; anything else (setup, settings, editors) falls back to the list. */
-function kidSafeScreen(screen: DevicesScreen): DevicesScreen {
+/** In kid mode or as a guest, only the list and a device's remote may be shown; anything else (setup, settings, editors) falls back to the list. */
+function restrictedSafeScreen(screen: DevicesScreen): DevicesScreen {
   return screen.name === "list" || screen.name === "remote" ? screen : { name: "list" };
 }
 

@@ -2,6 +2,11 @@ import { DISCOVER_ALL_PATH } from "../discovery/discoverAll";
 import { ACTIVITY_LOG_PATH } from "../discovery/familyCommandCenterActivityLog";
 import { demoActivityLogBody } from "./demoActivityLog";
 import { demoDiscoverAllBody } from "./demoDiscoverPayload";
+import { demoGuestInviteBody, demoHouseholdPhonesBody, demoOwnIdentity } from "./demoHouseholdPhones";
+
+const PHONE_TOKENS_SELF_PATH = "/api/integrations/hearth/phone-tokens/self";
+const PHONE_TOKENS_PATH = "/api/integrations/hearth/phone-tokens";
+const PAIR_CODE_PATH = "/api/integrations/hearth/pair/code";
 
 export const DEMO_FCC_BASE_URL = "http://demo-fcc.invalid:3211";
 export const DEMO_FCC_TOKEN = "demo-token";
@@ -18,6 +23,10 @@ export async function demoFetch(input: RequestInfo | URL): Promise<Response> {
   if (!url.startsWith(DEMO_FCC_BASE_URL)) throw new TypeError("Demo mode: network access is disabled");
   if (url.endsWith(DISCOVER_ALL_PATH)) return jsonResponse(demoDiscoverAllBody(), HTTP_OK);
   if (url.includes(ACTIVITY_LOG_PATH)) return jsonResponse(demoActivityLogBody(), HTTP_OK);
+  // Checked before PHONE_TOKENS_PATH, which is a substring of this one.
+  if (url.includes(PHONE_TOKENS_SELF_PATH)) return jsonResponse(demoOwnIdentity(), HTTP_OK);
+  if (url.includes(PHONE_TOKENS_PATH)) return jsonResponse(demoHouseholdPhonesBody(), HTTP_OK);
+  if (url.includes(PAIR_CODE_PATH)) return jsonResponse(demoGuestInviteBody(), HTTP_OK);
   return jsonResponse({ error: "not available in demo mode" }, HTTP_NOT_FOUND);
 }
 

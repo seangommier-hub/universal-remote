@@ -15,6 +15,7 @@ import { KidModeSettingsPanel } from "./KidModeSettingsPanel";
 import { RecentActivityList } from "./RecentActivityList";
 import type { KidModeControls } from "./useKidMode";
 import { theme } from "./theme";
+import { refreshOwnRole } from "../discovery/householdPhones";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
@@ -24,6 +25,9 @@ interface FamilyCommandCenterSettingsScreenProps {
   /** Called after kid mode is switched on. */
   onKidModeOn: () => void;
   onOpenPrivacy: () => void;
+  /** ADR-HEARTH-189 (phase 2): opens the "Household phones" admin screen. Only ever shown when
+   * this phone's own role is "owner" -- a kid-mode or guest phone never sees this screen. */
+  onOpenHouseholdPhones: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
   onDeviceUpdated: (device: Device) => void;
@@ -36,7 +40,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, kid, onKidModeOn, onOpenPrivacy, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, kid, onKidModeOn, onOpenPrivacy, onOpenHouseholdPhones, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -45,6 +49,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     loadFamilyCommandCenterConfig().then((existing) => {
@@ -53,6 +58,12 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
         setBaseUrl(existing.baseUrl);
         setToken(existing.token);
         setPublicBaseUrl(existing.publicBaseUrl ?? "");
+        setIsOwner(existing.role === "owner");
+        // Refreshes in the background (never blocks the form from showing); a stale cached role
+        // only means the "Household phones" entry point briefly lags a real promotion/demotion.
+        refreshOwnRole().then((role) => {
+          if (role !== null) setIsOwner(role === "owner");
+        });
       }
     });
   }, []);
@@ -157,6 +168,9 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
       <CapabilityButton label="Join with a code instead" variant="ghost" onPress={onJoinWithCode} disabled={status === "checking"} />
       <CapabilityButton label="What leaves your house" icon="eye-outline" variant="ghost" onPress={onOpenPrivacy} disabled={status === "checking"} />
       {alreadyConnected && <InviteSomeonePanel />}
+      {alreadyConnected && isOwner && (
+        <CapabilityButton label="Household phones" icon="people-outline" variant="ghost" onPress={onOpenHouseholdPhones} disabled={status === "checking"} />
+      )}
       <PhoneNameField />
       <KidModeSettingsPanel kid={kid} onKidModeOn={onKidModeOn} />
       {alreadyConnected && <RecentActivityList />}
