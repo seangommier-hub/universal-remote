@@ -15,6 +15,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
 import { theme } from "./theme";
+import { useKeepScreenAwake } from "./useKeepScreenAwake";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
 
@@ -199,6 +200,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // right axis to scale (and font size/spacing deliberately are not).
   const scale = useResponsiveScale();
   const connectivityMode = useConnectivityMode();
+  // ADR-HEARTH-183: keep the screen from auto-locking only while a remote is actually open —
+  // scoped by this component's own mount/unmount (see useKeepScreenAwake's own doc comment), never
+  // the whole app.
+  useKeepScreenAwake();
   const isAway = connectivityMode === "away";
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
   // (the "196 = 196, arrows land tangent to the disc" math in the styles
