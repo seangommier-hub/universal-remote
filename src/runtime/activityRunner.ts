@@ -5,6 +5,7 @@ import { CommandResult } from "../core/types/Command";
 import { Activity, ActivityStep, CommandStep, StepResult, WaitForStep } from "../core/types/Activity";
 import { CapabilityId } from "../core/types/Capability";
 import { logger } from "../core/logging/logger";
+import { notifyHomeAssistant } from "./haOutgoingWebhook";
 
 const LOG_SCOPE = "activityRunner";
 const WAIT_POLL_INTERVAL_MS = 500;
@@ -183,7 +184,10 @@ export async function runActivity(activity: Activity, deps: ActivityRunDeps, opt
     if (options.signal?.aborted) cancelled = true;
     if (outcome.halt) halted = true;
   }
-  return { runId, activityId: activity.id, activityName: activity.name, startedAt, finishedAt: new Date().toISOString(), cancelled, steps };
+  const result: ActivityRunResult = { runId, activityId: activity.id, activityName: activity.name, startedAt, finishedAt: new Date().toISOString(), cancelled, steps };
+  // Fire-and-forget: never delays or fails the run itself (ADR-HEARTH-183).
+  void notifyHomeAssistant(activity, result);
+  return result;
 }
 
 /** Indexes worth re-running after a run: steps that failed plus steps that never ran (skipped after a stop or cancel). */

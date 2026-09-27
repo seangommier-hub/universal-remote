@@ -23,6 +23,8 @@ export interface AddScreenProps {
   /** Devices already in Hearth, for screens that offer only what is not yet added. */
   existingDevices?: Device[];
   initialIpAddress?: string;
+  /** A fuller URL the discovered device announced itself (Home Assistant's mDNS base_url), preferred over initialIpAddress when present. */
+  initialServiceUrl?: string | null;
   onOpenFccSetup: () => void;
 }
 
@@ -32,7 +34,7 @@ export interface AddScreenProps {
  * brand whose only input is an address goes through the one registry-driven generic screen.
  */
 export function renderAddScreen(brandId: BrandId, props: AddScreenProps): ReactElement {
-  const { onOpenFccSetup, ...screenProps } = props;
+  const { onOpenFccSetup, initialServiceUrl, ...screenProps } = props;
   switch (brandId) {
     case "sony":
       return <AddSonyDeviceScreen {...screenProps} />;
@@ -53,7 +55,7 @@ export function renderAddScreen(brandId: BrandId, props: AddScreenProps): ReactE
     case "smartthings":
       return <AddSmartThingsOutletsScreen {...screenProps} />;
     case "homeassistant":
-      return <AddHomeAssistantScreen {...screenProps} />;
+      return <AddHomeAssistantScreen {...screenProps} initialServiceUrl={initialServiceUrl} />;
     default:
       return <GenericIpAddDeviceScreen brand={getBrand(brandId)} {...screenProps} onOpenFccSetup={onOpenFccSetup} />;
   }

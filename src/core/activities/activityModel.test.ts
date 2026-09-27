@@ -93,6 +93,22 @@ describe("validateActivity", () => {
   test("accepts a valid activity", () => expect(validateActivity(valid)).toBeNull());
   test("rejects an empty name", () => expect(validateActivity({ ...valid, name: "  " })).toMatch(/Name/));
   test("rejects no steps", () => expect(validateActivity({ ...valid, steps: [] })).toMatch(/at least one/));
+  test("rejects an implausible Home Assistant outgoing webhook URL", () =>
+    expect(validateActivity({ ...valid, homeAssistant: { outgoingWebhookUrl: "not a url" } })).toMatch(/doesn't look like/));
+  test("accepts an activity with a Home Assistant webhook config", () =>
+    expect(validateActivity({ ...valid, homeAssistant: { incomingWebhookId: "abc-123", outgoingWebhookUrl: "https://ha.example.com/api/webhook/xyz" } })).toBeNull());
+});
+
+describe("normalizeActivity Home Assistant field", () => {
+  test("preserves a stored homeAssistant config", () => {
+    const raw = { id: "a", name: "Ok", steps: [], version: 1, updatedAt: NOW, homeAssistant: { incomingWebhookId: "abc-123" } };
+    expect(normalizeActivity(raw, NOW)?.homeAssistant).toEqual({ incomingWebhookId: "abc-123" });
+  });
+
+  test("leaves homeAssistant unset when the raw record never had it", () => {
+    const raw = { id: "a", name: "Ok", steps: [], version: 1, updatedAt: NOW };
+    expect(normalizeActivity(raw, NOW)?.homeAssistant).toBeUndefined();
+  });
 });
 
 test("clampNumber falls back to the minimum for non-finite input", () => {

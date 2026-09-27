@@ -39,6 +39,12 @@ describe("parseNetworkDevice", () => {
     expect(parseNetworkDevice(null)).toBeNull();
     expect(parseNetworkDevice({ ip: "10.0.0.6", brand: "toaster", confidence: "certain" })).toMatchObject({ brand: null, confidence: "unknown" });
   });
+
+  test("carries a Home Assistant row's announced serviceUrl through, and defaults it to null when absent", () => {
+    const withUrl = parseNetworkDevice({ ip: "10.0.0.7", brand: "homeassistant", confidence: "certain", serviceUrl: "http://10.0.0.7:8123/" });
+    expect(withUrl).toMatchObject({ brand: "homeassistant", serviceUrl: "http://10.0.0.7:8123/" });
+    expect(parseNetworkDevice({ ip: "10.0.0.8" })?.serviceUrl).toBeNull();
+  });
 });
 
 describe("mergeNetworkDevices", () => {

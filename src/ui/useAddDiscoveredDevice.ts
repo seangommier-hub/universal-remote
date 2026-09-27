@@ -25,8 +25,8 @@ interface Options {
   driverRegistry: DriverRegistry;
   stateStore: StateStore;
   onAdded: (device: Device) => void;
-  /** Opens a brand's own multi-step screen with the address prefilled. */
-  onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
+  /** Opens a brand's own multi-step screen with the address prefilled; `serviceUrl` is a fuller URL the device announced itself (Home Assistant's mDNS base_url), preferred over the bare IP when present. */
+  onOpenBrandScreen: (brand: BrandId, ipAddress: string, serviceUrl?: string | null) => void;
   /** Called when a re-identify pass found a brand for a previously unknown device. */
   onIdentified: (device: NetworkDevice) => void;
   rescan: () => Promise<NetworkDevice[]>;
@@ -50,7 +50,7 @@ export function useAddDiscoveredDevice(options: Options) {
       const id = row.device.id;
       if (outcome.kind === "added" || outcome.kind === "custom-screen") setUi(id, {});
       if (outcome.kind === "added") return onAdded(outcome.device);
-      if (outcome.kind === "custom-screen") return onOpenBrandScreen(brand.id, row.device.ip);
+      if (outcome.kind === "custom-screen") return onOpenBrandScreen(brand.id, row.device.ip, row.device.serviceUrl);
       if (outcome.kind === "needs-fcc") return setUi(id, { needsFcc: true });
       if (outcome.kind === "needs-fields") return setUi(id, { fieldsNeeded: outcome.fields });
       setUi(id, { error: { message: outcome.message, diagnosis: outcome.diagnosis } });

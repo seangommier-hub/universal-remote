@@ -39,6 +39,8 @@ export interface NetworkDevice {
   hidden: boolean;
   /** Household-wide brand override chosen by someone with "It's a ...". */
   labelBrand: BrandId | null;
+  /** A base URL the device announced for itself (Home Assistant's mDNS base_url/internal_url/external_url), for prefilling an add flow; null/absent when nothing was announced (optional so existing test fixtures need not list it). */
+  serviceUrl?: string | null;
 }
 
 export interface DiscoverAllResult {
@@ -83,6 +85,7 @@ export function parseNetworkDevice(raw: unknown): NetworkDevice | null {
     friendlyName: stringOrNull(row.friendlyName),
     hidden: row.hidden === true,
     labelBrand: isBrandId(row.labelBrand) ? row.labelBrand : null,
+    serviceUrl: stringOrNull(row.serviceUrl),
   };
 }
 
@@ -102,6 +105,7 @@ function fillGaps(winner: NetworkDevice, other: NetworkDevice): NetworkDevice {
     kind: winner.kind ?? other.kind,
     friendlyName: winner.friendlyName ?? other.friendlyName,
     evidence: Array.from(new Set([...winner.evidence, ...other.evidence])),
+    serviceUrl: winner.serviceUrl ?? other.serviceUrl,
   };
 }
 
@@ -141,6 +145,7 @@ export function networkDeviceFromDiscovered(found: DiscoveredDevice): NetworkDev
     friendlyName: null,
     hidden: false,
     labelBrand: null,
+    serviceUrl: null,
   };
 }
 
