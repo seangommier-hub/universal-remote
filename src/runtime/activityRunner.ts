@@ -11,6 +11,9 @@ const WAIT_POLL_INTERVAL_MS = 500;
 const RETRY_BACKOFF_STEP_MS = 750;
 const RETRY_POLICY_PREFIX = "retry:";
 
+/** Capabilities that must always be a deliberate tap on the device's own screen (which confirms first), never an unattended step (ADR-HEARTH-178 follow-up). */
+const NEVER_IN_ACTIVITY_CAPABILITIES: ReadonlySet<CapabilityId> = new Set(["unlock"]);
+
 /**
  * Capabilities that toggle or step relative to the device's current state. Re-sending one after a
  * failure that may have already reached the device could flip it back or double the change, so
@@ -93,6 +96,7 @@ function retriesFor(step: CommandStep): number {
 }
 
 async function tryExecute(step: CommandStep, deps: ActivityRunDeps, activityName: string): Promise<{ result?: CommandResult; thrown?: string }> {
+  if (NEVER_IN_ACTIVITY_CAPABILITIES.has(step.capability)) return { thrown: `"${step.capability}" can't run inside an Activity; do it from the device's own screen` };
   try {
     return { result: await deps.commandEngine.execute({ deviceId: step.deviceId, capability: step.capability, args: step.args }, { cause: { kind: "activity", name: activityName } }) };
   } catch (err) {

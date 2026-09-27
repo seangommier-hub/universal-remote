@@ -69,6 +69,15 @@ describe("runActivity command steps", () => {
     const result = await runActivity(makeActivity([cmd("tv", "powerOn")]), deps);
     expect(result.steps).toEqual([{ index: 0, status: "failed", error: "engine exploded" }]);
   });
+
+  test("an unlock step is refused and never reaches the engine", async () => {
+    const { deps, engine } = makeDeps(alwaysOk);
+    const result = await runActivity(makeActivity([cmd("door", "unlock"), cmd("rx", "mute")]), deps);
+    expect(result.steps[0].status).toBe("failed");
+    expect(result.steps[0].error).toMatch(/can't run inside an Activity/);
+    expect(result.steps[1].status).toBe("ok");
+    expect(engine.execute).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("runActivity retries", () => {
