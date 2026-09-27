@@ -6,6 +6,19 @@ const ADD_ALL_MIDWAY_MS = 900;
 const ADD_ALL_FINISHED_MS = 3600;
 const SCROLL_STEP_PX = 700;
 const OFFLINE_SETTLE_MS = 4000;
+const LONG_PRESS_MS = 800;
+
+// A real long press: hold the pointer over the row long enough for onLongPress to fire.
+async function longPress(page, label) {
+  const row = page.getByLabel(label, { exact: true }).first();
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(LONG_PRESS_MS);
+  await page.mouse.up();
+  await page.waitForTimeout(TAB_SETTLE_MS);
+}
 
 export const SCENARIOS = [
   { name: "devices-home", screen: "list", assertFit: false },
@@ -18,6 +31,63 @@ export const SCENARIOS = [
     settleMs: OFFLINE_SETTLE_MS,
     steps: async (page) => {
       await page.getByLabel("Dismiss").first().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "devices-rooms", screen: "list", query: "&layout=rooms", assertFit: false },
+  { name: "devices-favorites-flat", screen: "list", query: "&layout=favorites", assertFit: false },
+  {
+    name: "devices-room-collapse",
+    screen: "list",
+    query: "&layout=rooms",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel(/^Living Room, 3 devices/).click();
+      await page.getByLabel(/^Kitchen, 1 device/).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-actions-menu",
+    screen: "list",
+    query: "&layout=rooms",
+    assertFit: false,
+    steps: async (page) => longPress(page, "Bedroom TV"),
+  },
+  {
+    name: "devices-set-room",
+    screen: "list",
+    query: "&layout=favorites",
+    assertFit: false,
+    steps: async (page) => {
+      await longPress(page, "Basement Roku");
+      await page.getByText("Set room", { exact: true }).click();
+      await page.getByLabel("Use Den").click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-set-room-saved",
+    screen: "list",
+    query: "&layout=favorites",
+    assertFit: false,
+    steps: async (page) => {
+      await longPress(page, "Basement Roku");
+      await page.getByText("Set room", { exact: true }).click();
+      await page.getByLabel("Use Den").click();
+      await page.getByText("Save room", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-move-down",
+    screen: "list",
+    query: "&layout=rooms",
+    assertFit: false,
+    steps: async (page) => {
+      await longPress(page, "Living Room TV");
+      await page.getByText("Move down", { exact: true }).click();
+      await page.getByText("Cancel", { exact: true }).click();
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },

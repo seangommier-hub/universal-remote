@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps, useEffect, useState } from "react";
-import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
@@ -9,13 +9,15 @@ import { Device } from "../core/types/Device";
 import { Activity, ActivityRun } from "../core/types/Activity";
 import { ActivityHistoryList } from "./ActivityHistoryList";
 import type { ActivityProgress } from "./useActivities";
-import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { ConnectivityBadge } from "./ConnectivityBadge";
-import { DeviceConnectionStatus } from "./DeviceConnectionStatus";
+import { DeviceActionsModal } from "./DeviceActionsModal";
+import { DeviceListSections } from "./DeviceListSections";
+import { roomChoices } from "../core/layout/deviceLayout";
+import { actionModalStyles as modal } from "./actionModalStyles";
+import { useDeviceLayout } from "./useDeviceLayout";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
 import { BrandOptionList } from "./BrandOptionList";
-import { checksForDevice } from "../discovery/brandSetupChecks";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
@@ -26,18 +28,7 @@ import { OfflineAlertBanner } from "./OfflineAlertBanner";
 import { UpdateBanner } from "./UpdateBanner";
 import { useNowPlaying } from "./useNowPlaying";
 
-type IconName = ComponentProps<typeof Ionicons>["name"];
-
 const ADD_PICKER_SEARCH_AFTER = 6;
-
-const CATEGORY_ICON: Record<string, IconName> = {
-  tv: "tv-outline",
-  streaming: "play-circle-outline",
-  lighting: "bulb-outline",
-  gaming: "game-controller-outline",
-  audio: "musical-notes-outline",
-  vacuum: "hardware-chip-outline",
-};
 
 interface DeviceListScreenProps {
   devices: Device[];
@@ -141,6 +132,7 @@ export function DeviceListScreen({
   const [showAddPicker, setShowAddPicker] = useState(false);
   const nowPlaying = useNowPlaying(devices, stateStore);
   const nameSuggestion = useNameSuggestion(actionsTarget, stateStore);
+  const layout = useDeviceLayout(devices);
 
   function showActivityActions(activity: Activity) {
     Alert.alert(activity.name, undefined, [
@@ -151,7 +143,6 @@ export function DeviceListScreen({
   }
 
   function handleRemovePress(device: Device) {
-    setActionsTarget(null);
     Alert.alert("Remove device?", `${device.name} will be unpaired from Hearth. You can add it again later.`, [
       { text: "Cancel", style: "cancel" },
       { text: "Remove", style: "destructive", onPress: () => onRemove(device) },
@@ -265,35 +256,12 @@ export function DeviceListScreen({
       {devices.length === 0 ? (
         <FirstRunSetupCard serverSaved={fccConfigured} onJoinWithCode={onJoinWithCode} onScanQr={onConnectFamilyCommandCenter} />
       ) : (
-        <FlatList
-          data={devices}
-          keyExtractor={(device) => device.id}
-          contentContainerStyle={styles.list}
-          scrollEnabled={false}
-          renderItem={({ item }) => (
-            <Pressable
-              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-              onPress={() => onSelect(item)}
-              onLongPress={() => setActionsTarget(item)}
-              accessibilityRole="button"
-              accessibilityLabel={item.name}
-              accessibilityHint="Double tap to open. Long press for more options."
-            >
-              <View style={styles.cardIcon}>
-                <Ionicons name={CATEGORY_ICON[item.category] ?? "hardware-chip-outline"} size={22} color={theme.accentEnd} />
-              </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.deviceName} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.deviceMeta} numberOfLines={1}>
-                  {item.manufacturer} {item.model}
-                </Text>
-                <DeviceConnectionStatus stateStore={stateStore} deviceId={item.id} />
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
-            </Pressable>
-          )}
+        <DeviceListSections
+          model={layout.model}
+          stateStore={stateStore}
+          onSelect={onSelect}
+          onLongPress={setActionsTarget}
+          onToggleRoom={layout.toggleRoom}
         />
       )}
 
@@ -323,9 +291,9 @@ export function DeviceListScreen({
       </ScrollView>
 
       <Modal visible={showAddPicker} transparent animationType="fade" onRequestClose={() => setShowAddPicker(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowAddPicker(false)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Add a device</Text>
+        <Pressable style={modal.backdrop} onPress={() => setShowAddPicker(false)}>
+          <Pressable style={modal.card} onPress={(e) => e.stopPropagation()}>
+            <Text style={modal.title}>Add a device</Text>
             <BrandOptionList
               brands={addPickerBrands()}
               searchAfter={ADD_PICKER_SEARCH_AFTER}
@@ -335,91 +303,34 @@ export function DeviceListScreen({
                 onAddDevice(brand.id);
               }}
             />
-            <Pressable style={styles.modalCancel} onPress={() => setShowAddPicker(false)}>
-              <Text style={styles.modalCancelLabel}>Cancel</Text>
+            <Pressable style={modal.cancel} onPress={() => setShowAddPicker(false)}>
+              <Text style={modal.cancelLabel}>Cancel</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
 
-      <Modal visible={actionsTarget !== null} transparent animationType="fade" onRequestClose={() => setActionsTarget(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setActionsTarget(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{actionsTarget?.name}</Text>
-            {actionsTarget && (
-              <>
-                <Pressable
-                  style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                  onPress={() => {
-                    const device = actionsTarget;
-                    setActionsTarget(null);
-                    onRename(device);
-                  }}
-                >
-                  <Text style={styles.modalOptionLabel}>Rename</Text>
-                </Pressable>
-                {nameSuggestion && (
-                  <Pressable
-                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                    onPress={() => {
-                      const device = actionsTarget;
-                      setActionsTarget(null);
-                      onUseDeviceName(device, nameSuggestion);
-                    }}
-                  >
-                    <Text style={styles.modalOptionLabel}>{`Use the name set on the device: "${nameSuggestion}"`}</Text>
-                  </Pressable>
-                )}
-                {typeof actionsTarget.config?.ipAddress === "string" && (
-                  <Pressable
-                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                    onPress={() => {
-                      const device = actionsTarget;
-                      setActionsTarget(null);
-                      onEditAddress(device);
-                    }}
-                  >
-                    <Text style={styles.modalOptionLabel}>Edit address</Text>
-                  </Pressable>
-                )}
-                {checksForDevice(actionsTarget, Platform.OS).length > 0 && (
-                  <Pressable
-                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                    onPress={() => {
-                      const device = actionsTarget;
-                      setActionsTarget(null);
-                      onSetupChecks(device);
-                    }}
-                  >
-                    <Text style={styles.modalOptionLabel}>Setup checks</Text>
-                  </Pressable>
-                )}
-                {actionsTarget.driverId === BROADLINK_IR_DRIVER_ID && (
-                  <Pressable
-                    style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                    onPress={() => {
-                      const device = actionsTarget;
-                      setActionsTarget(null);
-                      onTeachCommands(device);
-                    }}
-                  >
-                    <Text style={styles.modalOptionLabel}>Teach commands</Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]}
-                  onPress={() => handleRemovePress(actionsTarget)}
-                >
-                  <Text style={styles.modalDestructiveLabel}>Remove</Text>
-                </Pressable>
-              </>
-            )}
-            <Pressable style={styles.modalCancel} onPress={() => setActionsTarget(null)}>
-              <Text style={styles.modalCancelLabel}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <DeviceActionsModal
+        device={actionsTarget}
+        nameSuggestion={nameSuggestion}
+        isFavorite={actionsTarget ? layout.layout.favorites.includes(actionsTarget.id) : false}
+        currentRoom={actionsTarget ? layout.layout.rooms[actionsTarget.id] : undefined}
+        roomChoices={roomChoices(layout.layout)}
+        canMoveUp={actionsTarget ? layout.canMove(actionsTarget, "up") : false}
+        canMoveDown={actionsTarget ? layout.canMove(actionsTarget, "down") : false}
+        handlers={{
+          onRename,
+          onUseDeviceName,
+          onEditAddress,
+          onSetupChecks,
+          onTeachCommands,
+          onRemove: handleRemovePress,
+          onToggleFavorite: layout.toggleFavoriteFor,
+          onSetRoom: layout.setRoom,
+          onMove: layout.move,
+        }}
+        onClose={() => setActionsTarget(null)}
+      />
     </View>
   );
 }
@@ -460,7 +371,6 @@ const styles = StyleSheet.create({
   },
   title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700" },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
-  list: { gap: theme.spacing.md, paddingBottom: theme.spacing.md },
   sectionLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,
@@ -490,34 +400,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: theme.spacing.md,
   },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.md,
-    backgroundColor: theme.surface,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
   cardPressed: { opacity: 0.6 },
-  cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.surfaceRaised,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  // Real bug found by code review (2026-09-12), same class as ADR-HEARTH-053/046/049: flex:1 with
-  // no minWidth:0 gets an implicit min-content floor under the New Architecture's Yoga, and
-  // deviceName/deviceMeta had no numberOfLines either — a long device name (or manufacturer+model
-  // string) could force this box wider than the space left by cardIcon + the chevron, overlapping
-  // the chevron instead of truncating, the same symptom already fixed on every other header in
-  // this app.
-  cardBody: { flex: 1, minWidth: 0 },
-  deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "600" },
-  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.label, marginTop: theme.spacing.xs },
   emptyState: {
     alignItems: "center",
     gap: theme.spacing.sm,
@@ -551,20 +434,4 @@ const styles = StyleSheet.create({
   sceneLabel: { color: theme.textPrimary, fontSize: theme.type.label, fontWeight: "600" },
   newSceneChip: { borderColor: theme.accentEnd, borderStyle: "dashed" },
   newSceneLabel: { color: theme.accentEnd, fontSize: theme.type.label, fontWeight: "600" },
-  modalBackdrop: { flex: 1, backgroundColor: "#00000099", alignItems: "center", justifyContent: "center", padding: theme.spacing.xl },
-  modalCard: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: theme.surfaceRaised,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    gap: theme.spacing.sm,
-  },
-  modalTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", marginBottom: theme.spacing.xs },
-  modalOption: { paddingVertical: theme.spacing.md, borderRadius: theme.radius.sm },
-  modalOptionPressed: { backgroundColor: theme.surface },
-  modalOptionLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "600" },
-  modalDestructiveLabel: { color: theme.statusError, fontSize: theme.type.body, fontWeight: "600" },
-  modalCancel: { paddingVertical: theme.spacing.md, marginTop: theme.spacing.xs, borderTopWidth: 1, borderTopColor: theme.border },
-  modalCancelLabel: { color: theme.textSecondary, fontSize: theme.type.body, fontWeight: "600", textAlign: "center" },
 });
