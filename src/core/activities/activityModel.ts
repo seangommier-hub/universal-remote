@@ -9,6 +9,7 @@ import {
   WAIT_TIMEOUT_MAX_MS,
   WAIT_TIMEOUT_MIN_MS,
 } from "./activityLimits";
+import { normalizeSchedules, validateSchedules } from "./scheduleModel";
 
 const UNSYNCED_VERSION = 0;
 const FAILURE_POLICIES = new Set(["continue", "stop", "retry:1", "retry:2", "retry:3"]);
@@ -77,6 +78,8 @@ export function normalizeActivity(raw: unknown, nowIso: string): Activity | null
     version: typeof raw.version === "number" && raw.version >= 0 ? Math.floor(raw.version) : UNSYNCED_VERSION,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso,
   };
+  const schedules = normalizeSchedules(raw.schedules);
+  if (schedules) activity.schedules = schedules;
   if (typeof raw.icon === "string") activity.icon = raw.icon;
   if (typeof raw.updatedBy === "string") activity.updatedBy = raw.updatedBy;
   return activity;
@@ -99,5 +102,5 @@ export function validateActivity(activity: Activity): string | null {
   if (nameLength < ACTIVITY_NAME_MIN || nameLength > ACTIVITY_NAME_MAX) return `Name must be ${ACTIVITY_NAME_MIN} to ${ACTIVITY_NAME_MAX} characters.`;
   if (activity.steps.length === 0) return "Add at least one step.";
   if (activity.steps.length > ACTIVITY_MAX_STEPS) return `An activity can have at most ${ACTIVITY_MAX_STEPS} steps.`;
-  return null;
+  return validateSchedules(activity.schedules);
 }

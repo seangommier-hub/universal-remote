@@ -9,7 +9,7 @@ const MODULE_SHIMS = {
   "@react-native-async-storage/async-storage": shim("asyncStorage.ts"),
   "expo-secure-store": shim("secureStore.ts"),
   "expo-crypto": shim("expoCrypto.ts"),
-  "react-native": shim("unsupportedModule.ts"),
+  "react-native": shim("reactNative.ts"),
   "react-native-udp": shim("unsupportedModule.ts"),
   "expo-updates": shim("unsupportedModule.ts"),
   "expo-network": shim("unsupportedModule.ts"),

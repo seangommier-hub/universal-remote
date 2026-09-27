@@ -138,4 +138,25 @@ describe("runner HTTP API", () => {
       expect((await httpJson(base, "GET", "/state/nope")).status).toBe(404);
     });
   });
+
+  it("rejects requests without the shared secret when one is configured", async () => {
+    const server = createRunnerServer(buildExecutor(new FakeDriver()), "s3cret");
+    await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
+    try {
+      const base = `http://${LOOPBACK_HOST}:${(server.address() as AddressInfo).port}`;
+      expect((await httpJson(base, "GET", "/devices")).status).toBe(401);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("POST /run-activity runs steps and reports the unsupported driver as skipped", async () => {
+    const activity = { id: "a", name: "A", version: 1, updatedAt: "", steps: [{ kind: "command", deviceId: "tv", capability: "powerOff" }, { kind: "delay", ms: 0 }] };
+    await withServer(async (base) => {
+      const { status, json } = await httpJson(base, "POST", "/run-activity", { activity, runId: "r1" });
+      expect(status).toBe(200);
+      expect(json).toMatchObject({ runId: "r1", steps: [{ index: 0, status: "skipped" }, { index: 1, status: "ok" }] });
+      expect((await httpJson(base, "POST", "/run-activity", { activity: 5 })).status).toBe(400);
+    });
+  });
 });
