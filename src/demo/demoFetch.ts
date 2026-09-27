@@ -1,6 +1,8 @@
 import { DISCOVER_ALL_PATH } from "../discovery/discoverAll";
 import { ACTIVITY_LOG_PATH } from "../discovery/familyCommandCenterActivityLog";
+import { ALEXA_PLUGS_PATH } from "../drivers/outlet/alexa/AlexaPlugClient";
 import { demoActivityLogBody } from "./demoActivityLog";
+import { demoAlexaPlugsBody } from "./demoAlexaPlugs";
 import { demoDiscoverAllBody } from "./demoDiscoverPayload";
 import { demoGuestInviteBody, demoHouseholdPhonesBody, demoOwnIdentity } from "./demoHouseholdPhones";
 
@@ -27,6 +29,7 @@ export async function demoFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.includes(PHONE_TOKENS_SELF_PATH)) return jsonResponse(demoOwnIdentity(), HTTP_OK);
   if (url.includes(PHONE_TOKENS_PATH)) return jsonResponse(demoHouseholdPhonesBody(), HTTP_OK);
   if (url.includes(PAIR_CODE_PATH)) return jsonResponse(demoGuestInviteBody(), HTTP_OK);
+  if (url.includes(ALEXA_PLUGS_PATH)) return jsonResponse(demoAlexaPlugsBody(), HTTP_OK);
   return jsonResponse({ error: "not available in demo mode" }, HTTP_NOT_FOUND);
 }
 

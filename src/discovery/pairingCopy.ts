@@ -67,6 +67,7 @@ const PAIRING_PROMPTS: Partial<Record<PairingPromptId, PairingPrompt>> = {
   xbox: { heading: "Adding your Xbox", instruction: "Hearth is saving the console. It is not woken up during setup.", timeoutMs: null },
   homeassistant: { heading: "Adding your Home Assistant device", instruction: "Hearth is checking the access token with Home Assistant.", timeoutMs: null },
   smartthings: { heading: "Adding your outlet", instruction: "Hearth is linking the outlet through Family Command Center.", timeoutMs: null },
+  alexa: { heading: "Adding your plug", instruction: "Hearth is linking the plug through Family Command Center.", timeoutMs: null },
 };
 
 /** What to show the user while a brand's pairing step is waiting, or null when the brand has no waiting step. */

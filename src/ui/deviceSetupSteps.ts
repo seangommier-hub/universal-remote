@@ -96,6 +96,20 @@ export const SMARTTHINGS_SETUP_GUIDE: DeviceSetupGuide = {
 // different, encrypted protocol ("KLAP") this driver can't talk to. Flagged here up front, not just
 // buried in an error message after a failed add, since there's no way to tell which protocol a
 // given plug speaks without trying.
+// ADR-HEARTH-192: the Amazon sign-in itself happens once on the Family Command Center's own Alexa
+// bridge (a sibling session's Pi-side work, not anything inside this app) — same "the real
+// prerequisite lives outside Hearth" shape as SmartThings' guide just above, so it gets the same
+// treatment rather than a screen implying Hearth itself can do the Amazon login.
+export const ALEXA_SETUP_GUIDE: DeviceSetupGuide = {
+  title: "Set up Amazon Smart Plugs",
+  steps: [
+    "On the Family Command Center dashboard, open the Alexa integration and sign in with the household's Amazon account (one-time; this is not done from Hearth).",
+    "In the Alexa app, make sure each plug you want has already been discovered and named.",
+    "Come back here and tap \"Sync from Alexa\" — your plugs will appear below.",
+    "If a plug shows as unreachable or its state is unknown, that's Amazon's own report — check the plug's power and Wi-Fi, or the Alexa app directly.",
+  ],
+};
+
 export const KASA_SETUP_GUIDE: DeviceSetupGuide = {
   title: "Set up your Kasa plug",
   steps: [
@@ -165,6 +179,7 @@ const SETUP_GUIDES_BY_BRAND: Partial<Record<BrandId, DeviceSetupGuide>> = {
   lg: LG_SETUP_GUIDE,
   roku: ROKU_SETUP_GUIDE,
   smartthings: SMARTTHINGS_SETUP_GUIDE,
+  alexa: ALEXA_SETUP_GUIDE,
   kasa: KASA_SETUP_GUIDE,
   xbox: XBOX_SETUP_GUIDE,
   homeassistant: HOME_ASSISTANT_SETUP_GUIDE,

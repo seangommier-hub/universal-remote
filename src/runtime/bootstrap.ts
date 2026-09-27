@@ -11,6 +11,7 @@ import { RokuEcpDriver } from "../drivers/streaming/roku/RokuEcpDriver";
 import { HueLightDriver } from "../drivers/lighting/hue/HueLightDriver";
 import { GoveeLightDriver } from "../drivers/lighting/govee/GoveeLightDriver";
 import { SmartThingsOutletDriver } from "../drivers/outlet/smartthings/SmartThingsOutletDriver";
+import { AlexaPlugDriver } from "../drivers/outlet/alexa/AlexaPlugDriver";
 import { YamahaMusicCastDriver } from "../drivers/tv/yamaha/YamahaMusicCastDriver";
 import { XboxDriver } from "../drivers/gaming/xbox/XboxDriver";
 import { KasaPlugDriver } from "../drivers/outlet/kasa/KasaPlugDriver";
@@ -66,6 +67,7 @@ export function createHearthRuntime(): HearthRuntime {
   driverRegistry.register(new RokuEcpDriver());
   driverRegistry.register(new HueLightDriver());
   driverRegistry.register(new SmartThingsOutletDriver());
+  driverRegistry.register(new AlexaPlugDriver());
   driverRegistry.register(new YamahaMusicCastDriver());
   driverRegistry.register(new XboxDriver());
   driverRegistry.register(new KasaPlugDriver());
