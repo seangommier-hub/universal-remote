@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps, useEffect, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
@@ -64,8 +64,11 @@ function UtilityAction({
 }) {
   return (
     <View style={[styles.utilityAction, { width: `${100 / columns}%` }]}>
-      <CapabilityButton shape="circle" size="sm" scale={scale} icon={icon} label={label} variant={active ? "accent" : "default"} onPress={onPress} disabled={disabled} />
-      <Text style={styles.utilityActionLabel} numberOfLines={1}>
+      <CapabilityButton shape="circle" size="sm" scale={scale} icon={icon} label={label} variant={active ? "accent" : "default"} selected={active} onPress={onPress} disabled={disabled} />
+      {/* ADR-HEARTH-180: hidden from VoiceOver/TalkBack — this caption repeats the exact text the
+          button above already carries as its own accessibilityLabel, so leaving it exposed would
+          announce the same word twice for every utility action on this screen. */}
+      <Text style={styles.utilityActionLabel} numberOfLines={1} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {label}
       </Text>
     </View>
@@ -495,6 +498,26 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const controlsDisabled = !isConnected;
   const swipeBackHandlers = useSwipeBackGesture(onBack);
 
+  // ADR-HEARTH-180: VoiceOver/TalkBack reads this screen once, on focus — a connection status
+  // flip (e.g. the TV drops mid-use) or a failed command otherwise has no way to reach someone
+  // who isn't looking at the screen right now. announceForAccessibility interrupts with the new
+  // text on both platforms; accessibilityLiveRegion="polite"/"assertive" on the pill/banner below
+  // covers Android TalkBack's own live-region mechanism for the same text. The ref skips the very
+  // first render so opening the screen doesn't announce the starting status on top of VoiceOver's
+  // own "screen changed" announcement.
+  const announcedStatusRef = useRef(false);
+  useEffect(() => {
+    if (!announcedStatusRef.current) {
+      announcedStatusRef.current = true;
+      return;
+    }
+    AccessibilityInfo.announceForAccessibility(statusLine);
+  }, [statusLine]);
+
+  useEffect(() => {
+    if (commandError) AccessibilityInfo.announceForAccessibility(commandError);
+  }, [commandError]);
+
   return (
     // Sean, directly (2026-09-12): "add swiping to go back" — panHandlers on this wrapping View,
     // not the ScrollView itself, so PanResponder's edge-zone/direction-lock logic (see
@@ -603,7 +626,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       </View>
 
       <View style={styles.statusRow}>
-        <View style={[styles.statusPill, styles.statusPillShrink, isConnected ? styles.statusPillOn : styles.statusPillOff]}>
+        <View
+          style={[styles.statusPill, styles.statusPillShrink, isConnected ? styles.statusPillOn : styles.statusPillOff]}
+          accessibilityLiveRegion="polite"
+          accessible
+          accessibilityLabel={statusLine}
+        >
           <View style={[styles.statusDot, { backgroundColor: isConnected ? theme.statusOn : theme.statusOff }]} />
           <Text style={styles.statusPillText} numberOfLines={1}>
             {statusLine}
@@ -644,7 +672,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           — set commandError but the banner never rendered, so a real failure (no known MAC yet,
           Family Command Center unreachable) looked identical to a silently-ignored button press. */}
       {commandError ? (
-        <View style={styles.commandErrorBanner}>
+        <View style={styles.commandErrorBanner} accessibilityLiveRegion="assertive" accessible accessibilityLabel={commandError}>
           <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
           <Text style={styles.commandErrorText}>{commandError}</Text>
         </View>
@@ -683,19 +711,40 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       )}
 
       {(hasKeypad || hasKeyboard) && (
-        <View style={styles.tabBar}>
-          <Pressable style={[styles.tab, activeTab === "remote" && styles.tabActive]} onPress={() => setActiveTab("remote")}>
+        // ADR-HEARTH-180: accessibilityRole="tab" + accessibilityState={{selected}} on each —
+        // without these a screen reader only ever hears "Remote", "Keypad", "Keyboard" as plain
+        // buttons, with no way to tell which one is currently showing.
+        <View style={styles.tabBar} accessibilityRole="tablist">
+          <Pressable
+            style={[styles.tab, activeTab === "remote" && styles.tabActive]}
+            onPress={() => setActiveTab("remote")}
+            accessibilityRole="tab"
+            accessibilityLabel="Remote"
+            accessibilityState={{ selected: activeTab === "remote" }}
+          >
             <Text style={[styles.tabLabel, activeTab === "remote" && styles.tabLabelActive]}>Remote</Text>
           </Pressable>
           {hasKeypad && (
-            <Pressable style={[styles.tab, activeTab === "keypad" && styles.tabActive]} onPress={() => setActiveTab("keypad")}>
+            <Pressable
+              style={[styles.tab, activeTab === "keypad" && styles.tabActive]}
+              onPress={() => setActiveTab("keypad")}
+              accessibilityRole="tab"
+              accessibilityLabel={channelInput.length > 0 ? `Keypad, entered ${channelInput}` : "Keypad"}
+              accessibilityState={{ selected: activeTab === "keypad" }}
+            >
               <Text style={[styles.tabLabel, activeTab === "keypad" && styles.tabLabelActive]}>
                 Keypad{channelInput.length > 0 ? ` (${channelInput})` : ""}
               </Text>
             </Pressable>
           )}
           {hasKeyboard && (
-            <Pressable style={[styles.tab, activeTab === "keyboard" && styles.tabActive]} onPress={() => setActiveTab("keyboard")}>
+            <Pressable
+              style={[styles.tab, activeTab === "keyboard" && styles.tabActive]}
+              onPress={() => setActiveTab("keyboard")}
+              accessibilityRole="tab"
+              accessibilityLabel="Keyboard"
+              accessibilityState={{ selected: activeTab === "keyboard" }}
+            >
               <Text style={[styles.tabLabel, activeTab === "keyboard" && styles.tabLabelActive]}>Keyboard</Text>
             </Pressable>
           )}
@@ -982,6 +1031,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                 key={option.id}
                 label={option.label}
                 variant={input === option.id ? "accent" : "default"}
+                selected={input === option.id}
                 onPress={() => send("inputSelection", { input: option.id })}
                 disabled={controlsDisabled}
                 numberOfLines={1}
@@ -1128,8 +1178,12 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     </ScrollView>
 
       <Modal visible={showSleepPicker} transparent animationType="fade" onRequestClose={() => setShowSleepPicker(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowSleepPicker(false)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+        {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults
+            to accessible=true, which collapses every descendant into ONE opaque VoiceOver/
+            TalkBack node — without this, the sleep-duration options and Close link below would
+            never be individually reachable. */}
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowSleepPicker(false)} accessible={false}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()} accessible={false}>
             {sleepExpiresAt !== undefined ? (
               <>
                 <Text style={styles.modalTitle}>Sleep Timer</Text>

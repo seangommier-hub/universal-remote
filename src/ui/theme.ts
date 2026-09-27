@@ -18,7 +18,13 @@ export const theme = {
 
   textPrimary: "#F5F1EA",
   textSecondary: "#9099AC",
-  textTertiary: "#5C6480",
+  // ADR-HEARTH-180: was #5C6480 — measured 2.41:1-3.14:1 against this file's own three surfaces
+  // (background/surface/surfaceRaised), failing WCAG AA's 4.5:1 for normal text in every one of
+  // them, and this color is used for real informational text (device meta lines, activity-log
+  // entries, checklist captions — see theme.ts's own callers), not just decorative icons. Lightened
+  // within the same cool navy-gray family to clear 4.5:1 even against surfaceRaised (the lightest,
+  // hardest-to-contrast-against of the three): 4.74:1 there, 5.44:1 on surface, 6.17:1 on background.
+  textTertiary: "#8A93C4",
 
   border: "#2E3549",
   borderSubtle: "#242A3B",

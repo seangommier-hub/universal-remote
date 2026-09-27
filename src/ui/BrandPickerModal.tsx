@@ -20,8 +20,13 @@ export function BrandPickerModal({ row, onPick, onCancel }: BrandPickerModalProp
   const brands = row ? brandsForAddress(row.device.hostname, row.device.vendor) : [];
   return (
     <Modal visible={row !== null} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close brand list">
-        <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
+      {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults to
+          accessible=true, which collapses every descendant into ONE opaque VoiceOver/TalkBack node
+          — without this, the brand list and Cancel link below would never be individually
+          reachable. The backdrop's own tap-to-dismiss no longer needs a role/label since it's not
+          exposed to a screen reader as its own element at all now. */}
+      <Pressable style={styles.backdrop} onPress={onCancel} accessible={false}>
+        <Pressable style={styles.card} onPress={(e) => e.stopPropagation()} accessible={false}>
           <Text style={styles.title} numberOfLines={2}>
             What is {row?.title}?
           </Text>

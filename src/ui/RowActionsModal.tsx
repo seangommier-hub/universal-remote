@@ -35,8 +35,13 @@ function Action({ icon, label, onPress }: ActionProps) {
 export function RowActionsModal({ row, onHide, onShowAgain, onChooseBrand, onClose }: RowActionsModalProps) {
   return (
     <Modal visible={row !== null} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close menu" accessibilityRole="button">
-        <Pressable style={styles.card} onPress={(event) => event.stopPropagation()}>
+      {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults to
+          accessible=true, which collapses every descendant into ONE opaque VoiceOver/TalkBack node
+          — without this, the Action rows and Cancel link below would never be individually
+          reachable. The backdrop's own tap-to-dismiss no longer needs a role/label since it's not
+          exposed to a screen reader as its own element at all now. */}
+      <Pressable style={styles.backdrop} onPress={onClose} accessible={false}>
+        <Pressable style={styles.card} onPress={(event) => event.stopPropagation()} accessible={false}>
           <Text style={styles.title} numberOfLines={1}>
             {row?.title}
           </Text>

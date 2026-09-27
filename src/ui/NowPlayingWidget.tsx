@@ -38,18 +38,25 @@ export function NowPlayingWidget({ device, title, stateStore, commandEngine, onO
   const isPlaying = playbackState === "playing";
 
   return (
-    <Pressable style={styles.container} onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Now playing on ${device.name}: ${title}`}>
-      <View style={styles.thumbnail}>
-        <Ionicons name="play-circle-outline" size={22} color={theme.accentEnd} />
-      </View>
-      <View style={styles.textBlock}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={styles.subtitle} numberOfLines={1}>
-          {device.name}
-        </Text>
-      </View>
+    // ADR-HEARTH-180: the tap-to-open area is its own Pressable, a SIBLING of the playback
+    // controls below rather than their parent — a Pressable defaults to accessible=true, which
+    // collapses every descendant into one opaque VoiceOver/TalkBack node, so wrapping the whole
+    // bar (controls included) the way this used to would have made Back/Play/Home individually
+    // unreachable, exposing only "Now playing on X: Y" as a single undifferentiated button.
+    <View style={styles.container}>
+      <Pressable style={styles.openArea} onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Now playing on ${device.name}: ${title}`}>
+        <View style={styles.thumbnail}>
+          <Ionicons name="play-circle-outline" size={22} color={theme.accentEnd} />
+        </View>
+        <View style={styles.textBlock}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {device.name}
+          </Text>
+        </View>
+      </Pressable>
       <View style={styles.controls}>
         {device.capabilities.includes("back") && (
           <CapabilityButton
@@ -82,7 +89,7 @@ export function NowPlayingWidget({ device, title, stateStore, commandEngine, onO
           />
         )}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -98,6 +105,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
   },
+  openArea: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
   thumbnail: {
     width: 40,
     height: 40,

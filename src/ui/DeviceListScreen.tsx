@@ -156,7 +156,13 @@ export function DeviceListScreen({
         </View>
         <View style={styles.headerText}>
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={1}>
+            {/* ADR-HEARTH-180: at large Dynamic Type sizes the fixed-size ConnectivityBadge and
+                header icon buttons beside this title take up a growing share of the row's width,
+                and a plain numberOfLines={1} truncation there degraded "Hearth" into an unreadable
+                "H..." — found via the ui-verify harness's ?fontScale= approximation (1.6x). Same
+                shrink-to-fit technique this codebase already uses for the streaming tiles/input
+                grid (StreamingAppTile, CapabilityButton's numberOfLines path) instead of a hard clip. */}
+            <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
               Hearth
             </Text>
             <ConnectivityBadge mode={connectivityMode} />
@@ -291,8 +297,11 @@ export function DeviceListScreen({
       </ScrollView>
 
       <Modal visible={showAddPicker} transparent animationType="fade" onRequestClose={() => setShowAddPicker(false)}>
-        <Pressable style={modal.backdrop} onPress={() => setShowAddPicker(false)}>
-          <Pressable style={modal.card} onPress={(e) => e.stopPropagation()}>
+        {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults
+            to accessible=true, which would otherwise collapse the brand list and Cancel link below
+            into one unlabeled VoiceOver/TalkBack node instead of each being individually reachable. */}
+        <Pressable style={modal.backdrop} onPress={() => setShowAddPicker(false)} accessible={false}>
+          <Pressable style={modal.card} onPress={(e) => e.stopPropagation()} accessible={false}>
             <Text style={modal.title}>Add a device</Text>
             <BrandOptionList
               brands={addPickerBrands()}

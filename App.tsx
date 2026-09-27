@@ -1,3 +1,6 @@
+// ADR-HEARTH-180: must be this file's first import — see demoFontScalePreload.ts's own doc
+// comment for why a later, effect-driven call is too late to affect any screen's own styles.
+import "./src/demo/demoFontScalePreload";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";

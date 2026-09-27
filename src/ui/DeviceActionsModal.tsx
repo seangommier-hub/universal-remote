@@ -57,8 +57,11 @@ export function DeviceActionsModal({ device, nameSuggestion, isFavorite, isKidAl
 
   return (
     <Modal visible={device !== null} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={modal.backdrop} onPress={onClose}>
-        <Pressable style={modal.card} onPress={(e) => e.stopPropagation()}>
+      {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults to
+          accessible=true, which collapses every descendant into ONE opaque VoiceOver/TalkBack node
+          — without this, none of the Option rows below would be individually reachable. */}
+      <Pressable style={modal.backdrop} onPress={onClose} accessible={false}>
+        <Pressable style={modal.card} onPress={(e) => e.stopPropagation()} accessible={false}>
           {device && editingRoom && (
             <SetRoomPanel
               deviceName={device.name}

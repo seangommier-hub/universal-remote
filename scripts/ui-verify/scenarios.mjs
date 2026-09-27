@@ -194,6 +194,15 @@ export const SCENARIOS = [
   { name: "entity-sensor", screen: "remote:ha-temp", assertFit: false },
   { name: "entity-sensor-unavailable", screen: "remote:ha-offline", assertFit: false },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
+  // ADR-HEARTH-180: Dynamic Type approximation — Playwright can't emulate iOS's real accessibility
+  // text sizes, so ?fontScale= scales theme.type instead (demoFontScale.ts). assertFit stays false
+  // here on purpose: the remote's no-scroll invariant (ADR-HEARTH-135) is only asserted at the
+  // DEFAULT text size above; a larger size is explicitly allowed to need scrolling, this scenario
+  // is INFO-only so a human can review the screenshot for clipped/overlapping text, not cut-off scroll.
+  { name: "remote-lg-fontscale-130", screen: "remote:lg", query: "&fontScale=1.3", assertFit: false },
+  { name: "remote-lg-fontscale-160", screen: "remote:lg", query: "&fontScale=1.6", assertFit: false },
+  { name: "devices-home-fontscale-130", screen: "list", query: "&fontScale=1.3", assertFit: false },
+  { name: "devices-home-fontscale-160", screen: "list", query: "&fontScale=1.6", assertFit: false },
   {
     name: "remote-lg-keypad",
     screen: "remote:lg",

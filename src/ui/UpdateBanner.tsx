@@ -16,9 +16,14 @@ interface UpdateBannerProps {
  * choosing the moment, the same reasoning ADR-HEARTH-017 already applied to reconnects.
  */
 export function UpdateBanner({ status, onApply, onDismiss }: UpdateBannerProps) {
+  // ADR-HEARTH-180: accessibilityLiveRegion so TalkBack announces a status flip (checking ->
+  // ready/error/up-to-date) for someone not looking at the screen when it happens; this banner's
+  // own remount per status branch below (each `return`s a fresh tree) is what iOS VoiceOver
+  // already treats as new content worth reading, so no extra announceForAccessibility call is
+  // needed here the way a banner that only changes its own text in place would need one.
   if (status === "checking") {
     return (
-      <View style={styles.banner}>
+      <View style={styles.banner} accessibilityLiveRegion="polite">
         <ActivityIndicator color={theme.accentEnd} size="small" />
         <Text style={styles.text}>Checking for updates...</Text>
       </View>
@@ -27,7 +32,7 @@ export function UpdateBanner({ status, onApply, onDismiss }: UpdateBannerProps) 
 
   if (status === "up-to-date") {
     return (
-      <View style={styles.banner}>
+      <View style={styles.banner} accessibilityLiveRegion="polite">
         <Ionicons name="checkmark-circle-outline" size={16} color={theme.statusOn} />
         <Text style={styles.text}>Hearth is up to date.</Text>
       </View>
@@ -36,10 +41,10 @@ export function UpdateBanner({ status, onApply, onDismiss }: UpdateBannerProps) 
 
   if (status === "error") {
     return (
-      <View style={styles.banner}>
+      <View style={styles.banner} accessibilityLiveRegion="assertive">
         <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
         <Text style={styles.text}>Couldn't check for updates.</Text>
-        <Pressable onPress={onDismiss} hitSlop={8}>
+        <Pressable onPress={onDismiss} hitSlop={8} accessibilityRole="button" accessibilityLabel="Dismiss">
           <Ionicons name="close" size={16} color={theme.textTertiary} />
         </Pressable>
       </View>
@@ -47,7 +52,7 @@ export function UpdateBanner({ status, onApply, onDismiss }: UpdateBannerProps) 
   }
 
   return (
-    <View style={[styles.banner, styles.bannerReady]}>
+    <View style={[styles.banner, styles.bannerReady]} accessibilityLiveRegion="polite">
       <Ionicons name="cloud-download-outline" size={16} color={theme.accentEnd} />
       <Text style={styles.text}>An update is ready.</Text>
       <Pressable style={styles.applyButton} onPress={onApply} accessibilityRole="button" accessibilityLabel="Restart to update">

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { verifyAndSaveFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { PairInvite } from "../discovery/pairInvite";
@@ -59,6 +59,13 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onInvite, o
   const [errorMessage, setErrorMessage] = useState("");
   const scanLineTranslateY = useScanLineAnimation(status === "scanning");
 
+  // ADR-HEARTH-180: a failed scan/verify is easy to miss for someone not looking at the camera
+  // preview — announceForAccessibility covers VoiceOver (iOS); accessibilityLiveRegion on the
+  // error card above covers TalkBack (Android) for the same text.
+  useEffect(() => {
+    if (status === "error") AccessibilityInfo.announceForAccessibility(errorMessage);
+  }, [status, errorMessage]);
+
   async function handleScanned(data: string) {
     if (status !== "scanning") return; // ignore repeat scans while we're already verifying/erroring
 
@@ -112,7 +119,7 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onInvite, o
           <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} />
           <CapabilityButton label="Allow Camera" variant="accent" onPress={requestPermission} />
         </View>
-        <Pressable onPress={onUseManualEntry}>
+        <Pressable onPress={onUseManualEntry} accessibilityRole="button" accessibilityLabel="Enter address and token manually instead">
           <Text style={styles.manualLink}>Enter address and token manually instead</Text>
         </Pressable>
       </View>
@@ -152,13 +159,15 @@ export function ScanFamilyCommandCenterQrScreen({ onCancel, onSaved, onInvite, o
             </View>
           )}
           {status === "error" && (
-            <View style={styles.errorCard}>
+            // accessibilityLiveRegion here (not accessible={true}) — that prop would collapse the
+            // "Try again" button below into this same node, making it unreachable (ADR-HEARTH-180).
+            <View style={styles.errorCard} accessibilityLiveRegion="assertive">
               <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
               <Text style={styles.error}>{errorMessage}</Text>
               <CapabilityButton label="Try again" variant="accent" onPress={() => setStatus("scanning")} />
             </View>
           )}
-          <Pressable onPress={onUseManualEntry}>
+          <Pressable onPress={onUseManualEntry} accessibilityRole="button" accessibilityLabel="Enter manually instead">
             <Text style={styles.manualLink}>Enter manually instead</Text>
           </Pressable>
         </View>
