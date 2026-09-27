@@ -1,5 +1,6 @@
 import { DeviceDriver } from "../core/drivers/DeviceDriver";
 import { DeviceCategory } from "../core/types/Device";
+import { ALEXA_PLUG_DRIVER_ID } from "../drivers/outlet/alexa/AlexaPlugDriver";
 import { ANDROID_TV_DRIVER_ID } from "../drivers/tv/androidtv/AndroidTvDriver";
 import { APPLE_TV_DRIVER_ID } from "../drivers/tv/appletv/AppleTvDriver";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
@@ -48,6 +49,7 @@ export type BrandId =
   | "broadlink"
   | "feeder"
   | "smartthings"
+  | "alexa"
   | "switchbot"
   | "homeassistant"
   | "vizio"
@@ -206,6 +208,14 @@ export const BRAND_REGISTRY: BrandEntry[] = [
   {
     id: "smartthings", label: "Sync from SmartThings", driverId: SMARTTHINGS_OUTLET_DRIVER_ID, manufacturer: "SmartThings", category: "outlet", icon: "flash-outline", defaultName: "SmartThings outlet",
     addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false, hint: "Cloud-linked outlets; needs a SmartThings token.", vendorPattern: null, inAddPicker: true,
+  },
+  {
+    // ADR-HEARTH-192: same "needsFcc: false despite every command routing through Family Command
+    // Center" reasoning as Kasa/Govee above and SmartThings just above — this field gates the
+    // add/pairing flow (nothing here needs the phone to already have Family Command Center paired
+    // as a *precondition to picking this brand*, same as SmartThings), not ongoing command execution.
+    id: "alexa", label: "Sync from Alexa", driverId: ALEXA_PLUG_DRIVER_ID, manufacturer: "Amazon", category: "outlet", icon: "flash-outline", defaultName: "Amazon Smart Plug",
+    addMode: "custom-screen", fields: [], needsFcc: false, needsIp: false, hint: "Amazon Smart Plugs; needs a one-time Amazon sign-in on Family Command Center.", vendorPattern: null, inAddPicker: true,
   },
   {
     id: "homeassistant", label: "Sync from Home Assistant", driverId: HOME_ASSISTANT_DRIVER_ID, manufacturer: "Home Assistant", category: "other", icon: "home-outline", defaultName: "Home Assistant device",

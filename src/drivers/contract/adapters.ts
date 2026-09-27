@@ -20,6 +20,7 @@ import { ShellyRelayDriver } from "../outlet/shelly/ShellyRelayDriver";
 import { VizioSmartCastDriver } from "../tv/vizio/VizioSmartCastDriver";
 import { KasaPlugDriver } from "../outlet/kasa/KasaPlugDriver";
 import { SmartThingsOutletDriver } from "../outlet/smartthings/SmartThingsOutletDriver";
+import { AlexaPlugDriver } from "../outlet/alexa/AlexaPlugDriver";
 import { ChromecastDriver } from "../streaming/chromecast/ChromecastDriver";
 import { RokuEcpDriver } from "../streaming/roku/RokuEcpDriver";
 import { AndroidTvDriver } from "../tv/androidtv/AndroidTvDriver";
@@ -123,6 +124,9 @@ const kasaResponder: Responder = (url) => (url.includes("sysinfo") ? { json: { r
 
 const smartThingsResponder: Responder = (url, init) => (init?.method === "POST" ? { json: {} } : { json: { outlets: [{ id: "st-1", state: "on" }] } });
 
+const alexaResponder: Responder = (url, init) =>
+  init?.method === "POST" ? { json: { success: true } } : { json: { plugs: [{ id: "alexa-1", name: "Alexa Plug", manufacturer: "Amazon", on: true, reachable: true }] } };
+
 const HA_CONTRACT_STATES: Record<string, { state: string; attributes: Record<string, unknown> }> = {
   "switch.lamp": { state: "on", attributes: { friendly_name: "Lamp" } },
   "cover.garage": { state: "closed", attributes: { friendly_name: "Garage", current_cover_position: 0, device_class: "garage" } },
@@ -181,6 +185,7 @@ export const DRIVER_ADAPTERS: DriverAdapter[] = [
   { name: "AndroidTvDriver", createDriver: () => new AndroidTvDriver(), createDevice: device("atvr-1", { ipAddress: "192.168.1.91" }), responder: () => ({ json: { isOn: true, currentApp: null } }), usesFcc: true, command: anyCommand("select"), exemptions: {} },
   { name: "KasaPlugDriver", createDriver: () => new KasaPlugDriver(), createDevice: device("kasa-1", { ipAddress: "192.168.1.50" }), responder: kasaResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "SmartThingsOutletDriver", createDriver: () => new SmartThingsOutletDriver(), createDevice: device("st-1", { deviceId: "st-1" }), responder: smartThingsResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
+  { name: "AlexaPlugDriver", createDriver: () => new AlexaPlugDriver(), createDevice: device("alexa-1", { plugId: "alexa-1" }), responder: alexaResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "VizioSmartCastDriver", createDriver: () => new VizioSmartCastDriver(), createDevice: device("vizio-1", { ipAddress: "192.168.1.88", port: 7345, authToken: "token" }), responder: vizioResponder, usesFcc: true, command: anyCommand("volumeUp"), exemptions: {} },
   { name: "WizLightDriver", createDriver: () => new WizLightDriver(), createDevice: device("wiz-1", { ipAddress: "192.168.1.89" }), responder: wizResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
   { name: "LifxLightDriver", createDriver: () => new LifxLightDriver(), createDevice: device("lifx-1", { ipAddress: "192.168.1.91" }), responder: lifxResponder, usesFcc: true, command: anyCommand("power"), exemptions: {} },
