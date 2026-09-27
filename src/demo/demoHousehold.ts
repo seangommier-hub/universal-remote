@@ -1,5 +1,7 @@
 import { Activity } from "../core/types/Activity";
 import { Device } from "../core/types/Device";
+import { ConnectionState } from "../core/types/DeviceState";
+import { DEMO_ENTITY_SCRIPTS } from "./demoEntityDevices";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
@@ -23,6 +25,8 @@ export interface DemoDeviceScript {
   reachable: boolean;
   /** Milliseconds a connect() waits before resolving; used so a device being newly paired shows the waiting card. */
   connectDelayMs?: number;
+  /** The connection state a reachable device settles in; "connected" when absent (an unavailable Home Assistant entity uses "disconnected"). */
+  connection?: ConnectionState;
   values: Record<string, unknown>;
 }
 
@@ -47,6 +51,7 @@ export const DEMO_DEVICE_SCRIPTS: Record<string, DemoDeviceScript> = {
   [DEMO_KASA_ID]: { reachable: true, values: { power: "on" } },
   [DEMO_BROADLINK_ID]: { reachable: true, values: {} },
   ...ADD_ALL_SCRIPTS,
+  ...DEMO_ENTITY_SCRIPTS,
 };
 
 function demoDevice(id: string, name: string, driverId: string, category: Device["category"], manufacturer: string, ipTail: number): Device {

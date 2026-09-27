@@ -2,6 +2,7 @@ import { DeviceDriver, StateChangeListener } from "../core/drivers/DeviceDriver"
 import { Command, CommandResult } from "../core/types/Command";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
+import { applyEntityCommand } from "./demoEntityDevices";
 import { DEMO_DEVICE_SCRIPTS, DemoDeviceScript } from "./demoHousehold";
 
 const VOLUME_STEP = 2;
@@ -29,7 +30,7 @@ function applyCommand(values: Record<string, unknown>, command: Command): Record
     case "inputSelection":
       return { ...values, input: command.args?.input ?? values.input };
     default:
-      return values;
+      return applyEntityCommand(values, command) ?? values;
   }
 }
 
@@ -58,7 +59,7 @@ export function createDemoDriver(real: DeviceDriver, scripts: Record<string, Dem
         publish(device.id, { connection: "disconnected", values: {}, lastUpdated: Date.now() });
         throw new Error("Demo device is offline");
       }
-      publish(device.id, { connection: "connected", values: { ...script.values }, lastUpdated: Date.now() });
+      publish(device.id, { connection: script.connection ?? "connected", values: { ...script.values }, lastUpdated: Date.now() });
     },
 
     async disconnect(device: Device): Promise<void> {

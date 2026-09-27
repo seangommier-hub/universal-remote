@@ -54,6 +54,57 @@ function lightCommand(command: Command, entityId: string): HaServiceCall {
   throw new HaCommandValidationError(`Home Assistant lights do not implement ${command.capability}`);
 }
 
+const MAX_PERCENT = 100;
+const SUCTION_MAX_LEVEL = 3;
+
+function stringArg(command: Command, name: string): string {
+  const value = command.args?.[name];
+  if (typeof value !== "string" || !value) throw new HaCommandValidationError(`${command.capability} requires a string '${name}' arg`);
+  return value;
+}
+
+function percentArg(command: Command, name: string): number {
+  return Math.max(0, Math.min(MAX_PERCENT, Math.round(numberArg(command, name))));
+}
+
+function serviceCall(domain: string, service: string, entityId: string, extra: Record<string, unknown> = {}): HaServiceCall {
+  return { domain, service, data: { entity_id: entityId, ...extra } };
+}
+
+const COVER_SERVICES: Record<string, string> = { open: "open_cover", close: "close_cover", stop: "stop_cover" };
+const LOCK_SERVICES: Record<string, string> = { lock: "lock", unlock: "unlock" };
+const VACUUM_SERVICES: Record<string, string> = { vacuumStart: "start", vacuumStop: "stop", vacuumDock: "return_to_base" };
+const ACTION_SERVICES: Record<string, string> = { scene: "turn_on", script: "turn_on", automation: "trigger", button: "press" };
+
+function coverCommand(command: Command, entityId: string): HaServiceCall {
+  const service = COVER_SERVICES[command.capability];
+  if (service) return serviceCall("cover", service, entityId);
+  if (command.capability === "setPosition") return serviceCall("cover", "set_cover_position", entityId, { position: percentArg(command, "position") });
+  throw new HaCommandValidationError(`Home Assistant covers do not implement ${command.capability}`);
+}
+
+function climateCommand(command: Command, entityId: string): HaServiceCall {
+  if (command.capability === "setTemperature") return serviceCall("climate", "set_temperature", entityId, { temperature: numberArg(command, "temperature") });
+  if (command.capability === "setHvacMode") return serviceCall("climate", "set_hvac_mode", entityId, { hvac_mode: stringArg(command, "mode") });
+  throw new HaCommandValidationError(`Home Assistant climate entities do not implement ${command.capability}`);
+}
+
+function fanCommand(command: Command, entityId: string): HaServiceCall {
+  if (command.capability === "setFanSpeed") return serviceCall("fan", "set_percentage", entityId, { percentage: percentArg(command, "percentage") });
+  if (command.capability === "setFanPreset") return serviceCall("fan", "set_preset_mode", entityId, { preset_mode: stringArg(command, "preset") });
+  throw new HaCommandValidationError(`Home Assistant fans do not implement ${command.capability}`);
+}
+
+/** Robot vacuums: Hearth's four suction levels (0-3) are spread across the entity's own `fan_speed_list`. */
+function vacuumCommand(command: Command, entityId: string, values: Record<string, unknown>): HaServiceCall {
+  const service = VACUUM_SERVICES[command.capability];
+  if (service) return serviceCall("vacuum", service, entityId);
+  const speeds = Array.isArray(values.fanSpeeds) ? (values.fanSpeeds as string[]) : [];
+  if (command.capability !== "setSuctionPower" || speeds.length === 0) throw new HaCommandValidationError(`This vacuum does not implement ${command.capability}`);
+  const level = Math.max(0, Math.min(SUCTION_MAX_LEVEL, numberArg(command, "level")));
+  return serviceCall("vacuum", "set_fan_speed", entityId, { fan_speed: speeds[Math.round((level / SUCTION_MAX_LEVEL) * (speeds.length - 1))] });
+}
+
 /** Maps a Hearth command to the Home Assistant service call that performs it for one entity. */
 export function commandToServiceCall(command: Command, entityId: string, values: Record<string, unknown>): HaServiceCall {
   const domain = domainOf(entityId);
@@ -63,5 +114,11 @@ export function commandToServiceCall(command: Command, entityId: string, values:
   if (domain === "media_player") return mediaPlayerCommand(command, entityId, values);
   if (domain === "light") return lightCommand(command, entityId);
   if (domain === "remote") return remoteCommand(command, entityId);
+  if (domain === "cover") return coverCommand(command, entityId);
+  if (domain === "lock" && LOCK_SERVICES[command.capability]) return serviceCall("lock", LOCK_SERVICES[command.capability], entityId);
+  if (ACTION_SERVICES[domain] && command.capability === "trigger") return serviceCall(domain, ACTION_SERVICES[domain], entityId);
+  if (domain === "climate") return climateCommand(command, entityId);
+  if (domain === "fan") return fanCommand(command, entityId);
+  if (domain === "vacuum") return vacuumCommand(command, entityId, values);
   throw new HaCommandValidationError(`Home Assistant ${domain} entities only support power`);
 }

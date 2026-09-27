@@ -15,7 +15,12 @@ const CATEGORY_ICON: Record<string, IconName> = {
   gaming: "game-controller-outline",
   audio: "musical-notes-outline",
   vacuum: "hardware-chip-outline",
-};
+  cover: "browsers-outline",
+  lock: "lock-closed-outline",
+  climate: "thermometer-outline",
+  fan: "aperture-outline",
+  sensor: "pulse-outline",
+  action: "play-circle-outline",};
 
 const FALLBACK_ICON: IconName = "hardware-chip-outline";
 

@@ -141,6 +141,58 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  { name: "entity-garage", screen: "remote:ha-garage", assertFit: false },
+  {
+    name: "entity-garage-confirm",
+    screen: "remote:ha-garage",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Open", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "entity-garage-opened",
+    screen: "remote:ha-garage",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Open", { exact: true }).click();
+      await page.getByText("Open", { exact: true }).last().click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "entity-lock-confirm",
+    screen: "remote:ha-lock",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Unlock", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "entity-thermostat-raised",
+    screen: "remote:ha-thermostat",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Raise temperature").click();
+      await page.getByLabel("Raise temperature").click();
+      await page.getByLabel("Cool", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "entity-fan", screen: "remote:ha-fan", assertFit: false },
+  {
+    name: "entity-scene-ran",
+    screen: "remote:ha-scene",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Run", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  { name: "entity-sensor", screen: "remote:ha-temp", assertFit: false },
+  { name: "entity-sensor-unavailable", screen: "remote:ha-offline", assertFit: false },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
   {
     name: "remote-lg-keypad",

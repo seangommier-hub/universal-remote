@@ -19,6 +19,11 @@ export interface HomeAssistantEntity {
   attributes: Record<string, unknown>;
 }
 
+/** The parts of GET /api/config Hearth reads: which units the server displays (climate temperatures arrive in these). */
+export interface HomeAssistantConfigInfo {
+  unit_system?: { temperature?: string };
+}
+
 /** A Home Assistant request that failed; `status` is 0 when no HTTP response arrived. */
 export class HomeAssistantApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -60,6 +65,11 @@ export class HomeAssistantClient {
   /** The current state of one entity. */
   async getEntity(entityId: string): Promise<HomeAssistantEntity> {
     return this.request<HomeAssistantEntity>(`/api/states/${encodeURIComponent(entityId)}`);
+  }
+
+  /** The server's configuration (GET /api/config), used for its unit system. */
+  async getConfig(): Promise<HomeAssistantConfigInfo> {
+    return this.request<HomeAssistantConfigInfo>("/api/config");
   }
 
   /** Calls POST /api/services/<domain>/<service> with the given service data. */

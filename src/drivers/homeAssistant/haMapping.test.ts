@@ -66,8 +66,8 @@ describe("entityToValues", () => {
     expect(entityToValues(entity("light.a", "on", { brightness: 255, hs_color: [120, 50] }))).toMatchObject({ power: "on", brightness: 100, hue: 120, saturation: 50 });
   });
 
-  test("an unavailable entity reads as off and flagged unavailable", () => {
-    expect(entityToValues(entity("switch.a", "unavailable"))).toMatchObject({ power: "off", unavailable: true });
+  test("an unavailable entity carries no power reading and is flagged unavailable", () => {
+    expect(entityToValues(entity("switch.a", "unavailable"))).toMatchObject({ unavailable: true, availability: "unavailable" });
   });
 });
 

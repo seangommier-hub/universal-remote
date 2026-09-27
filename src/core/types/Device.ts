@@ -10,6 +10,12 @@ export type DeviceCategory =
   | "climate"
   | "vacuum"
   | "lock"
+  // ADR-HEARTH-178: Home Assistant covers (garage doors, blinds), fans, read-only sensors and stateless
+  // "run it" entities (scenes, scripts, automations, buttons).
+  | "cover"
+  | "fan"
+  | "sensor"
+  | "action"
   | "gaming"
   // ADR-HEARTH-104: doesn't fit the remote-control metaphor any other category here implies (no
   // directional nav, no volume/power toggle) — surfaced in its own "Feeder" tab, not the Devices
