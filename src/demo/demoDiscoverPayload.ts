@@ -10,6 +10,8 @@ interface DemoRow {
   confidence: string;
   kind: string;
   friendlyName: string | null;
+  /** ADR-HEARTH-183: a URL the device announced for itself over mDNS (Home Assistant's base_url). */
+  serviceUrl?: string | null;
 }
 
 const MAC_PREFIX = "aa:bb:cc:00:00:";
@@ -28,6 +30,13 @@ const RECOGNIZED: DemoRow[] = [
   row(65, "streaming", "Apple-TV", "Apple", { brand: "appletv", confidence: "guess" }),
   row(66, "streaming", "Roku-Ultra", "Roku", { brand: "roku", confidence: "certain", model: "Ultra 4800", friendlyName: "Guest Room Roku" }),
   row(67, "audio", "Sonos-Move", "Sonos", { brand: "sonos", confidence: "certain", friendlyName: "Patio Sonos" }),
+  row(
+    68,
+    "iot",
+    "homeassistant.local",
+    null,
+    { brand: "homeassistant", confidence: "certain", friendlyName: "Home Assistant", serviceUrl: "http://192.168.1.68:8123" }
+  ),
 ];
 
 const OTHER: DemoRow[] = [

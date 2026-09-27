@@ -18,7 +18,7 @@ interface SuggestedDevicesSectionProps {
   stateStore: StateStore;
   devices: Device[];
   onAdded: (device: Device) => void;
-  onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
+  onOpenBrandScreen: (brand: BrandId, ipAddress: string, serviceUrl?: string | null) => void;
   onOpenFccSetup: () => void;
   /** Opens the Discover screen, where the full list lives. */
   onSeeAll: () => void;

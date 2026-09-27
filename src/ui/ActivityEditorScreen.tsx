@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { commandChoicesFor, commandStepFromChoice } from "../core/activities/activityChoices";
@@ -8,9 +8,11 @@ import { validateActivity } from "../core/activities/activityModel";
 import { appendStep, moveStep, newActivityDraft, newDelayStep, newWaitStep, removeStepAt, replaceStep } from "../core/activities/activityStepEditing";
 import { StateStore } from "../core/state/StateStore";
 import { unsupportedHeadlessSteps } from "../core/activities/headlessSupport";
-import { Activity, ActivitySchedule, ActivityStep } from "../core/types/Activity";
+import { Activity, ActivityHomeAssistant, ActivitySchedule, ActivityStep } from "../core/types/Activity";
 import { Device } from "../core/types/Device";
+import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
+import { ActivityHomeAssistantSection } from "./ActivityHomeAssistantSection";
 import { ActivityResultsCard } from "./ActivityResultsCard";
 import { ActivityScheduleSection } from "./ActivityScheduleSection";
 import { ActivityStepRow } from "./ActivityStepRow";
@@ -49,14 +51,26 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
   const [name, setName] = useState(editingActivity?.name ?? "");
   const [steps, setSteps] = useState<ActivityStep[]>(editingActivity?.steps ?? []);
   const [schedules, setSchedules] = useState<ActivitySchedule[]>(editingActivity?.schedules ?? []);
+  const [homeAssistant, setHomeAssistant] = useState<ActivityHomeAssistant>(editingActivity?.homeAssistant ?? {});
+  const [fccBaseUrl, setFccBaseUrl] = useState<string | null>(null);
   const [draftId] = useState(() => editingActivity?.id ?? newActivityId());
   const isEditing = editingActivity !== undefined;
   const inputsOf = (deviceId: string) => stateStore.get(deviceId).values.inputs;
 
+  useEffect(() => {
+    let cancelled = false;
+    void loadFamilyCommandCenterConfig().then((config) => {
+      if (!cancelled) setFccBaseUrl(config?.baseUrl ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function buildDraft(): Activity {
     const base = editingActivity ?? newActivityDraft(draftId, name, steps, new Date().toISOString());
     const keepsSchedules = schedules.length > 0 || editingActivity?.schedules !== undefined;
-    return { ...base, name: name.trim(), steps, ...(keepsSchedules ? { schedules } : {}) };
+    return { ...base, name: name.trim(), steps, ...(keepsSchedules ? { schedules } : {}), homeAssistant };
   }
 
   const driverIdOf = (deviceId: string) => devices.find((device) => device.id === deviceId)?.driverId;
@@ -64,7 +78,7 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
     ({ index, reason }) => `Step ${index + 1} will be skipped on a schedule: ${reason}.`
   );
 
-  const draftProblem = validateActivity({ ...(editingActivity ?? newActivityDraft("draft", name, steps, "")), name, steps, schedules });
+  const draftProblem = validateActivity({ ...(editingActivity ?? newActivityDraft("draft", name, steps, "")), name, steps, schedules, homeAssistant });
   const isRunning = progress !== null;
   const inlineRun = lastRun && lastRun.surface === "inline" && lastRun.activity.id === draftId ? lastRun : null;
   const usableDevices = devices.filter((device) => commandChoicesFor(device, inputsOf(device.id)).length > 0);
@@ -134,6 +148,8 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
         ))}
 
         <ActivityScheduleSection schedules={schedules} onChange={setSchedules} newId={newActivityId} skippedStepNotes={skippedStepNotes} />
+
+        <ActivityHomeAssistantSection config={homeAssistant} onChange={setHomeAssistant} fccBaseUrl={fccBaseUrl} />
 
         {draftProblem && steps.length > 0 && <Text style={editorStyles.problem}>{draftProblem}</Text>}
         {isRunning && (

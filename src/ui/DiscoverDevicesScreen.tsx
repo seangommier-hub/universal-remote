@@ -40,7 +40,7 @@ interface DiscoverDevicesScreenProps {
   /** Opens Family Command Center pairing/settings — for brands that need it and for widening coverage. */
   onOpenSettings: () => void;
   /** Opens a brand's own multi-step add screen with the address prefilled (Hue, PS5, Apple TV). */
-  onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
+  onOpenBrandScreen: (brand: BrandId, ipAddress: string, serviceUrl?: string | null) => void;
 }
 
 const CLOCK_TICK_MS = 1000;

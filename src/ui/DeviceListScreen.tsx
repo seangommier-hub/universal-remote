@@ -17,6 +17,7 @@ import { roomChoices } from "../core/layout/deviceLayout";
 import { actionModalStyles as modal } from "./actionModalStyles";
 import { useDeviceLayout } from "./useDeviceLayout";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
+import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
 import { BrandOptionList } from "./BrandOptionList";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
@@ -42,7 +43,7 @@ interface DeviceListScreenProps {
   onSelect: (device: Device) => void;
   onAddDevice: (brand: BrandId) => void;
   /** ADR-HEARTH-148: opens a brand's own multi-step add screen with the discovered address prefilled (Hue, PS5, Apple TV). */
-  onOpenBrandScreen: (brand: BrandId, ipAddress: string) => void;
+  onOpenBrandScreen: (brand: BrandId, ipAddress: string, serviceUrl?: string | null) => void;
   /** A quick-add from the inline "Suggested from your network" section (ADR-HEARTH-092) — routed through the same handler as every other add path (App.tsx's handleDeviceAdded), so duplicate prevention and persistence work identically regardless of which screen the add started from. */
   onQuickAdd: (device: Device) => void;
   onDiscover: () => void;
@@ -56,6 +57,8 @@ interface DeviceListScreenProps {
   onOpenCommandCenterRemote: () => void;
   /** Manually triggers an EAS Update check (ADR-HEARTH-084/086) — Sean's "a true update button" ask, rather than only ever waiting for the silent automatic check on launch/foreground. */
   onCheckForUpdates: () => void;
+  /** Opens the Assist text-box screen (ADR-HEARTH-183) for the given Home Assistant instance; the header button that calls this only ever shows once at least one Home Assistant device is on the list. */
+  onOpenHomeAssistantAssist: (instanceId: string) => void;
   updateBanner: { status: "checking" | "downloaded" | "error" | "up-to-date" } | null;
   onApplyUpdate: () => void;
   onDismissUpdateBanner: () => void;
@@ -104,6 +107,7 @@ export function DeviceListScreen({
   onJoinWithCode,
   onOpenCommandCenterRemote,
   onCheckForUpdates,
+  onOpenHomeAssistantAssist,
   updateBanner,
   onApplyUpdate,
   onDismissUpdateBanner,
@@ -126,6 +130,11 @@ export function DeviceListScreen({
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
   const connectivityMode = useConnectivityMode();
+  // ADR-HEARTH-183: the header's "Ask Home Assistant" button only shows once a Home Assistant
+  // device is on the list, and opens Assist for whichever instance the first one belongs to (the
+  // overwhelming common case is one household server; a second instance is reachable by adding its
+  // own device first).
+  const homeAssistantInstanceId = devices.find((device) => device.driverId === HOME_ASSISTANT_DRIVER_ID)?.config?.instanceId as string | undefined;
   // Android's Alert.alert silently drops any button past the 3rd (the same bug already found and
   // fixed in DiscoverDevicesScreen.tsx's brand picker, 2026-09-12) — with Cancel + Rename + Edit
   // address + Remove this is 4, so a custom modal replaces Alert.alert here for the same reason.
@@ -196,6 +205,16 @@ export function DeviceListScreen({
         >
           <Ionicons name="cloud-download-outline" size={20} color={theme.accentEnd} />
         </Pressable>
+        {homeAssistantInstanceId && (
+          <Pressable
+            style={({ pressed }) => [styles.fccButton, pressed && styles.cardPressed]}
+            onPress={() => onOpenHomeAssistantAssist(homeAssistantInstanceId)}
+            accessibilityRole="button"
+            accessibilityLabel="Ask Home Assistant"
+          >
+            <Ionicons name="chatbox-ellipses-outline" size={20} color={theme.accentEnd} />
+          </Pressable>
+        )}
       </View>
 
       {/* Real gap fixed 2026-09-19 (ADR-HEARTH-092): with three stacked sections below (Connected

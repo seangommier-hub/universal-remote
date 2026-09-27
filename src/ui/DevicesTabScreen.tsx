@@ -23,6 +23,7 @@ import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { PairInvite } from "../discovery/pairInvite";
 import { subscribeToPairInvites, takePendingPairInvite } from "./pendingPairInvite";
 import { CommandCenterRemoteScreen } from "./CommandCenterRemoteScreen";
+import { HomeAssistantAssistScreen } from "./HomeAssistantAssistScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
 import { ActivityEditorScreen } from "./ActivityEditorScreen";
@@ -36,13 +37,14 @@ export type DevicesScreen =
   | { name: "list" }
   | { name: "remote"; device: Device }
   | { name: "post-add"; device: Device; mode: "post-add" | "setup-checks" }
-  | { name: "add"; brand: BrandId; initialIpAddress?: string }
+  | { name: "add"; brand: BrandId; initialIpAddress?: string; initialServiceUrl?: string | null }
   | { name: "discover" }
   | { name: "fcc-scan" }
   | { name: "fcc-settings" }
   | { name: "fcc-privacy" }
   | { name: "fcc-join"; invite?: PairInvite }
   | { name: "fcc-remote" }
+  | { name: "ha-assist"; instanceId: string }
   | { name: "edit-address"; device: Device }
   | { name: "rename-device"; device: Device }
   | { name: "teach-broadlink"; device: Device }
@@ -243,7 +245,7 @@ export function DevicesTabScreen({
           onDone={(result) => void handlePostAddDone(screen.device, screen.mode, result)}
         />
       )}
-      {screen.name === "add" && renderAddScreen(screen.brand, { ...addScreenProps, initialIpAddress: screen.initialIpAddress, onOpenFccSetup: openFccSetup })}
+      {screen.name === "add" && renderAddScreen(screen.brand, { ...addScreenProps, initialIpAddress: screen.initialIpAddress, initialServiceUrl: screen.initialServiceUrl, onOpenFccSetup: openFccSetup })}
       {screen.name === "teach-broadlink" && (
         <TeachBroadlinkCommandScreen
           device={screen.device}
@@ -261,7 +263,7 @@ export function DevicesTabScreen({
           onAddedQuietly={(device) => void onDeviceAdded(device)}
           onScanQr={() => setScreen({ name: "fcc-scan" })}
           onOpenSettings={openFccSetup}
-          onOpenBrandScreen={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
+          onOpenBrandScreen={(brand, ipAddress, serviceUrl) => setScreen({ name: "add", brand, initialIpAddress: ipAddress, initialServiceUrl: serviceUrl })}
         />
       )}
       {screen.name === "fcc-scan" && (
@@ -296,6 +298,7 @@ export function DevicesTabScreen({
         <WhatLeavesYourHouseScreen devices={devices} onDone={() => setScreen({ name: "fcc-settings" })} />
       )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
+      {screen.name === "ha-assist" && <HomeAssistantAssistScreen instanceId={screen.instanceId} onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "edit-activity" && (
         <ActivityEditorScreen
           devices={devices}
@@ -341,7 +344,7 @@ export function DevicesTabScreen({
           commandEngine={runtime.commandEngine}
           onSelect={(device) => setScreen({ name: "remote", device })}
           onAddDevice={(brand) => setScreen({ name: "add", brand })}
-          onOpenBrandScreen={(brand, ipAddress) => setScreen({ name: "add", brand, initialIpAddress: ipAddress })}
+          onOpenBrandScreen={(brand, ipAddress, serviceUrl) => setScreen({ name: "add", brand, initialIpAddress: ipAddress, initialServiceUrl: serviceUrl })}
           onQuickAdd={handleAdded}
           onDiscover={() => setScreen({ name: "discover" })}
           onConnectFamilyCommandCenter={openFccSetup}
@@ -349,6 +352,7 @@ export function DevicesTabScreen({
           onJoinWithCode={() => setScreen({ name: "fcc-join" })}
           onOpenCommandCenterRemote={() => setScreen({ name: "fcc-remote" })}
           onCheckForUpdates={onCheckForUpdates}
+          onOpenHomeAssistantAssist={(instanceId) => setScreen({ name: "ha-assist", instanceId })}
           updateBanner={updateBanner}
           onApplyUpdate={onApplyUpdate}
           onDismissUpdateBanner={onDismissUpdateBanner}

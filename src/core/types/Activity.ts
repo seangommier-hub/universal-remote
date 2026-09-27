@@ -49,9 +49,23 @@ export interface Activity {
   steps: ActivityStep[];
   /** Optional automatic run times (ADR-HEARTH-177); absent on activities saved before schedules existed. */
   schedules?: ActivitySchedule[];
+  /** Optional Home Assistant webhook bridge (ADR-HEARTH-183); absent on activities saved before it existed. */
+  homeAssistant?: ActivityHomeAssistant;
   version: number;
   updatedAt: string;
   updatedBy?: string;
+}
+
+/**
+ * Home Assistant webhook bridge for one Activity (ADR-HEARTH-183), both directions optional and off by
+ * default. `incomingWebhookId` is an opaque per-webhook secret created on this phone (never the shared
+ * HEARTH_API_TOKEN) -- POSTing to the Pi's `/ha-webhook/<id>` runs this Activity. `outgoingWebhookUrl` is
+ * pasted from Home Assistant's own "webhook trigger" automation UI; whenever this Activity runs, a small
+ * JSON event is POSTed there.
+ */
+export interface ActivityHomeAssistant {
+  incomingWebhookId?: string;
+  outgoingWebhookUrl?: string;
 }
 
 /** A schedule the Family Command Center fires on its own. */

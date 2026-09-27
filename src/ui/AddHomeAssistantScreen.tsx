@@ -32,6 +32,10 @@ interface AddHomeAssistantScreenProps {
   existingDevices?: Device[];
   /** Adds several devices at once and returns them as stored; when omitted only the one-at-a-time list is offered. */
   onImported?: (devices: Device[]) => Device[];
+  /** A bare address from a discovered row (ADR-HEARTH-183 Track A step 7), used when no fuller URL was announced. */
+  initialIpAddress?: string;
+  /** The mDNS `base_url`/`internal_url`/`external_url` a discovered Home Assistant announced for itself; preferred over initialIpAddress. */
+  initialServiceUrl?: string | null;
 }
 
 type Phase =
@@ -55,10 +59,12 @@ function addedEntityIds(devices: Device[] | undefined): Set<string> {
  * long-lived access token once; Hearth lists what it can drive, grouped by Home Assistant area, and imports them
  * all in one go (areas become rooms), or adds a single entity from the plain list.
  */
-export function AddHomeAssistantScreen({ driverRegistry, onCancel, onAdded, existingDevices, onImported }: AddHomeAssistantScreenProps) {
+export function AddHomeAssistantScreen({ driverRegistry, onCancel, onAdded, existingDevices, onImported, initialIpAddress, initialServiceUrl }: AddHomeAssistantScreenProps) {
   const insets = useSafeAreaInsets();
   const saved = listHaInstances()[0];
-  const [url, setUrl] = useState(saved?.baseUrl ?? "");
+  // Prefills from a discovered row (ADR-HEARTH-183): the announced service URL (already a full
+  // "http://host:port") wins over a bare IP, which itself only matters when no server is already saved.
+  const [url, setUrl] = useState(saved?.baseUrl ?? initialServiceUrl ?? initialIpAddress ?? "");
   const [token, setToken] = useState(saved?.token ?? "");
   const [phase, setPhase] = useState<Phase>(() => {
     const demo = demoHaSyncCandidates();
