@@ -3,6 +3,7 @@ import { Device } from "../core/types/Device";
 import { ConnectionState } from "../core/types/DeviceState";
 import { DEMO_ENTITY_SCRIPTS } from "./demoEntityDevices";
 import { DEMO_FCC_CAMERA_SCRIPTS } from "./demoFccCameras";
+import { DEMO_TYPE_HOUSEHOLD_SCRIPTS } from "./demoTypeHousehold";
 import { BROADLINK_IR_DRIVER_ID } from "../drivers/irHub/broadlink/BroadlinkIrDriver";
 import { KASA_PLUG_DRIVER_ID } from "../drivers/outlet/kasa/KasaPlugDriver";
 import { LG_WEBOS_DRIVER_ID } from "../drivers/tv/lg/LgWebOsDriver";
@@ -54,6 +55,7 @@ export const DEMO_DEVICE_SCRIPTS: Record<string, DemoDeviceScript> = {
   ...ADD_ALL_SCRIPTS,
   ...DEMO_ENTITY_SCRIPTS,
   ...DEMO_FCC_CAMERA_SCRIPTS,
+  ...DEMO_TYPE_HOUSEHOLD_SCRIPTS,
 };
 
 function demoDevice(id: string, name: string, driverId: string, category: Device["category"], manufacturer: string, ipTail: number): Device {

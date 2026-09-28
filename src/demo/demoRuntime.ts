@@ -8,6 +8,7 @@ import { DEMO_FCC_BASE_URL, DEMO_FCC_TOKEN, installDemoFetch } from "./demoFetch
 import { demoEntityDevicesForUrl } from "./demoEntityDevices";
 import { demoFccCameraDevicesForUrl } from "./demoFccCameras";
 import { demoActivities, demoDevices } from "./demoHousehold";
+import { demoTypeHouseholdDevicesForUrl } from "./demoTypeHousehold";
 
 /** Replaces every registered driver with its offline demo twin (same id and capabilities). */
 export function swapInDemoDrivers(registry: DriverRegistry): void {
@@ -32,5 +33,5 @@ export async function startDemoEnvironment(): Promise<void> {
 export function loadDemoDevices(): Device[] {
   const cameras = demoFccCameraDevicesForUrl();
   if (cameras.length > 0) return cameras;
-  return [...demoDevices(), ...demoEntityDevicesForUrl()];
+  return [...demoDevices(), ...demoEntityDevicesForUrl(), ...demoTypeHouseholdDevicesForUrl()];
 }

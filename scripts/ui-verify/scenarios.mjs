@@ -20,6 +20,18 @@ async function longPress(page, label) {
   await page.waitForTimeout(TAB_SETTLE_MS);
 }
 
+const TYPES_QUERY = "household=types&layout=types";
+const SCROLL_MID_PX = 1900;
+const SCROLL_LOWER_PX = 2900;
+const SCROLL_TO_END_PX = 4000;
+
+// Scrolls the page's list with the wheel (react-native-web ScrollView), then lets it settle.
+async function scrollList(page, distancePx) {
+  await page.mouse.move(200, 500);
+  await page.mouse.wheel(0, distancePx);
+  await page.waitForTimeout(TAB_SETTLE_MS);
+}
+
 export const SCENARIOS = [
   { name: "devices-home", screen: "list", assertFit: false },
   { name: "offline-banner-fcc", screen: "list", query: "&offline=fcc", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
@@ -91,6 +103,44 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  // ADR-HEARTH-193: the Devices tab grouped by type (the default), room mode, collapsed sections and kid mode.
+  { name: "devices-types", screen: "list", query: `&${TYPES_QUERY}`, assertFit: false },
+  { name: "devices-types-scrolled", screen: "list", query: `&${TYPES_QUERY}`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_STEP_PX) },
+  { name: "devices-types-scrolled-mid", screen: "list", query: `&${TYPES_QUERY}`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_MID_PX) },
+  { name: "devices-types-scrolled-lower", screen: "list", query: `&${TYPES_QUERY}`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_LOWER_PX) },
+  { name: "devices-types-scrolled-end", screen: "list", query: `&${TYPES_QUERY}`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_TO_END_PX) },
+  {
+    name: "devices-types-collapsed",
+    screen: "list",
+    query: `&${TYPES_QUERY}`,
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel(/^TVs & Streaming, \d+ devices/).click();
+      await page.getByLabel(/^Cameras, \d+ devices/).click();
+      await page.getByLabel(/^Sensors, \d+ devices/).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-types-room-mode",
+    screen: "list",
+    query: `&${TYPES_QUERY}`,
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Group by Room", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-types-actions-menu",
+    screen: "list",
+    query: `&${TYPES_QUERY}`,
+    assertFit: false,
+    steps: async (page) => longPress(page, "Den Apple TV"),
+  },
+  { name: "devices-types-fontscale-160", screen: "list", query: `&${TYPES_QUERY}&fontScale=1.6`, assertFit: false },
+  { name: "kid-mode-types", screen: "list", query: `&${TYPES_QUERY}&kid=on`, assertFit: false },
+  { name: "kid-mode-types-scrolled", screen: "list", query: `&${TYPES_QUERY}&kid=on`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_STEP_PX) },
   { name: "kid-mode-list", screen: "list", query: "&layout=favorites&kid=on", assertFit: false },
   {
     name: "kid-mode-pin-prompt",

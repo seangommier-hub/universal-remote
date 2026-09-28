@@ -11,11 +11,11 @@ interface DeviceListSectionsProps {
   stateStore: StateStore;
   onSelect: (device: Device) => void;
   onLongPress: (device: Device) => void;
-  onToggleRoom: (key: string) => void;
+  onToggleSection: (key: string) => void;
 }
 
-/** The favorites row (when any are starred) and the device rows, flat or grouped under collapsible room headers. */
-export function DeviceListSections({ model, stateStore, onSelect, onLongPress, onToggleRoom }: DeviceListSectionsProps) {
+/** The favorites row (when any are starred) and the device rows, flat or grouped under collapsible type or room headers. */
+export function DeviceListSections({ model, stateStore, onSelect, onLongPress, onToggleSection }: DeviceListSectionsProps) {
   const favoriteIds = new Set(model.favorites.map((d) => d.id));
   return (
     <View>
@@ -47,7 +47,7 @@ export function DeviceListSections({ model, stateStore, onSelect, onLongPress, o
           {model.grouped && (
             <Pressable
               style={styles.header}
-              onPress={() => onToggleRoom(section.key)}
+              onPress={() => onToggleSection(section.key)}
               accessibilityRole="button"
               accessibilityLabel={`${section.title}, ${section.devices.length} ${section.devices.length === 1 ? "device" : "devices"}`}
               accessibilityState={{ expanded: !section.collapsed }}

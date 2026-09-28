@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { logger } from "../core/logging/logger";
-import { DeviceLayout, emptyLayout, pruneLayout, setDeviceRoom, toggleFavorite, toggleRoomCollapsed } from "../core/layout/deviceLayout";
+import { DeviceLayout, emptyLayout, GroupByMode, pruneLayout, setDeviceRoom, setGroupBy, toggleFavorite, toggleRoomCollapsed, toggleTypeCollapsed } from "../core/layout/deviceLayout";
+import { isDeviceTypeGroupId } from "../core/layout/deviceTypeGroups";
 import { buildDeviceListModel, DeviceListModel, sectionMateIds } from "../core/layout/deviceGrouping";
 import { moveWithinGroup } from "../core/layout/deviceOrdering";
 import { Device } from "../core/types/Device";
@@ -18,7 +19,10 @@ export interface DeviceLayoutControls {
   model: DeviceListModel;
   setRoom: (device: Device, room: string) => void;
   toggleFavoriteFor: (device: Device) => void;
-  toggleRoom: (key: string) => void;
+  /** Collapses or expands a section: a type section in type mode, a room section in room mode. */
+  toggleSection: (key: string) => void;
+  /** ADR-HEARTH-193: switches the list between grouping by type and by room. */
+  changeGroupBy: (groupBy: GroupByMode) => void;
   /** ADR-HEARTH-176: allows or disallows the device in kid mode. */
   toggleKidAllowedFor: (device: Device) => void;
   /** ADR-HEARTH-189: allows or disallows the device for a guest-role phone. */
@@ -58,7 +62,11 @@ export function useDeviceLayout(devices: Device[], kidRestricted = false, guestR
 
   const setRoom = useCallback((device: Device, room: string) => update((l) => setDeviceRoom(l, device.id, room)), [update]);
   const toggleFavoriteFor = useCallback((device: Device) => update((l) => toggleFavorite(l, device.id)), [update]);
-  const toggleRoom = useCallback((key: string) => update((l) => toggleRoomCollapsed(l, key)), [update]);
+  const toggleSection = useCallback(
+    (key: string) => update((l) => (l.groupBy === "room" ? toggleRoomCollapsed(l, key) : isDeviceTypeGroupId(key) ? toggleTypeCollapsed(l, key) : l)),
+    [update]
+  );
+  const changeGroupBy = useCallback((groupBy: GroupByMode) => update((l) => setGroupBy(l, groupBy)), [update]);
   const toggleKidAllowedFor = useCallback((device: Device) => update((l) => ({ ...l, kidAllowed: toggleKidAllowed(l.kidAllowed, device.id) })), [update]);
   const toggleGuestAllowedFor = useCallback((device: Device) => update((l) => ({ ...l, guestAllowed: toggleGuestAllowed(l.guestAllowed, device.id) })), [update]);
   const move = useCallback(
@@ -74,5 +82,5 @@ export function useDeviceLayout(devices: Device[], kidRestricted = false, guestR
     [model]
   );
 
-  return { layout, visibleDevices, model, setRoom, toggleFavoriteFor, toggleRoom, toggleKidAllowedFor, toggleGuestAllowedFor, move, canMove };
+  return { layout, visibleDevices, model, setRoom, toggleFavoriteFor, toggleSection, changeGroupBy, toggleKidAllowedFor, toggleGuestAllowedFor, move, canMove };
 }

@@ -1,12 +1,14 @@
 import { Device } from "../types/Device";
 import { buildDeviceListModel, sectionMateIds } from "./deviceGrouping";
-import { cleanRoomName, emptyLayout, normalizeLayout, pruneLayout, roomChoices, setDeviceRoom, toggleFavorite, toggleRoomCollapsed } from "./deviceLayout";
+import { cleanRoomName, DeviceLayout, emptyLayout, normalizeLayout, pruneLayout, roomChoices, setDeviceRoom, toggleFavorite, toggleRoomCollapsed } from "./deviceLayout";
 import { applyDeviceOrder, moveWithinGroup } from "./deviceOrdering";
 
 function device(id: string): Device {
   return { id, name: id.toUpperCase(), category: "tv", manufacturer: "X", driverId: "d", capabilities: [] };
 }
 const devices = ["a", "b", "c", "d"].map(device);
+// ADR-HEARTH-193: Type is the default grouping, so the room-grouping tests ask for Room mode explicitly.
+const roomModeLayout = (): DeviceLayout => ({ ...emptyLayout(), groupBy: "room" });
 
 describe("normalizeLayout", () => {
   test("missing or junk storage becomes an empty layout", () => {
@@ -92,7 +94,7 @@ describe("moveWithinGroup", () => {
 
 describe("buildDeviceListModel", () => {
   test("no rooms set gives one flat untitled section in the original order", () => {
-    const model = buildDeviceListModel(devices, emptyLayout());
+    const model = buildDeviceListModel(devices, roomModeLayout());
     expect(model.grouped).toBe(false);
     expect(model.sections).toHaveLength(1);
     expect(model.sections[0].devices.map((d) => d.id)).toEqual(["a", "b", "c", "d"]);
@@ -100,7 +102,7 @@ describe("buildDeviceListModel", () => {
   });
 
   test("rooms group case-insensitively, sort by name, and unassigned devices come last", () => {
-    const layout = { ...emptyLayout(), rooms: { a: "Den", b: "den", c: "Bedroom" } };
+    const layout = { ...roomModeLayout(), rooms: { a: "Den", b: "den", c: "Bedroom" } };
     const model = buildDeviceListModel(devices, layout);
     expect(model.grouped).toBe(true);
     expect(model.sections.map((s) => s.title)).toEqual(["Bedroom", "Den", "Other devices"]);
@@ -109,14 +111,14 @@ describe("buildDeviceListModel", () => {
   });
 
   test("favorites keep their star order, skip removed devices, and stay in their room too", () => {
-    const layout = { ...emptyLayout(), rooms: { a: "Den" }, favorites: ["c", "gone", "a"] };
+    const layout = { ...roomModeLayout(), rooms: { a: "Den" }, favorites: ["c", "gone", "a"] };
     const model = buildDeviceListModel(devices, layout);
     expect(model.favorites.map((d) => d.id)).toEqual(["c", "a"]);
     expect(model.sections[0].devices.map((d) => d.id)).toContain("a");
   });
 
   test("collapsed rooms are flagged and sectionMateIds returns the room members in order", () => {
-    const layout = { ...emptyLayout(), rooms: { a: "Den", b: "Den" }, collapsedRooms: ["den"], order: ["b"] };
+    const layout = { ...roomModeLayout(), rooms: { a: "Den", b: "Den" }, collapsedRooms: ["den"], order: ["b"] };
     const model = buildDeviceListModel(devices, layout);
     expect(model.sections[0].collapsed).toBe(true);
     expect(sectionMateIds(model, "a")).toEqual(["b", "a"]);

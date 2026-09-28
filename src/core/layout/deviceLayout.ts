@@ -1,4 +1,10 @@
+import { DeviceTypeGroupId, isDeviceTypeGroupId } from "./deviceTypeGroups";
+
 // ADR-HEARTH-173: how this phone arranges its Devices list. Local only: a shared device is re-imported by sync, which would overwrite anything stored on the Device itself.
+// ADR-HEARTH-193: the list is grouped by device type unless this phone switched it to rooms.
+
+export type GroupByMode = "type" | "room";
+export const DEFAULT_GROUP_BY: GroupByMode = "type";
 
 export const MAX_ROOM_NAME_LENGTH = 30;
 export const ROOM_SUGGESTIONS = ["Living Room", "Den", "Bedroom", "Kitchen", "Office", "Kids", "Basement", "Garage"] as const;
@@ -12,6 +18,10 @@ export interface DeviceLayout {
   order: string[];
   /** Lowercase room keys whose section is collapsed. */
   collapsedRooms: string[];
+  /** ADR-HEARTH-193: whether the list groups by device type (the default) or by room. */
+  groupBy: GroupByMode;
+  /** ADR-HEARTH-193: type-group ids whose section is collapsed in type mode. */
+  collapsedTypes: DeviceTypeGroupId[];
   /** ADR-HEARTH-176: ids of devices an adult allowed in kid mode on this phone. */
   kidAllowed: string[];
   /** ADR-HEARTH-189: ids of devices an owner allowed a guest-role phone to see. Deliberately a
@@ -23,7 +33,7 @@ export interface DeviceLayout {
 
 /** A layout with nothing set, which renders the flat list as it always was. */
 export function emptyLayout(): DeviceLayout {
-  return { rooms: {}, favorites: [], order: [], collapsedRooms: [], kidAllowed: [], guestAllowed: [] };
+  return { rooms: {}, favorites: [], order: [], collapsedRooms: [], groupBy: DEFAULT_GROUP_BY, collapsedTypes: [], kidAllowed: [], guestAllowed: [] };
 }
 
 function stringList(value: unknown): string[] {
@@ -57,6 +67,8 @@ export function normalizeLayout(raw: unknown): DeviceLayout {
     favorites: stringList(stored.favorites),
     order: stringList(stored.order),
     collapsedRooms: stringList(stored.collapsedRooms),
+    groupBy: stored.groupBy === "room" ? "room" : DEFAULT_GROUP_BY,
+    collapsedTypes: stringList(stored.collapsedTypes).filter(isDeviceTypeGroupId),
     kidAllowed: stringList(stored.kidAllowed),
     guestAllowed: stringList(stored.guestAllowed),
   };
@@ -81,6 +93,17 @@ export function toggleFavorite(layout: DeviceLayout, deviceId: string): DeviceLa
 export function toggleRoomCollapsed(layout: DeviceLayout, key: string): DeviceLayout {
   const collapsedRooms = layout.collapsedRooms.includes(key) ? layout.collapsedRooms.filter((k) => k !== key) : [...layout.collapsedRooms, key];
   return { ...layout, collapsedRooms };
+}
+
+/** Flips one type section between collapsed and open. */
+export function toggleTypeCollapsed(layout: DeviceLayout, id: DeviceTypeGroupId): DeviceLayout {
+  const collapsedTypes = layout.collapsedTypes.includes(id) ? layout.collapsedTypes.filter((t) => t !== id) : [...layout.collapsedTypes, id];
+  return { ...layout, collapsedTypes };
+}
+
+/** Switches the list between grouping by type and by room. */
+export function setGroupBy(layout: DeviceLayout, groupBy: GroupByMode): DeviceLayout {
+  return { ...layout, groupBy };
 }
 
 /** Forgets everything stored about devices that no longer exist. */

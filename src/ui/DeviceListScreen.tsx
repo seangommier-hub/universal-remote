@@ -13,6 +13,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { ConnectivityBadge } from "./ConnectivityBadge";
 import { DeviceActionsModal } from "./DeviceActionsModal";
 import { DeviceListSections } from "./DeviceListSections";
+import { GroupBySwitch } from "./GroupBySwitch";
 import { roomChoices } from "../core/layout/deviceLayout";
 import { actionModalStyles as modal } from "./actionModalStyles";
 import { useDeviceLayout } from "./useDeviceLayout";
@@ -279,7 +280,10 @@ export function DeviceListScreen({
         />
       )}
 
-      <Text style={styles.sectionLabel}>Connected Devices</Text>
+      <View style={styles.sectionLabelRow}>
+        <Text style={styles.sectionLabel}>Connected Devices</Text>
+        {devices.length > 0 && <GroupBySwitch value={layout.layout.groupBy} onChange={layout.changeGroupBy} />}
+      </View>
       {devices.length === 0 ? (
         <FirstRunSetupCard serverSaved={fccConfigured} onJoinWithCode={onJoinWithCode} onScanQr={onConnectFamilyCommandCenter} />
       ) : (
@@ -288,7 +292,7 @@ export function DeviceListScreen({
           stateStore={stateStore}
           onSelect={onSelect}
           onLongPress={setActionsTarget}
-          onToggleRoom={layout.toggleRoom}
+          onToggleSection={layout.toggleSection}
         />
       )}
 
@@ -405,14 +409,14 @@ const styles = StyleSheet.create({
   },
   title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700" },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
+  // flexWrap: at large text sizes the switch drops under the label instead of squeezing it to "CONN...".
+  sectionLabelRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", columnGap: theme.spacing.sm, rowGap: theme.spacing.xs, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
   sectionLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
   },
   // ADR-HEARTH-092: a single solid-filled button (unlike the old outlined discoverTile) — this
   // is now the primary, always-available action on the screen, not a secondary one-time setup

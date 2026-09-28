@@ -5,8 +5,12 @@ import { DEMO_BROADLINK_ID, DEMO_KASA_ID, DEMO_LG_ID, DEMO_ROKU_ID, DEMO_SAMSUNG
 import { isDemoMode } from "./demoMode";
 
 // ADR-HEARTH-173: demo-only ?layout=rooms | favorites so the web harness can show the organised Devices tab.
+// ADR-HEARTH-193: ?layout=types keeps the default group-by-type view (with rooms and favorites set so switching to Room shows something).
 
 const LAYOUT_QUERY_PARAM = "layout";
+const KITCHEN_KEY = "kitchen";
+const DEMO_APPLE_TV_ID = "demo-appletv";
+const DEMO_HUE_LAMP_ID = "demo-hue-lamp";
 
 function layoutParam(): string | null {
   if (!isDemoMode() || Platform.OS !== "web" || typeof window === "undefined") return null;
@@ -16,11 +20,19 @@ function layoutParam(): string | null {
 /** A fixed layout for the demo household when the URL asks for one; null means use the phone's real saved layout. */
 export function demoDeviceLayout(devices: readonly Device[]): DeviceLayout | null {
   const kind = layoutParam();
-  if (kind !== "rooms" && kind !== "favorites") return null;
+  if (kind !== "rooms" && kind !== "favorites" && kind !== "types") return null;
   const known = new Set(devices.map((d) => d.id));
   const keep = (ids: string[]) => ids.filter((id) => known.has(id));
-  const rooms: Record<string, string> = kind === "rooms"
-    ? { [DEMO_LG_ID]: "Living Room", [DEMO_SONOS_ID]: "Living Room", [DEMO_SAMSUNG_ID]: "Bedroom", [DEMO_BROADLINK_ID]: "Living Room", [DEMO_KASA_ID]: "Kitchen" }
-    : {};
-  return { ...emptyLayout(), rooms, favorites: keep([DEMO_LG_ID, DEMO_SONOS_ID, DEMO_KASA_ID]), order: keep([DEMO_SONOS_ID, DEMO_LG_ID, DEMO_BROADLINK_ID, DEMO_SAMSUNG_ID, DEMO_ROKU_ID, DEMO_KASA_ID]), collapsedRooms: kind === "rooms" ? ["kitchen"] : [], kidAllowed: keep([DEMO_LG_ID, DEMO_KASA_ID]) };
+  const rooms: Record<string, string> = kind === "favorites"
+    ? {}
+    : { [DEMO_LG_ID]: "Living Room", [DEMO_SONOS_ID]: "Living Room", [DEMO_SAMSUNG_ID]: "Bedroom", [DEMO_BROADLINK_ID]: "Living Room", [DEMO_KASA_ID]: "Kitchen" };
+  return {
+    ...emptyLayout(),
+    groupBy: kind === "types" ? "type" : "room",
+    rooms,
+    favorites: keep([DEMO_LG_ID, DEMO_SONOS_ID, DEMO_KASA_ID]),
+    order: keep([DEMO_SONOS_ID, DEMO_LG_ID, DEMO_BROADLINK_ID, DEMO_SAMSUNG_ID, DEMO_ROKU_ID, DEMO_KASA_ID]),
+    collapsedRooms: kind === "rooms" ? [KITCHEN_KEY] : [],
+    kidAllowed: keep([DEMO_LG_ID, DEMO_KASA_ID, ...(kind === "types" ? [DEMO_APPLE_TV_ID, DEMO_HUE_LAMP_ID, DEMO_SONOS_ID] : [])]),
+  };
 }

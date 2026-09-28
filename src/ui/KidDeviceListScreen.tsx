@@ -52,7 +52,7 @@ export function KidDeviceListScreen({ devices, stateStore, commandEngine, kid, o
         {layout.visibleDevices.length === 0 ? (
           <Text style={styles.empty}>{EMPTY_TEXT}</Text>
         ) : (
-          <DeviceListSections model={layout.model} stateStore={stateStore} onSelect={onSelect} onLongPress={ignoreLongPress} onToggleRoom={layout.toggleRoom} />
+          <DeviceListSections model={layout.model} stateStore={stateStore} onSelect={onSelect} onLongPress={ignoreLongPress} onToggleSection={layout.toggleSection} />
         )}
       </ScrollView>
       <KidModePinModal
