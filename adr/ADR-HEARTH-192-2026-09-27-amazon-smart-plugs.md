@@ -25,7 +25,7 @@ That verdict was about Amazon's own *public, sanctioned* developer surface,
 and it is still correct — nothing changed there. What changed is that a
 sibling Claude session built a real bridge on the Family Command Center
 (Pi) side, `family-command-center` commit `bd0b0b9` /
-`family-command-center/adr/0218`, using `alexa-remote2` — an unofficial
+`family-command-center/adr/0222`, using `alexa-remote2` — an unofficial
 library that logs in as a real Alexa account (the same category of
 approach ADR-HEARTH-048 named and declined to build against directly for
 Echo/Alexa device control in general, and the same risk class Ring's own
@@ -45,7 +45,7 @@ instance of one already live in it.
 **What this session independently verified**: the HTTP contract below,
 by testing Hearth's own client/driver/UI against it with mocks and the
 demo harness. **What this session did not independently verify**: the
-sibling session's own `family-command-center/adr/0218` content or its
+sibling session's own `family-command-center/adr/0222` content or its
 exact `alexa-remote2` implementation details — this repo's local checkout
 of `family-command-center` (and every worktree found on this machine) is
 behind that commit and does not contain it, and no SSH/remote access to
@@ -148,8 +148,12 @@ in the driver contract adapter, matching Chromecast/AppleTv/Vizio/etc.
   the Pi separately; once a real plug is linked, "Sync from Alexa" should
   be tried against it live as the actual end-to-end check this session
   could not perform.
-- If the sibling session's own `family-command-center/adr/0218` (once
+- If the sibling session's own `family-command-center/adr/0222` (once
   reachable from this checkout) describes the bridge, its error messages,
   or its contract differently from what's written above, that ADR is the
   source of truth for the Pi side and this one should be corrected to
   match it, not the other way around.
+
+## Correction (2026-09-27)
+
+The Pi-side Amazon bridge ADR was renumbered from `adr/0218` to `adr/0222` by the session that wrote it, after a same-day number collision with `0218-hearth-per-phone-roles-phase-2`. References above now point at `0222`. Live data confirmed the contract: 4 plugs, opaque applianceId ids (URL-encoded by the client), `on` may be null.
