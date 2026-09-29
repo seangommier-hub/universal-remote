@@ -1,7 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Device } from "../core/types/Device";
+import { isKeychainUnavailable } from "../core/network/isKeychainUnavailable";
+import { logger } from "../core/logging/logger";
 
+const LOG_SCOPE = "persistence";
 const DEVICES_STORAGE_KEY = "hearth.devices";
 let saveQueue: Promise<void> = Promise.resolve();
 // Config fields whose values are credentials, not just connection metadata — kept out of
@@ -46,25 +49,55 @@ async function writeDevice(device: Device): Promise<void> {
   await AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(next));
 }
 
-/** Loads every persisted device with its sensitive config fields rehydrated from SecureStore. */
+/** Loads every persisted device with its sensitive config fields rehydrated from SecureStore.
+ * ADR-HEARTH-203: a SecureStore read can throw (a Keychain-locked phone, ADR-HEARTH-196) for one
+ * field of one device. That used to reject the whole `Promise.all`, and App.tsx's own startup
+ * catch (see its comment there) then silently started the session with an EMPTY device list —
+ * every saved device, not just the one whose field failed. Each field is now read independently:
+ * a failure leaves just that field un-rehydrated (the device — and every other device — still
+ * comes back) rather than losing the whole list to one bad read. */
 export async function loadDevices(): Promise<Device[]> {
   const stored = await loadStoredDeviceList();
-  return Promise.all(
-    stored.map(async (device) => {
-      const rehydrated = { ...(device.config ?? {}) };
-      for (const field of SENSITIVE_CONFIG_KEYS) {
-        const value = await SecureStore.getItemAsync(secureStoreKey(device.id, field));
-        if (value !== null) rehydrated[field] = value;
-      }
-      return { ...device, config: rehydrated };
-    })
-  );
+  return Promise.all(stored.map((device) => rehydrateDevice(device)));
+}
+
+async function rehydrateDevice(device: Device): Promise<Device> {
+  const rehydrated = { ...(device.config ?? {}) };
+  for (const field of SENSITIVE_CONFIG_KEYS) {
+    try {
+      const value = await SecureStore.getItemAsync(secureStoreKey(device.id, field));
+      if (value !== null) rehydrated[field] = value;
+    } catch (error) {
+      logSecureStoreFailure(`could not read ${field} for ${device.id}`, error);
+    }
+  }
+  return { ...device, config: rehydrated };
 }
 
 export async function removeDevice(deviceId: string): Promise<void> {
   const existing = await loadStoredDeviceList();
   await AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(existing.filter((d) => d.id !== deviceId)));
-  await Promise.all(SENSITIVE_CONFIG_KEYS.map((field) => SecureStore.deleteItemAsync(secureStoreKey(deviceId, field))));
+  // ADR-HEARTH-203: each field's delete is independent and never throws — a Keychain failure on
+  // one field (or one field never having been set) must not stop the others from being cleaned up,
+  // nor reject a call whose list removal (the part the user actually asked for and already sees
+  // reflected in the UI) already succeeded.
+  await Promise.all(
+    SENSITIVE_CONFIG_KEYS.map(async (field) => {
+      try {
+        await SecureStore.deleteItemAsync(secureStoreKey(deviceId, field));
+      } catch (error) {
+        logSecureStoreFailure(`could not delete ${field} for ${deviceId}`, error);
+      }
+    })
+  );
+}
+
+function logSecureStoreFailure(action: string, error: unknown): void {
+  if (isKeychainUnavailable(error)) {
+    logger.debug(LOG_SCOPE, `${action} — Keychain unavailable right now (phone locked or app backgrounded)`);
+  } else {
+    logger.warn(LOG_SCOPE, action, { error: String(error) });
+  }
 }
 
 /** Deletes one secret field of one device from secure storage (used when a credential moves to a shared store). */

@@ -57,6 +57,23 @@ describe("findCurrentIpByMac", () => {
 
     expect(await findCurrentIpByMac("aa:bb:cc:dd:ee:ff")).toBeUndefined();
   });
+
+  // ADR-HEARTH-203: a real client log from this household showed loadFamilyCommandCenterConfig()
+  // rejecting with a SecureStore/Keychain error (ADR-HEARTH-196) while self-heal ran in the
+  // background — this module's own contract is "never throws, undefined for not found," and a
+  // Keychain hiccup must not break that (or mask the caller's own original reachability error).
+  test("returns undefined (not a throw) when the saved config can't be read because Keychain is unavailable", async () => {
+    mockLoadConfig.mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+
+    await expect(findCurrentIpByMac("aa:bb:cc:dd:ee:ff")).resolves.toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("returns undefined (not a throw) when the saved config read fails for an unrelated reason", async () => {
+    mockLoadConfig.mockRejectedValue(new Error("boom"));
+
+    await expect(findCurrentIpByMac("aa:bb:cc:dd:ee:ff")).resolves.toBeUndefined();
+  });
 });
 
 describe("findMacByIp", () => {
@@ -180,5 +197,12 @@ describe("findCurrentIpByBrand (ADR-HEARTH-169)", () => {
   test("returns undefined when the Family Command Center is not configured", async () => {
     mockLoadConfig.mockResolvedValue(null);
     expect(await findCurrentIpByBrand("sony", { excludeIps: [] })).toBeUndefined();
+  });
+
+  // ADR-HEARTH-203: same Keychain-unavailable contract as findCurrentIpByMac above.
+  test("returns undefined (not a throw) when the saved config can't be read because Keychain is unavailable", async () => {
+    mockLoadConfig.mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+    await expect(findCurrentIpByBrand("sony", { excludeIps: [] })).resolves.toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

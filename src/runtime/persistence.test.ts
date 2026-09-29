@@ -130,4 +130,74 @@ describe("persistence", () => {
     expect(JSON.parse(storedJson)).toEqual([]);
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("hearth.device.sony-1.psk");
   });
+
+  // ADR-HEARTH-203: a real client log from this household showed SecureStore rejecting with
+  // "KeyChainException: User interaction is not allowed" while the phone was locked/backgrounded.
+  // Before this fix, one field failing here rejected the whole Promise.all in loadDevices(), which
+  // App.tsx's own startup catch (see its comment there) turned into an EMPTY device list for the
+  // whole session — every saved device lost, not just the one whose field hit the Keychain.
+  describe("resilience to a SecureStore/Keychain failure (ADR-HEARTH-203)", () => {
+    test("loadDevices still returns every device when one device's field throws (a locked-phone Keychain read)", async () => {
+      const lgDevice: Device = { ...sonyDevice, id: "lg-1", config: { ipAddress: "192.168.1.60" } };
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+        JSON.stringify([{ ...sonyDevice, config: { ipAddress: "192.168.1.50" } }, lgDevice])
+      );
+      (SecureStore.getItemAsync as jest.Mock).mockImplementation((key: string) => {
+        if (key === "hearth.device.sony-1.psk") {
+          return Promise.reject(new Error("KeyChainException: User interaction is not allowed."));
+        }
+        return Promise.resolve(null);
+      });
+
+      const devices = await loadDevices();
+
+      expect(devices).toHaveLength(2);
+      expect(devices.find((d) => d.id === "sony-1")?.config?.psk).toBeUndefined(); // couldn't be read this time, but the device itself is not dropped
+      expect(devices.find((d) => d.id === "lg-1")).toBeDefined();
+    });
+
+    test("loadDevices doesn't throw and still returns the device when every field on it throws", async () => {
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify([{ ...sonyDevice, config: { ipAddress: "192.168.1.50" } }]));
+      (SecureStore.getItemAsync as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+
+      await expect(loadDevices()).resolves.toEqual([{ ...sonyDevice, config: { ipAddress: "192.168.1.50" } }]);
+    });
+
+    test("removeDevice still removes the list entry when a SecureStore delete throws for one field", async () => {
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify([{ ...sonyDevice, config: {} }]));
+      (SecureStore.deleteItemAsync as jest.Mock).mockImplementation((key: string) =>
+        key.endsWith(".psk") ? Promise.reject(new Error("KeyChainException: User interaction is not allowed.")) : Promise.resolve()
+      );
+
+      await expect(removeDevice("sony-1")).resolves.toBeUndefined();
+
+      const [, storedJson] = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
+      expect(JSON.parse(storedJson)).toEqual([]);
+    });
+  });
+
+  // ADR-HEARTH-203: confirms the save queue added with today's earlier merge (ADR-HEARTH-175)
+  // actually serializes overlapping saves rather than dropping any of them — many devices "saved"
+  // at once (e.g. a bulk import) must all end up in the final stored list.
+  test("many overlapping saveDevice calls all land in the final list — none lost to a racing read-modify-write", async () => {
+    let stored: string | null = null;
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(() => Promise.resolve(stored));
+    (AsyncStorage.setItem as jest.Mock).mockImplementation((_key: string, value: string) => {
+      stored = value;
+      return Promise.resolve();
+    });
+
+    const devices: Device[] = Array.from({ length: 25 }, (_, i) => ({
+      ...sonyDevice,
+      id: `stress-${i}`,
+      config: { ipAddress: `192.168.1.${i}` },
+    }));
+
+    await Promise.all(devices.map((device) => saveDevice(device)));
+
+    const finalList = JSON.parse(stored!) as Device[];
+    expect(finalList).toHaveLength(devices.length);
+    const finalIds = new Set(finalList.map((d) => d.id));
+    for (const device of devices) expect(finalIds.has(device.id)).toBe(true);
+  });
 });

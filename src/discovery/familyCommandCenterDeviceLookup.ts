@@ -1,5 +1,7 @@
 import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "./familyCommandCenterConfig";
 import { fccFetch } from "../core/network/fccRequest";
+import { isKeychainUnavailable } from "../core/network/isKeychainUnavailable";
+import { logger } from "../core/logging/logger";
 import type { BrandId } from "./brandRegistry";
 
 // Real-hardware finding (2026-09-10): a device's saved IP goes stale the moment it moves to a
@@ -10,6 +12,7 @@ import type { BrandId } from "./brandRegistry";
 // endpoint FamilyCommandCenterDiscoveryProvider already calls, as a single-device lookup instead
 // of a full scan, so a driver can "find myself again" after a network change.
 
+const LOG_SCOPE = "familyCommandCenterDeviceLookup";
 const LOOKUP_TIMEOUT_MS = 8000;
 
 interface LanDevice {
@@ -20,8 +23,29 @@ interface LanDevice {
   uuid?: string | null;
 }
 
+/** Loads the saved Family Command Center config, or undefined when it can't be read right now.
+ * ADR-HEARTH-203: `loadFamilyCommandCenterConfig()` deliberately rejects (not resolves null) on a
+ * SecureStore/Keychain failure (ADR-HEARTH-196), a real, confirmed failure mode when a driver's
+ * self-heal lookup runs while the phone is locked or the app is backgrounded. Every lookup in this
+ * file is documented as "never throws, returns undefined for not found" — swallowing that
+ * rejection here, in the one place every lookup already funnels through, keeps that contract true
+ * instead of a Keychain hiccup masking (and overwriting the message of) whatever real reachability
+ * failure sent the driver here in the first place. */
+async function loadConfigSafely(): Promise<FamilyCommandCenterConfig | null> {
+  try {
+    return await loadFamilyCommandCenterConfig();
+  } catch (error) {
+    if (isKeychainUnavailable(error)) {
+      logger.debug(LOG_SCOPE, "skipped — Keychain unavailable right now (phone locked or app backgrounded); will retry next attempt");
+    } else {
+      logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) });
+    }
+    return null;
+  }
+}
+
 async function fetchLanDevices(): Promise<LanDevice[] | undefined> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadConfigSafely();
   if (!config) return undefined;
 
   try {
@@ -119,7 +143,7 @@ export interface BrandLookupOptions {
  * two-plus such candidates (never guesses between them) or when the Center is unconfigured/unreachable.
  */
 export async function findCurrentIpByBrand(brandId: BrandId, options: BrandLookupOptions): Promise<string | undefined> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadConfigSafely();
   if (!config) return undefined;
   const rows = await fetchDiscoverAllRows(config);
   if (!rows) return undefined;
