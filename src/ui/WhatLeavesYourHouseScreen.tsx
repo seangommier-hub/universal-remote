@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Device } from "../core/types/Device";
+import { logger } from "../core/logging/logger";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
 import { SWITCHBOT_VACUUM_DRIVER_ID } from "../drivers/vacuum/switchbot/SwitchBotVacuumDriver";
 import { buildPrivacyEntries, nothingElseLeaves } from "./privacyDisclosure";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
+
+const LOG_SCOPE = "WhatLeavesYourHouseScreen";
 
 interface WhatLeavesYourHouseScreenProps {
   devices: Device[];
@@ -26,7 +29,11 @@ export function WhatLeavesYourHouseScreen({ devices, onDone }: WhatLeavesYourHou
   const [hasAwayAddress, setHasAwayAddress] = useState(false);
 
   useEffect(() => {
-    loadFamilyCommandCenterConfig().then((config) => setHasAwayAddress(Boolean(config?.publicBaseUrl)));
+    // Same missing-.catch() gap fixed in FamilyCommandCenterSettingsScreen.tsx (ADR-HEARTH-196):
+    // loadFamilyCommandCenterConfig() reads SecureStore and can reject.
+    loadFamilyCommandCenterConfig()
+      .then((config) => setHasAwayAddress(Boolean(config?.publicBaseUrl)))
+      .catch((error) => logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) }));
   }, []);
 
   const hasHomeAssistant = devices.some((device) => device.driverId === HOME_ASSISTANT_DRIVER_ID);

@@ -10,6 +10,7 @@ import { StateStore } from "../core/state/StateStore";
 import { unsupportedHeadlessSteps } from "../core/activities/headlessSupport";
 import { Activity, ActivityHomeAssistant, ActivitySchedule, ActivityStep } from "../core/types/Activity";
 import { Device } from "../core/types/Device";
+import { logger } from "../core/logging/logger";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
 import { ActivityHomeAssistantSection } from "./ActivityHomeAssistantSection";
@@ -19,6 +20,8 @@ import { ActivityStepRow } from "./ActivityStepRow";
 import { CapabilityButton } from "./CapabilityButton";
 import { theme } from "./theme";
 import { ActivityProgress, LastActivityRun } from "./useActivities";
+
+const LOG_SCOPE = "ActivityEditorScreen";
 
 interface ActivityEditorScreenProps {
   devices: Device[];
@@ -59,9 +62,16 @@ export function ActivityEditorScreen(props: ActivityEditorScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void loadFamilyCommandCenterConfig().then((config) => {
-      if (!cancelled) setFccBaseUrl(config?.baseUrl ?? null);
-    });
+    // Same missing-.catch() gap fixed in FamilyCommandCenterSettingsScreen.tsx and
+    // DevicesTabScreen.tsx (ADR-HEARTH-196): loadFamilyCommandCenterConfig() reads SecureStore and
+    // can reject.
+    void loadFamilyCommandCenterConfig()
+      .then((config) => {
+        if (!cancelled) setFccBaseUrl(config?.baseUrl ?? null);
+      })
+      .catch((error) => {
+        if (!cancelled) logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) });
+      });
     return () => {
       cancelled = true;
     };
