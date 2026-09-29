@@ -70,6 +70,12 @@ export function HomeAssistantAssistScreen({ instanceId, onBack }: HomeAssistantA
         {busy && <ActivityIndicator color={theme.accentEnd} />}
       </ScrollView>
       <View style={assistStyles.inputRow}>
+        {/* ADR-HEARTH-200: deliberately the plain OS TextInput, not ThemedKeyboard.tsx (the custom
+            on-screen keyboard ADR-HEARTH-025 built for AddSonyDeviceScreen's PSK field) -- no
+            keyboardType/secureTextEntry/showSoftInputOnFocus here either, so iOS keeps showing its
+            own keyboard's built-in dictation mic for this field with no extra code. Don't add any
+            of those props here without re-checking dictation still works; a numeric keyboardType
+            or a custom keyboard would take that mic away. */}
         <TextInput
           style={[styles.input, assistStyles.textInput]}
           value={text}

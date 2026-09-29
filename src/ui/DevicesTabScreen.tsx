@@ -416,6 +416,11 @@ export function DevicesTabScreen({
           onCreateActivity={() => setScreen({ name: "edit-activity" })}
           onEditActivity={(activity) => setScreen({ name: "edit-activity", editingActivity: activity })}
           onRemoveActivity={activities.removeActivity}
+          newActivityId={activities.newActivityId}
+          onGenerateDefaultActivities={(allOn, allOff) => {
+            activities.saveActivity(allOn);
+            activities.saveActivity(allOff);
+          }}
         />
       )}
     </View>

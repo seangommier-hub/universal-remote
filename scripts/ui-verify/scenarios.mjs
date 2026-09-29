@@ -34,6 +34,24 @@ async function scrollList(page, distancePx) {
 
 export const SCENARIOS = [
   { name: "devices-home", screen: "list", assertFit: false },
+  // ADR-HEARTH-200: the one-time "All On / All Off" offer card (shows on the default fixture since
+  // it has power-capable devices and no existing Activity by that name yet) and the result of
+  // tapping through it -- two new chips added to the Activities row.
+  { name: "default-activities-offer", screen: "list", assertFit: false },
+  {
+    name: "default-activities-generated",
+    screen: "list",
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByText("Create Activities", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+      // The new "All On"/"All Off" chips land at the end of the horizontal Activities row --
+      // scroll it sideways so the screenshot actually shows them, not just the pre-existing chips.
+      const chipRow = page.getByLabel("Run All On", { exact: true });
+      await chipRow.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "offline-banner-fcc", screen: "list", query: "&offline=fcc", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
   { name: "offline-banner-device", screen: "list", query: "&offline=device", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
   {

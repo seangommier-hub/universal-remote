@@ -12,10 +12,12 @@ import type { ActivityProgress } from "./useActivities";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { ConnectivityBadge } from "./ConnectivityBadge";
 import { DeviceActionsModal } from "./DeviceActionsModal";
+import { DefaultActivitiesOfferCard } from "./DefaultActivitiesOfferCard";
 import { DeviceListSections } from "./DeviceListSections";
 import { GroupBySwitch } from "./GroupBySwitch";
 import { roomChoices } from "../core/layout/deviceLayout";
 import { actionModalStyles as modal } from "./actionModalStyles";
+import { useDefaultActivitiesOffer } from "./useDefaultActivitiesOffer";
 import { useDeviceLayout } from "./useDeviceLayout";
 import { addPickerBrands, BrandId } from "../discovery/brandRegistry";
 import { HOME_ASSISTANT_DRIVER_ID } from "../drivers/homeAssistant/HomeAssistantDriver";
@@ -90,6 +92,10 @@ interface DeviceListScreenProps {
   onCreateActivity: () => void;
   onEditActivity: (activity: Activity) => void;
   onRemoveActivity: (activity: Activity) => void;
+  /** Generates a unique base id for a new Activity (ADR-HEARTH-200: the default-activities offer needs two ids at once, so it derives both from one call rather than reusing this for a single activity). */
+  newActivityId: () => string;
+  /** Saves the two auto-generated Activities (ADR-HEARTH-200) through the same path as any hand-built one. */
+  onGenerateDefaultActivities: (allOn: Activity, allOff: Activity) => void;
 }
 
 /** Household device list. Has no idea what a "Samsung" or "LG" is beyond which pairing form to open next — it just renders whatever devices are registered. */
@@ -126,6 +132,8 @@ export function DeviceListScreen({
   onCreateActivity,
   onEditActivity,
   onRemoveActivity,
+  newActivityId,
+  onGenerateDefaultActivities,
 }: DeviceListScreenProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
@@ -144,6 +152,7 @@ export function DeviceListScreen({
   const nowPlaying = useNowPlaying(devices, stateStore);
   const nameSuggestion = useNameSuggestion(actionsTarget, stateStore);
   const layout = useDeviceLayout(devices);
+  const defaultActivitiesOffer = useDefaultActivitiesOffer(devices, activities, newActivityId);
 
   function showActivityActions(activity: Activity) {
     Alert.alert(activity.name, undefined, [
@@ -267,6 +276,16 @@ export function DeviceListScreen({
         })}
       </ScrollView>
       <ActivityHistoryList runs={activityHistory} />
+
+      {defaultActivitiesOffer.visible && (
+        <DefaultActivitiesOfferCard
+          onCreate={() => {
+            const { allOn, allOff } = defaultActivitiesOffer.generate();
+            onGenerateDefaultActivities(allOn, allOff);
+          }}
+          onDismiss={defaultActivitiesOffer.dismiss}
+        />
+      )}
 
       {/* ADR-HEARTH-093: one at a time, per Sean's own explicit scoping — not a widget per
           playing device. Absent entirely when nothing is playing/paused anywhere. */}
