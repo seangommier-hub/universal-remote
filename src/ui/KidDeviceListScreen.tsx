@@ -8,10 +8,13 @@ import { Device } from "../core/types/Device";
 import { DeviceListSections } from "./DeviceListSections";
 import { KidModePinModal } from "./KidModePinModal";
 import { NowPlayingWidget } from "./NowPlayingWidget";
+import { NowSummaryList } from "./NowSummaryList";
+import { NowViewMode, NowViewSwitch } from "./NowViewSwitch";
 import { theme } from "./theme";
 import { KidModeControls } from "./useKidMode";
 import { useDeviceLayout } from "./useDeviceLayout";
 import { useNowPlaying } from "./useNowPlaying";
+import { useNowSummary } from "./useNowSummary";
 
 const EMPTY_TEXT = "No devices are set up for kids yet. Ask a grown-up.";
 
@@ -28,7 +31,9 @@ export function KidDeviceListScreen({ devices, stateStore, commandEngine, kid, o
   const insets = useSafeAreaInsets();
   const layout = useDeviceLayout(devices, true);
   const nowPlaying = useNowPlaying(layout.visibleDevices, stateStore);
+  const nowRows = useNowSummary(layout.model, stateStore);
   const [askingPin, setAskingPin] = useState(false);
+  const [viewMode, setViewMode] = useState<NowViewMode>("all");
   return (
     <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.header}>
@@ -49,8 +54,15 @@ export function KidDeviceListScreen({ devices, stateStore, commandEngine, kid, o
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {nowPlaying && <NowPlayingWidget device={nowPlaying.device} title={nowPlaying.title} stateStore={stateStore} commandEngine={commandEngine} onOpen={() => onSelect(nowPlaying.device)} />}
+        {layout.visibleDevices.length > 0 && (
+          <View style={styles.sectionControls}>
+            <NowViewSwitch value={viewMode} onChange={setViewMode} />
+          </View>
+        )}
         {layout.visibleDevices.length === 0 ? (
           <Text style={styles.empty}>{EMPTY_TEXT}</Text>
+        ) : viewMode === "now" ? (
+          <NowSummaryList rows={nowRows} commandEngine={commandEngine} onSelect={onSelect} />
         ) : (
           <DeviceListSections model={layout.model} stateStore={stateStore} onSelect={onSelect} onLongPress={ignoreLongPress} onToggleSection={layout.toggleSection} />
         )}
@@ -82,5 +94,7 @@ const styles = StyleSheet.create({
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
   lockButton: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center" },
   pressed: { opacity: 0.6 },
+  // ADR-HEARTH-194: the Now/All switch, above the list (this screen has no "Connected Devices" label row to sit inside).
+  sectionControls: { flexDirection: "row", justifyContent: "flex-end", marginBottom: theme.spacing.sm },
   empty: { color: theme.textSecondary, fontSize: theme.type.body, textAlign: "center", paddingVertical: theme.spacing.xxl },
 });

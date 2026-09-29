@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
@@ -6,9 +7,12 @@ import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
 import { DeviceListSections } from "./DeviceListSections";
 import { NowPlayingWidget } from "./NowPlayingWidget";
+import { NowSummaryList } from "./NowSummaryList";
+import { NowViewMode, NowViewSwitch } from "./NowViewSwitch";
 import { theme } from "./theme";
 import { useDeviceLayout } from "./useDeviceLayout";
 import { useNowPlaying } from "./useNowPlaying";
+import { useNowSummary } from "./useNowSummary";
 
 const EMPTY_TEXT = "No devices are set up for guests yet. Ask the household owner.";
 
@@ -28,6 +32,8 @@ export function GuestDeviceListScreen({ devices, stateStore, commandEngine, onSe
   const insets = useSafeAreaInsets();
   const layout = useDeviceLayout(devices, false, true);
   const nowPlaying = useNowPlaying(layout.visibleDevices, stateStore);
+  const nowRows = useNowSummary(layout.model, stateStore);
+  const [viewMode, setViewMode] = useState<NowViewMode>("all");
   return (
     <View style={[styles.container, { paddingTop: insets.top + theme.spacing.lg }]}>
       <View style={styles.header}>
@@ -45,8 +51,15 @@ export function GuestDeviceListScreen({ devices, stateStore, commandEngine, onSe
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {nowPlaying && <NowPlayingWidget device={nowPlaying.device} title={nowPlaying.title} stateStore={stateStore} commandEngine={commandEngine} onOpen={() => onSelect(nowPlaying.device)} />}
+        {layout.visibleDevices.length > 0 && (
+          <View style={styles.sectionControls}>
+            <NowViewSwitch value={viewMode} onChange={setViewMode} />
+          </View>
+        )}
         {layout.visibleDevices.length === 0 ? (
           <Text style={styles.empty}>{EMPTY_TEXT}</Text>
+        ) : viewMode === "now" ? (
+          <NowSummaryList rows={nowRows} commandEngine={commandEngine} onSelect={onSelect} />
         ) : (
           <DeviceListSections model={layout.model} stateStore={stateStore} onSelect={onSelect} onLongPress={ignoreLongPress} onToggleSection={layout.toggleSection} />
         )}
@@ -65,5 +78,7 @@ const styles = StyleSheet.create({
   brandMark: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.accentSoft, alignItems: "center", justifyContent: "center" },
   title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700" },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
+  // ADR-HEARTH-194: the Now/All switch, above the list (this screen has no "Connected Devices" label row to sit inside).
+  sectionControls: { flexDirection: "row", justifyContent: "flex-end", marginBottom: theme.spacing.sm },
   empty: { color: theme.textSecondary, fontSize: theme.type.body, textAlign: "center", paddingVertical: theme.spacing.xxl },
 });

@@ -23,9 +23,12 @@ import { BrandOptionList } from "./BrandOptionList";
 import { CapabilityButton } from "./CapabilityButton";
 import { FirstRunSetupCard } from "./FirstRunSetupCard";
 import { NowPlayingWidget } from "./NowPlayingWidget";
+import { NowSummaryList } from "./NowSummaryList";
+import { NowViewMode, NowViewSwitch } from "./NowViewSwitch";
 import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
 import { useNameSuggestion } from "./useNameSuggestion";
+import { useNowSummary } from "./useNowSummary";
 import { OfflineAlertBanner } from "./OfflineAlertBanner";
 import { TokenUpgradeBanner } from "./TokenUpgradeBanner";
 import { UpdateBanner } from "./UpdateBanner";
@@ -141,9 +144,13 @@ export function DeviceListScreen({
   // address + Remove this is 4, so a custom modal replaces Alert.alert here for the same reason.
   const [actionsTarget, setActionsTarget] = useState<Device | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
+  const [viewMode, setViewMode] = useState<NowViewMode>("all");
   const nowPlaying = useNowPlaying(devices, stateStore);
   const nameSuggestion = useNameSuggestion(actionsTarget, stateStore);
   const layout = useDeviceLayout(devices);
+  // ADR-HEARTH-194: a filtered, re-sorted read of the same grouped-list model below -- only the
+  // devices currently on, each with a one-tap Off button.
+  const nowRows = useNowSummary(layout.model, stateStore);
 
   function showActivityActions(activity: Activity) {
     Alert.alert(activity.name, undefined, [
@@ -284,11 +291,16 @@ export function DeviceListScreen({
       )}
 
       <View style={styles.sectionLabelRow}>
-        <Text style={styles.sectionLabel}>Connected Devices</Text>
-        {devices.length > 0 && <GroupBySwitch value={layout.layout.groupBy} onChange={layout.changeGroupBy} />}
+        <Text style={styles.sectionLabel}>{viewMode === "now" ? "Now" : "Connected Devices"}</Text>
+        <View style={styles.sectionControls}>
+          {devices.length > 0 && <NowViewSwitch value={viewMode} onChange={setViewMode} />}
+          {viewMode === "all" && devices.length > 0 && <GroupBySwitch value={layout.layout.groupBy} onChange={layout.changeGroupBy} />}
+        </View>
       </View>
       {devices.length === 0 ? (
         <FirstRunSetupCard serverSaved={fccConfigured} onJoinWithCode={onJoinWithCode} onScanQr={onConnectFamilyCommandCenter} />
+      ) : viewMode === "now" ? (
+        <NowSummaryList rows={nowRows} commandEngine={commandEngine} onSelect={onSelect} />
       ) : (
         <DeviceListSections
           model={layout.model}
@@ -414,6 +426,8 @@ const styles = StyleSheet.create({
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
   // flexWrap: at large text sizes the switch drops under the label instead of squeezing it to "CONN...".
   sectionLabelRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", columnGap: theme.spacing.sm, rowGap: theme.spacing.xs, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
+  // ADR-HEARTH-194: holds the Now/All switch plus (in All mode) the existing Group-by switch, wrapping onto its own line at large text sizes the same way sectionLabelRow's own children already do.
+  sectionControls: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: theme.spacing.sm },
   sectionLabel: {
     color: theme.textSecondary,
     fontSize: theme.type.label,

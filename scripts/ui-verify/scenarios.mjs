@@ -139,6 +139,38 @@ export const SCENARIOS = [
     steps: async (page) => longPress(page, "Den Apple TV"),
   },
   { name: "devices-types-fontscale-160", screen: "list", query: `&${TYPES_QUERY}&fontScale=1.6`, assertFit: false },
+  // ADR-HEARTH-194: the "Now" summary -- a realistic mix of on/off devices across several
+  // categories (TVs & Streaming, Lights, Plugs & Outlets, Climate & Fans on; Audio, Cameras,
+  // Gaming, Vacuums, Covers, Sensors, Actions all correctly showing nothing) from the same
+  // household=types&layout=types fixture the grouped-list scenarios above already use.
+  {
+    name: "devices-now",
+    screen: "list",
+    query: `&${TYPES_QUERY}`,
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Now", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "devices-now-empty",
+    screen: "list",
+    query: `&${TYPES_QUERY}`,
+    assertFit: false,
+    steps: async (page) => {
+      await page.getByLabel("Now", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+      // Turns every shown device off through its real one-tap Off button (a genuine CommandEngine
+      // call, same as a real tap) until the calm empty state shows -- exercises the Off button and
+      // the empty state together instead of needing a second, off-only fixture.
+      while ((await page.getByLabel(/^Turn off /).count()) > 0) {
+        await page.getByLabel(/^Turn off /).first().click();
+        await page.waitForTimeout(200);
+      }
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "kid-mode-types", screen: "list", query: `&${TYPES_QUERY}&kid=on`, assertFit: false },
   { name: "kid-mode-types-scrolled", screen: "list", query: `&${TYPES_QUERY}&kid=on`, assertFit: false, steps: async (page) => scrollList(page, SCROLL_STEP_PX) },
   { name: "kid-mode-list", screen: "list", query: "&layout=favorites&kid=on", assertFit: false },
