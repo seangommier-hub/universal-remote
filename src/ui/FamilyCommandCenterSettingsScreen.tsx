@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
+import { logger } from "../core/logging/logger";
 import { NetworkFailureNotice } from "./NetworkFailureNotice";
 import { loadFamilyCommandCenterConfig, verifyAndSaveFamilyCommandCenterConfig, verifyAndSavePublicUrl } from "../discovery/familyCommandCenterConfig";
 import { addDeviceFormStyles as styles } from "./addDeviceFormStyles";
@@ -16,6 +17,8 @@ import { RecentActivityList } from "./RecentActivityList";
 import type { KidModeControls } from "./useKidMode";
 import { theme } from "./theme";
 import { refreshOwnRole } from "../discovery/householdPhones";
+
+const LOG_SCOPE = "FamilyCommandCenterSettingsScreen";
 
 interface FamilyCommandCenterSettingsScreenProps {
   onCancel: () => void;
@@ -52,20 +55,30 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
   const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
-    loadFamilyCommandCenterConfig().then((existing) => {
-      if (existing) {
-        setAlreadyConnected(true);
-        setBaseUrl(existing.baseUrl);
-        setToken(existing.token);
-        setPublicBaseUrl(existing.publicBaseUrl ?? "");
-        setIsOwner(existing.role === "owner");
-        // Refreshes in the background (never blocks the form from showing); a stale cached role
-        // only means the "Household phones" entry point briefly lags a real promotion/demotion.
-        refreshOwnRole().then((role) => {
-          if (role !== null) setIsOwner(role === "owner");
-        });
-      }
-    });
+    // Real gap found live (2026-09-28, ADR-HEARTH-196): loadFamilyCommandCenterConfig() reads
+    // SecureStore (see familyCommandCenterConfig.ts) and rejects if that read throws -- a real
+    // failure mode this exact household hit the same day, for a different SecureStore read, as
+    // "KeyChainException: User interaction is not allowed" (a brief backgrounded/locked-phone
+    // Keychain access denial). Without a `.catch()` this was an unhandled promise rejection on
+    // the screen the settings gear opens -- the form was then stuck never learning it's already
+    // connected, on the one screen this whole app treats as the "settings" entry point. Same
+    // fallback the codebase already uses for this exact call in useNetworkDevices.ts.
+    loadFamilyCommandCenterConfig()
+      .then((existing) => {
+        if (existing) {
+          setAlreadyConnected(true);
+          setBaseUrl(existing.baseUrl);
+          setToken(existing.token);
+          setPublicBaseUrl(existing.publicBaseUrl ?? "");
+          setIsOwner(existing.role === "owner");
+          // Refreshes in the background (never blocks the form from showing); a stale cached role
+          // only means the "Household phones" entry point briefly lags a real promotion/demotion.
+          refreshOwnRole().then((role) => {
+            if (role !== null) setIsOwner(role === "owner");
+          });
+        }
+      })
+      .catch((error) => logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) }));
   }, []);
 
   async function handleSave() {

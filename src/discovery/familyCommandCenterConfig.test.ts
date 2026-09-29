@@ -84,6 +84,19 @@ describe("loadFamilyCommandCenterConfig / verifyAndSavePublicUrl", () => {
     global.fetch = jest.fn();
   });
 
+  // ADR-HEARTH-196: a real-device failure this exact household hit live (a SecureStore/Keychain
+  // read denied with "User interaction is not allowed" during a background/locked-phone moment)
+  // makes this reject instead of resolving null -- every caller (the settings screen the header's
+  // gear icon opens, the Devices tab's own fccConfigured/guestRestricted check, the token-upgrade
+  // banner, the activity editor) MUST catch it rather than leaving an unhandled rejection on a
+  // bare `.then()`. This test locks in that it rejects, not resolves, on a SecureStore failure.
+  test("loadFamilyCommandCenterConfig rejects (does not silently resolve null) when SecureStore throws", async () => {
+    (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+    (SecureStore.getItemAsync as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+
+    await expect(loadFamilyCommandCenterConfig()).rejects.toThrow(/User interaction is not allowed/);
+  });
+
   test("loadFamilyCommandCenterConfig returns publicBaseUrl as undefined when none was ever saved", async () => {
     (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
     (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("secret-token");

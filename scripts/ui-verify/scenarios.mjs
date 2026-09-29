@@ -390,6 +390,12 @@ export const SCENARIOS = [
   },
   { name: "ha-assist", screen: "ha-assist", assertFit: false },
   { name: "fcc-settings", screen: "fcc-settings", assertFit: false },
+  // ADR-HEARTH-196 investigation: fcc-settings with a large, varied device list (the "types"
+  // household -- 8 extras plus every Home Assistant entity kind plus 2 Ring cameras, 15+ devices
+  // spanning tv/streaming/audio/lighting/outlet/camera/gaming/vacuum/feeder/climate/fan/cover/
+  // lock/sensor/action) instead of the small 6-device default, to try to reproduce the live
+  // settings-gear crash a small fixture doesn't hit.
+  { name: "fcc-settings-large-household", screen: "fcc-settings", query: `&${TYPES_QUERY}`, assertFit: false },
   {
     name: "fcc-settings-activity",
     screen: "fcc-settings",

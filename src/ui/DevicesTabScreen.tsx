@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NameSourceKind } from "../discovery/deviceIdentity";
 import { StyleSheet, View } from "react-native";
 import { HearthRuntime } from "../runtime/bootstrap";
+import { logger } from "../core/logging/logger";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { Device } from "../core/types/Device";
 import { Activity } from "../core/types/Activity";
@@ -35,6 +36,8 @@ import type { useActivities } from "./useActivities";
 import { isShared } from "../runtime/sharedDevices";
 import { demoStartingScreen } from "../demo/demoScreenRoute";
 import { theme } from "./theme";
+
+const LOG_SCOPE = "DevicesTabScreen";
 
 export type DevicesScreen =
   | { name: "list" }
@@ -117,11 +120,21 @@ export function DevicesTabScreen({
 
   useEffect(() => {
     let cancelled = false;
-    loadFamilyCommandCenterConfig().then((config) => {
-      if (cancelled) return;
-      setFccConfigured(config !== null);
-      setGuestRestricted(config?.role === "guest");
-    });
+    // Real gap found live (2026-09-28, ADR-HEARTH-196): loadFamilyCommandCenterConfig() reads
+    // SecureStore and rejects if that read throws -- a real failure mode this exact household hit
+    // the same day for a different SecureStore read ("KeyChainException: User interaction is not
+    // allowed"). Unhandled here, that left fccConfigured/guestRestricted on whatever they were
+    // before (stale, not fatal) instead of a deliberate "couldn't tell, assume not restricted"
+    // fallback; caught the same way useNetworkDevices.ts already handles this exact call.
+    loadFamilyCommandCenterConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setFccConfigured(config !== null);
+        setGuestRestricted(config?.role === "guest");
+      })
+      .catch((error) => {
+        if (!cancelled) logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) });
+      });
     // Refreshes from the Pi in the background so a role change (promoted, demoted, or this guest
     // token's own expiry) takes effect without waiting for the next app restart; never blocks
     // rendering and is silently ignored when unreachable (refreshOwnRole never throws).
