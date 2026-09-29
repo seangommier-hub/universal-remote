@@ -5,10 +5,14 @@ import { demoActivityLogBody } from "./demoActivityLog";
 import { demoAlexaPlugsBody } from "./demoAlexaPlugs";
 import { demoDiscoverAllBody } from "./demoDiscoverPayload";
 import { demoGuestInviteBody, demoHouseholdPhonesBody, demoOwnIdentity } from "./demoHouseholdPhones";
+import { demoHouseholdRemotesBody, demoRemoteButtonMapBody, demoRemotePairingCodeBody } from "./demoHouseholdRemotes";
 
 const PHONE_TOKENS_SELF_PATH = "/api/integrations/hearth/phone-tokens/self";
 const PHONE_TOKENS_PATH = "/api/integrations/hearth/phone-tokens";
 const PAIR_CODE_PATH = "/api/integrations/hearth/pair/code";
+const PHYSICAL_REMOTE_PAIR_PATH = "/api/integrations/hearth/physical-remote/pair";
+const PHYSICAL_REMOTE_MAPPING_PATH = "/api/integrations/hearth/physical-remote/mapping";
+const PHYSICAL_REMOTE_PATH = "/api/integrations/hearth/physical-remote";
 
 export const DEMO_FCC_BASE_URL = "http://demo-fcc.invalid:3211";
 export const DEMO_FCC_TOKEN = "demo-token";
@@ -29,6 +33,10 @@ export async function demoFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.includes(PHONE_TOKENS_SELF_PATH)) return jsonResponse(demoOwnIdentity(), HTTP_OK);
   if (url.includes(PHONE_TOKENS_PATH)) return jsonResponse(demoHouseholdPhonesBody(), HTTP_OK);
   if (url.includes(PAIR_CODE_PATH)) return jsonResponse(demoGuestInviteBody(), HTTP_OK);
+  // Checked before PHYSICAL_REMOTE_PATH, which is a substring of both of these.
+  if (url.includes(PHYSICAL_REMOTE_PAIR_PATH)) return jsonResponse(demoRemotePairingCodeBody(), HTTP_OK);
+  if (url.includes(PHYSICAL_REMOTE_MAPPING_PATH)) return jsonResponse(demoRemoteButtonMapBody(), HTTP_OK);
+  if (url.includes(PHYSICAL_REMOTE_PATH)) return jsonResponse(demoHouseholdRemotesBody(), HTTP_OK);
   if (url.includes(ALEXA_PLUGS_PATH)) return jsonResponse(demoAlexaPlugsBody(), HTTP_OK);
   return jsonResponse({ error: "not available in demo mode" }, HTTP_NOT_FOUND);
 }

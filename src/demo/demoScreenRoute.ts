@@ -5,7 +5,7 @@ import { demoActivities, demoBedtimeActivity } from "./demoHousehold";
 import { demoScreenParam } from "./demoMode";
 
 // ADR-HEARTH-157: demo-only deep entry (?demo=1&screen=...). The app navigates by internal state, not URLs.
-// Grammar: list | discover | fcc-settings | fcc-privacy | activity-editor | remote:<key> | post-add:<key> | setup-checks:<key> | add:<brand>
+// Grammar: list | discover | fcc-settings | fcc-privacy | fcc-household-phones | fcc-household-remotes | activity-editor | remote:<key> | post-add:<key> | setup-checks:<key> | add:<brand>
 // where <key> is a fragment of a demo device's name or id (lg, samsung, roku, sonos, kasa, broadlink).
 
 function findDevice(devices: Device[], key: string): Device | undefined {
@@ -24,6 +24,7 @@ export function resolveDemoScreen(param: string | null, devices: Device[]): Devi
     case "fcc-settings":
     case "fcc-privacy":
     case "fcc-household-phones":
+    case "fcc-household-remotes":
       return { name };
     // ADR-HEARTH-191: opens the plain Devices list — loadDemoDevices.ts already narrows the demo
     // household down to just the six Ring cameras for this exact screen value, so the list itself

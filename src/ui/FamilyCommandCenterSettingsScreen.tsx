@@ -31,6 +31,9 @@ interface FamilyCommandCenterSettingsScreenProps {
   /** ADR-HEARTH-189 (phase 2): opens the "Household phones" admin screen. Only ever shown when
    * this phone's own role is "owner" -- a kid-mode or guest phone never sees this screen. */
   onOpenHouseholdPhones: () => void;
+  /** ADR-HEARTH-201: opens the "Household remotes" admin screen (pair/rename/revoke a physical
+   * remote, edit its button map). Same owner-only gating as onOpenHouseholdPhones. */
+  onOpenHouseholdRemotes: () => void;
   devices: Device[];
   onDeviceAdded: (device: Device) => Device;
   onDeviceUpdated: (device: Device) => void;
@@ -43,7 +46,7 @@ interface FamilyCommandCenterSettingsScreenProps {
  * unauthenticated GET would 401/503) before saving, rather than accepting
  * whatever was typed and failing silently the next time Discover runs.
  */
-export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, kid, onKidModeOn, onOpenPrivacy, onOpenHouseholdPhones, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
+export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWithCode, kid, onKidModeOn, onOpenPrivacy, onOpenHouseholdPhones, onOpenHouseholdRemotes, devices, onDeviceAdded, onDeviceUpdated }: FamilyCommandCenterSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -183,6 +186,9 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
       {alreadyConnected && <InviteSomeonePanel />}
       {alreadyConnected && isOwner && (
         <CapabilityButton label="Household phones" icon="people-outline" variant="ghost" onPress={onOpenHouseholdPhones} disabled={status === "checking"} />
+      )}
+      {alreadyConnected && isOwner && (
+        <CapabilityButton label="Household remotes" icon="hardware-chip-outline" variant="ghost" onPress={onOpenHouseholdRemotes} disabled={status === "checking"} />
       )}
       <PhoneNameField />
       <KidModeSettingsPanel kid={kid} onKidModeOn={onKidModeOn} />

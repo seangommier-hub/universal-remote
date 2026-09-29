@@ -22,6 +22,9 @@ import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
 import { WhatLeavesYourHouseScreen } from "./WhatLeavesYourHouseScreen";
 import { HouseholdPhonesScreen } from "./HouseholdPhonesScreen";
+import { HouseholdRemotesScreen } from "./HouseholdRemotesScreen";
+import { EditRemoteButtonsScreen } from "./EditRemoteButtonsScreen";
+import { HouseholdRemote } from "../discovery/householdRemotes";
 import { ScanFamilyCommandCenterQrScreen } from "./ScanFamilyCommandCenterQrScreen";
 import { JoinWithCodeScreen } from "./JoinWithCodeScreen";
 import { PairInvite } from "../discovery/pairInvite";
@@ -49,6 +52,8 @@ export type DevicesScreen =
   | { name: "fcc-settings" }
   | { name: "fcc-privacy" }
   | { name: "fcc-household-phones" }
+  | { name: "fcc-household-remotes" }
+  | { name: "edit-remote-buttons"; remote: HouseholdRemote }
   | { name: "fcc-join"; invite?: PairInvite }
   | { name: "fcc-remote" }
   | { name: "ha-assist"; instanceId: string }
@@ -331,6 +336,7 @@ export function DevicesTabScreen({
           onKidModeOn={() => setScreen({ name: "list" })}
           onOpenPrivacy={() => setScreen({ name: "fcc-privacy" })}
           onOpenHouseholdPhones={() => setScreen({ name: "fcc-household-phones" })}
+          onOpenHouseholdRemotes={() => setScreen({ name: "fcc-household-remotes" })}
           devices={devices}
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
@@ -340,6 +346,18 @@ export function DevicesTabScreen({
         <WhatLeavesYourHouseScreen devices={devices} onDone={() => setScreen({ name: "fcc-settings" })} />
       )}
       {screen.name === "fcc-household-phones" && <HouseholdPhonesScreen onDone={() => setScreen({ name: "fcc-settings" })} />}
+      {screen.name === "fcc-household-remotes" && (
+        <HouseholdRemotesScreen onDone={() => setScreen({ name: "fcc-settings" })} onEditButtons={(remote) => setScreen({ name: "edit-remote-buttons", remote })} />
+      )}
+      {screen.name === "edit-remote-buttons" && (
+        <EditRemoteButtonsScreen
+          remote={screen.remote}
+          devices={devices}
+          activities={activities.activities}
+          stateStore={runtime.stateStore}
+          onDone={() => setScreen({ name: "fcc-household-remotes" })}
+        />
+      )}
       {screen.name === "fcc-remote" && <CommandCenterRemoteScreen onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "ha-assist" && <HomeAssistantAssistScreen instanceId={screen.instanceId} onBack={() => setScreen({ name: "list" })} />}
       {screen.name === "edit-activity" && (

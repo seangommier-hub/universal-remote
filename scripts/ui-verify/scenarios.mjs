@@ -494,6 +494,42 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  {
+    name: "household-remotes",
+    screen: "fcc-household-remotes",
+    assertFit: false,
+    settleMs: 1200,
+    steps: async (page) => {
+      await page.waitForSelector("text=Bedroom remote");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "household-remotes-pair",
+    screen: "fcc-household-remotes",
+    assertFit: false,
+    settleMs: 1200,
+    steps: async (page) => {
+      await page.waitForSelector("text=Bedroom remote");
+      await page.getByText("Generate pairing code", { exact: true }).click();
+      await page.waitForSelector("text=N5SSXF3R");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "household-remotes-edit-buttons",
+    screen: "fcc-household-remotes",
+    assertFit: false,
+    settleMs: 1200,
+    steps: async (page) => {
+      await page.waitForSelector("text=Living room remote");
+      await page.getByText("Edit buttons", { exact: true }).first().click();
+      await page.waitForSelector("text=Edit buttons: Living room remote");
+      await page.getByText("Assign", { exact: true }).first().click();
+      await page.waitForSelector("text=Living Room TV");
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
   { name: "post-add",screen: "post-add:lg", assertFit: false },
   { name: "setup-checks", screen: "setup-checks:lg", assertFit: false },
   { name: "add-govee", screen: "add:govee", assertFit: false },
