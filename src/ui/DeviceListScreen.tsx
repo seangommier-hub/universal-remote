@@ -178,7 +178,10 @@ export function DeviceListScreen({
             </Text>
             <ConnectivityBadge mode={connectivityMode} />
           </View>
-          <Text style={styles.subtitle} numberOfLines={1}>
+          {/* Same shrink-to-fit fix as the title above (ADR-HEARTH-180): a plain numberOfLines={1}
+              truncated this to "One home. One ..." once the header row's icons and badge left it
+              little width, found live 2026-09-28. */}
+          <Text style={styles.subtitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
             {connectivityMode === "away" ? "Remote — away from home" : "One home. One remote."}
           </Text>
         </View>
