@@ -343,6 +343,21 @@ export const SCENARIOS = [
     },
   },
   {
+    // ADR-HEARTH-195: the post-"Add all" summary card — Chromecast/Roku/Sonos have no power-on
+    // path (skipped) and Yamaha does, so one click of "Test wake for all" shows a mix of skip and
+    // pass/fail rows instead of N separate post-add screens.
+    name: "discover-add-all-followup-wake-test",
+    screen: "discover",
+    assertFit: false,
+    settleMs: 2500,
+    steps: async (page) => {
+      await page.getByText("Add all 4", { exact: true }).click();
+      await page.waitForTimeout(ADD_ALL_FINISHED_MS);
+      await page.getByText("Test wake for all", { exact: true }).click();
+      await page.waitForTimeout(ADD_ALL_FINISHED_MS);
+    },
+  },
+  {
     name: "discover-unrecognized",
     screen: "discover",
     assertFit: false,

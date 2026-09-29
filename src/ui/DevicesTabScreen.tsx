@@ -283,10 +283,12 @@ export function DevicesTabScreen({
         <DiscoverDevicesScreen
           driverRegistry={runtime.driverRegistry}
           stateStore={runtime.stateStore}
+          commandEngine={runtime.commandEngine}
           devices={devices}
           onCancel={() => setScreen({ name: "list" })}
           onAdded={handleAdded}
           onAddedQuietly={(device) => void onDeviceAdded(device)}
+          onRenameDevice={(device, newName) => onRenameDevice(device, newName)}
           onScanQr={() => setScreen({ name: "fcc-scan" })}
           onOpenSettings={openFccSetup}
           onOpenBrandScreen={(brand, ipAddress, serviceUrl) => setScreen({ name: "add", brand, initialIpAddress: ipAddress, initialServiceUrl: serviceUrl })}

@@ -22,10 +22,12 @@ interface Options {
   stateStore: StateStore;
   /** Registers a connected device without opening any screen (bulk add stays on Discover). */
   onAddedQuietly: (device: Device) => void;
+  /** Called once the run finishes, so the screen can open the post-add summary for what got added (ADR-HEARTH-195). */
+  onDone?: (summary: AddAllSummary) => void;
 }
 
 /** "Add all ready": connects every device that needs no input, one at a time, exposing per-row progress and the final summary (ADR-HEARTH-167). */
-export function useAddAll({ driverRegistry, stateStore, onAddedQuietly }: Options) {
+export function useAddAll({ driverRegistry, stateStore, onAddedQuietly, onDone }: Options) {
   const deps = useAddFlowDeps(driverRegistry, stateStore);
   const [state, setState] = useState<AddAllState>(IDLE);
   const running = useRef(false);
@@ -41,8 +43,9 @@ export function useAddAll({ driverRegistry, stateStore, onAddedQuietly }: Option
       });
       running.current = false;
       setState((current) => ({ ...current, phase: "done", summary }));
+      onDone?.(summary);
     },
-    [deps, onAddedQuietly]
+    [deps, onAddedQuietly, onDone]
   );
 
   const dismiss = useCallback(() => setState(IDLE), []);

@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Linking, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CommandEngine } from "../core/engine/CommandEngine";
 import { DriverRegistry } from "../core/drivers/DriverRegistry";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
@@ -23,18 +24,22 @@ import { RowActionsModal } from "./RowActionsModal";
 import { theme } from "./theme";
 import { useAddAll } from "./useAddAll";
 import { useAddDiscoveredDevice } from "./useAddDiscoveredDevice";
+import { useBulkFollowup } from "./useBulkFollowup";
 import { useDeviceLabels } from "./useDeviceLabels";
 import { scanNetworkQuietly, useNetworkDevices } from "./useNetworkDevices";
 
 interface DiscoverDevicesScreenProps {
   driverRegistry: DriverRegistry;
   stateStore: StateStore;
+  commandEngine: CommandEngine;
   /** Devices already added, so they are left out of the list instead of offered twice. */
   devices: Device[];
   onCancel: () => void;
   onAdded: (device: Device) => void;
   /** Registers a device added by "Add all ready" without leaving this screen. */
   onAddedQuietly: (device: Device) => void;
+  /** Applies a rename from the post-"Add all" summary card (ADR-HEARTH-195). */
+  onRenameDevice: (device: Device, newName: string) => Promise<Device>;
   /** Opens the QR scanner (a household invite or a Family Command Center code). */
   onScanQr: () => void;
   /** Opens Family Command Center pairing/settings — for brands that need it and for widening coverage. */
@@ -53,12 +58,24 @@ const SEARCH_ICON_SIZE = 18;
  * recognized-but-off next, everything unrecognized collapsed behind one row and grouped by kind,
  * anything the person hid under "Hidden". One primary button per row, the rest in an overflow menu.
  */
-export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onCancel, onAdded, onAddedQuietly, onScanQr, onOpenSettings, onOpenBrandScreen }: DiscoverDevicesScreenProps) {
+export function DiscoverDevicesScreen({ driverRegistry, stateStore, commandEngine, devices, onCancel, onAdded, onAddedQuietly, onRenameDevice, onScanQr, onOpenSettings, onOpenBrandScreen }: DiscoverDevicesScreenProps) {
   const insets = useSafeAreaInsets();
   const network = useNetworkDevices();
   const { labels, setHidden, setBrand, markSupportRequested } = useDeviceLabels();
   const add = useAddDiscoveredDevice({ driverRegistry, stateStore, onAdded, onOpenBrandScreen, onIdentified: network.replaceDevice, rescan: scanNetworkQuietly });
-  const addAll = useAddAll({ driverRegistry, stateStore, onAddedQuietly });
+  const followup = useBulkFollowup({ commandEngine, stateStore, onRenameDevice });
+  const addAll = useAddAll({
+    driverRegistry,
+    stateStore,
+    onAddedQuietly,
+    onDone: (summary) => {
+      if (summary.added.length > 0) followup.present(summary.added);
+    },
+  });
+  const finishFollowup = () => {
+    followup.close();
+    addAll.dismiss();
+  };
   const [query, setQuery] = useState("");
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
@@ -114,7 +131,19 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, devices, onC
     <View style={styles.listHeader}>
       <ScanStatusLine scanning={isScanning} scanningText={scanText} scannedAt={network.scannedAt} now={now} onRescan={() => void network.rescan()} />
       {plan.auto.length + plan.steps.length + (addAll.state.phase === "idle" ? 0 : 1) > 0 && (
-        <AddAllCard plan={plan} run={addAll.state} onAddAll={() => void addAll.start(plan.auto)} onDismissRun={addAll.dismiss} onStartStep={startStep} />
+        <AddAllCard
+          plan={plan}
+          run={addAll.state}
+          followup={followup.state}
+          onAddAll={() => void addAll.start(plan.auto)}
+          onDismissRun={addAll.dismiss}
+          onStartStep={startStep}
+          onStartEdit={followup.startEditing}
+          onDraftChange={followup.changeDraft}
+          onCommitEdit={() => void followup.commitEditing()}
+          onTestAll={() => void followup.testAll()}
+          onFinishFollowup={finishFollowup}
+        />
       )}
       {shouldShowSearch(sections) || searching ? <SearchBox value={query} onChange={setQuery} /> : null}
       {network.failure && screenState === "list" ? <NetworkFailureNotice diagnosis={network.failure} /> : null}
