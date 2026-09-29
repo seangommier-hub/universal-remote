@@ -315,7 +315,9 @@ describe("SamsungTizenDriver", () => {
       await flushMicrotasks();
       const relaySocket = MockWebSocket.latest();
       relaySocket.simulateError();
-      await flushMicrotasks(20);
+      // ADR-HEARTH-203: the name-based lookup now goes through loadConfigSafely's extra await, one
+      // microtask tick later than before (same fix already needed for LG's identical fallback test).
+      await flushMicrotasks(60);
 
       const retrySocket = MockWebSocket.latest();
       expect(retrySocket.url).toContain("192.168.1.219");
