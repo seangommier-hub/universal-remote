@@ -9,6 +9,7 @@
   "exclude": [
     "node_modules",
     "runner",
-    ".claude"
+    ".claude",
+    "scratch"
   ]
 }
