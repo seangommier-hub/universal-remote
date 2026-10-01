@@ -15,6 +15,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
 import { theme } from "./theme";
+import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
 import { useKeepScreenAwake } from "./useKeepScreenAwake";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -199,6 +200,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // reference screen — see useResponsiveScale.ts for why this is the
   // right axis to scale (and font size/spacing deliberately are not).
   const scale = useResponsiveScale();
+  // ADR-HEARTH-204: "the increase in speed should be due to multiple taps" — a fast streak of
+  // same-direction d-pad left/right taps shows an escalating 2x/5x/10x/20x label near the d-pad.
+  // Every tap still sends exactly one real directionalNavigation command (see leftRight below);
+  // this hook only tracks tap cadence for the on-screen label.
+  const dpadSeek = useDpadSeekMultiplier();
   const connectivityMode = useConnectivityMode();
   // ADR-HEARTH-183: keep the screen from auto-locking only while a remote is actually open —
   // scoped by this component's own mount/unmount (see useKeepScreenAwake's own doc comment), never
@@ -339,6 +345,14 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       setCommandError(result.error?.message ?? "Command failed");
       commandErrorTimer.current = setTimeout(() => setCommandError(""), 4000);
     });
+  }
+
+  // ADR-HEARTH-204: left/right only (up/down have no seek/scrub meaning on a d-pad) — sends the
+  // exact same one directionalNavigation command a plain tap always has, then feeds the tap to
+  // useDpadSeekMultiplier purely for the on-screen fast-tap-streak label.
+  function pressDpadSeekDirection(direction: "left" | "right") {
+    send("directionalNavigation", { direction });
+    dpadSeek.registerTap(direction);
   }
 
   // ADR-HEARTH-136: like a physical remote, every digit goes to the device the moment it is pressed
@@ -768,6 +782,16 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           has no blur in React Native, so a decorative wash just reads as a hard-edged circle.) */}
       {hasDpad && (
         <View style={styles.hubCard}>
+          {/* ADR-HEARTH-204: a fast same-direction d-pad left/right tap streak — purely an honest
+              label for Hearth's own tap cadence, never a claim about what the TV/app itself is
+              doing with it. position:"absolute" so it never adds height even while shown. */}
+          {dpadSeek.multiplier !== null && (
+            <View style={styles.seekMultiplierOverlay} pointerEvents="none">
+              <View style={styles.seekMultiplierBadge}>
+                <Text style={styles.seekMultiplierLabel}>{`Seeking ${dpadSeek.multiplier}x`}</Text>
+              </View>
+            </View>
+          )}
           <View style={styles.hubRow}>
             {(has(device, "volumeUp") || has(device, "volumeDown")) && (
               <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
@@ -812,7 +836,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   scale={scale}
                   icon="chevron-back"
                   label="Left"
-                  onPress={() => send("directionalNavigation", { direction: "left" })}
+                  onPress={() => pressDpadSeekDirection("left")}
                   disabled={controlsDisabled}
                   containerStyle={styles.dpadArrow}
                 />
@@ -852,7 +876,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
                   scale={scale}
                   icon="chevron-forward"
                   label="Right"
-                  onPress={() => send("directionalNavigation", { direction: "right" })}
+                  onPress={() => pressDpadSeekDirection("right")}
                   disabled={controlsDisabled}
                   containerStyle={styles.dpadArrow}
                 />
@@ -1412,6 +1436,19 @@ const styles = StyleSheet.create({
   // spacing.sm the rocker/d-pad/rocker cluster is 316px, fitting a 375pt screen with ~11px to
   // spare; tighter gaps also read more like one cluster, not three separate groups near each other.
   hubRow: { flexDirection: "row", gap: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
+  // ADR-HEARTH-204: position:"absolute" (zero layout height, satisfying "no new scroll/height")
+  // overlaid near the top of hubCard — hubCard's own overflow:"hidden" clips it if pushed further
+  // up, so this sits inside its bounds rather than floating above the card.
+  seekMultiplierOverlay: { position: "absolute", top: theme.spacing.xs, left: 0, right: 0, alignItems: "center", zIndex: 1 },
+  seekMultiplierBadge: {
+    backgroundColor: theme.surfaceOverlay,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.border,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+  },
+  seekMultiplierLabel: { color: theme.textPrimary, fontSize: theme.type.caption, fontWeight: "700" },
   // ADR-HEARTH-068: kept tight (spacing.sm top margin, same button size as the d-pad's own
   // center button) rather than a full separate card — this hub is already fighting for vertical
   // space on a 375pt screen (see hubCard's own comment, "make it one page, no scrolling").
