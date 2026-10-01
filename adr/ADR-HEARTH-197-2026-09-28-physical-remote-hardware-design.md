@@ -1,7 +1,7 @@
 # ADR-HEARTH-197: Physical remote with IR — hardware, firmware, and integration design
 
 **Date:** 2026-09-28
-**Status:** Proposed — design only, no code written. Six open questions for Sean block Phase 1 start (see bottom).
+**Status:** SUPERSEDED 2026-09-30. Sean is running the real hardware/CAD/enclosure design in a separate, more-advanced standalone project (`hearth-remote-hardware`, its own repo, memory note `project_hearth_remote_hardware`). That project has already locked a single-board architecture (an ESP32-WROOM-32 built onto the Hosyond 2.8" screen module, not a second ESP32-S3 board), a 2xAA battery holder Sean already owns (not a LiPo), and a donor-remote silicone button pad — all contradicting the BOM/architecture recommendations below. Keep this ADR only for its still-valid software-side reasoning (Section 3's WiFi-to-Pi connectivity model, Section 4's controller-not-device abstraction, the Pi route family) — ADR-HEARTH-201 already built that half. Do not use this ADR's hardware/BOM sections (1-2) for purchasing; defer to the other project.
 
 ## Context
 
