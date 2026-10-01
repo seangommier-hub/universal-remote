@@ -1,24 +1,37 @@
-import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
-import { CapabilityId, StreamingService } from "../core/types/Capability";
+import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
-import { CapabilityButton, fireHapticClick } from "./CapabilityButton";
-import { describeReconnectFailure } from "./describeReconnectFailure";
-import { describeDeviceStatus } from "./describeDeviceStatus";
+import { fireHapticClick } from "./CapabilityButton";
+import { CommandErrorBanner } from "./CommandErrorBanner";
+import { deriveRemoteViewState } from "./deriveRemoteViewState";
+import { DPAD_HEIGHT } from "./dpadLayout";
+import { DpadCluster } from "./DpadCluster";
+import { has } from "./hasCapability";
+import { InputSelectionCard } from "./InputSelectionCard";
+import { KeyboardCard } from "./KeyboardCard";
+import { KeypadCard } from "./KeypadCard";
 import { MediaBrowseModal } from "./MediaBrowseModal";
-import { useConnectivityMode } from "./useConnectivityMode";
-import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
-import { cancelSleepTimer, getSleepTimerExpiration, startSleepTimer, subscribeSleepTimer } from "../runtime/sleepTimerManager";
+import { ReconnectCard } from "./ReconnectCard";
+import { RemoteHeaderRow } from "./RemoteHeaderRow";
+import { RemoteStatusRow } from "./RemoteStatusRow";
+import { RemoteTabBar } from "./RemoteTabBar";
+import { SleepTimerModal } from "./SleepTimerModal";
+import { StreamingAppsRow } from "./StreamingAppsRow";
 import { theme } from "./theme";
+import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
+import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { useKeepScreenAwake } from "./useKeepScreenAwake";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
+import { useUniversalSleepTimer } from "./useUniversalSleepTimer";
+import { UtilityActionsRow } from "./UtilityActionsRow";
+import { VolumeChannelCard } from "./VolumeChannelCard";
 
 interface UniversalTvRemoteProps {
   device: Device;
@@ -37,157 +50,19 @@ interface UniversalTvRemoteProps {
   onBack: () => void;
 }
 
-function has(device: Device, capability: CapabilityId): boolean {
-  return device.capabilities.includes(capability);
-}
-
-type IconName = ComponentProps<typeof Ionicons>["name"];
-
-// Sean's reference (2026-09-10): a real remote app's secondary controls (mute, back, home, menu)
-// read as one row of icon-over-caption chips, not horizontal icon+text pills — matches how a
-// physical remote's own secondary buttons are labeled (engraved, small, below the button) rather
-// than lettered inside it. One small local component since this exact pairing repeats 4 times in
-// the utility row below.
-function UtilityAction({
-  icon,
-  label,
-  onPress,
-  disabled,
-  active,
-  scale,
-  columns,
-}: {
-  icon: IconName;
-  label: string;
-  onPress: () => void;
-  disabled: boolean;
-  active?: boolean;
-  scale: number;
-  columns: number;
-}) {
-  return (
-    <View style={[styles.utilityAction, { width: `${100 / columns}%` }]}>
-      <CapabilityButton shape="circle" size="sm" scale={scale} icon={icon} label={label} variant={active ? "accent" : "default"} selected={active} onPress={onPress} disabled={disabled} />
-      {/* ADR-HEARTH-180: hidden from VoiceOver/TalkBack — this caption repeats the exact text the
-          button above already carries as its own accessibilityLabel, so leaving it exposed would
-          announce the same word twice for every utility action on this screen. */}
-      <Text style={styles.utilityActionLabel} numberOfLines={1} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-// Real brand identity colors (public, not the trademarked logo artwork itself) — sourced 2026-09-10
-// from each service's actual wordmark/background. No bundled logo image assets exist in this app,
-// so a colored tile with a styled wordmark is the honest stand-in: recognizable, not a copy of the
-// real mark. YouTube previously used Ionicons' own "logo-youtube" glyph — dropped 2026-09-10 after
-// two rounds of layout fixes still left it reported as "not middle aligned": an icon-font glyph's
-// visual mark isn't always centered within its own em-square the way a container's flex-centering
-// assumes, and no amount of wrapper/box fixing can correct that from outside the font. A text
-// wordmark, like the other three tiles already use and have now had their alignment confirmed
-// fixed, is the more reliable choice — one rendering mechanism for all four tiles, not two.
-// Real-device ask (2026-09-10): "adjust the size of the hulu button to match" — all four tiles
-// are already the exact same box size (styles.streamingTile, same width/aspectRatio for all),
-// so this was never about the box; it's the wordmark itself. Hulu's real logotype is short and
-// entirely lowercase (no tall ascenders like "l" aside, no caps), which reads visually smaller
-// than "NETFLIX"/"YouTube" at the identical declared font size — a real typographic effect
-// (x-height vs. cap-height), not a sizing bug in the layout. `fontScale` (default 1, so every
-// other tile renders exactly as before) lets one wordmark compensate without touching the shared
-// box/tile styling every entry uses.
-const STREAMING_APPS: { service: StreamingService; label: string; bg: string; fg: string; fontScale?: number }[] = [
-  { service: "netflix", label: "NETFLIX", bg: "#141414", fg: "#E50914" },
-  { service: "hulu", label: "hulu", bg: "#1CE783", fg: "#0B0B0B", fontScale: 1.35 },
-  { service: "primeVideo", label: "prime video", bg: "#0F171E", fg: "#00A8E1" },
-  { service: "youtube", label: "YouTube", bg: "#141414", fg: "#FF0000" },
-];
-
-function StreamingAppTile({
-  label,
-  bg,
-  fg,
-  fontScale = 1,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  bg: string;
-  fg: string;
-  fontScale?: number;
-  onPress: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={disabled ? undefined : fireHapticClick}
-      disabled={disabled}
-      style={[styles.streamingTile, { backgroundColor: bg }, disabled && styles.disabled]}
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${label.trim()}`}
-    >
-      {/* Real-device finding (2026-09-10): "the other logos are not centered" too, not just
-          YouTube's — "prime video" (11 characters) almost certainly wraps to two lines at this
-          tile's width, and a fixed-aspectRatio box doesn't grow to fit that second line, so
-          centered-but-overflowing text reads as visibly off-center. numberOfLines +
-          adjustsFontSizeToFit forces every wordmark onto one line, shrinking down rather than
-          wrapping, so centering is guaranteed the same way for all four tiles now that they all
-          go through this one rendering path. */}
-      <Text
-        style={[styles.streamingTileWordmark, { color: fg, fontSize: theme.type.label * fontScale }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-// Real-device finding (2026-09-10): "the card with the arrows... looks awful" — traced to a real
-// misalignment, not a vague taste complaint. The d-pad column (up + gap + middle-row-with-the-
-// large-Select-button + gap + down) is 196px tall; the volume/channel rocker columns beside it,
-// gap-based with no matching height, were only ~136px — centered next to a taller neighbor, so
-// their up/down buttons sat ~30px away from the d-pad's own up/down buttons instead of aligning
-// with them. A real remote's side rockers align top-to-bottom with its d-pad; this one didn't.
-const DPAD_HEIGHT = theme.circleDiameter.sm * 2 + theme.circleDiameter.lg + theme.spacing.md * 2;
-// Real-device ask (2026-09-10): "fix the navigation of the up down arrows for volume and
-// navigation to be more neatly oriented." The rockers already align top-to-bottom with the
-// d-pad (the height-matching fix above) — what's left is that the d-pad reads as one wheel
-// (ADR-HEARTH-037: a shared disc the arrows sit ON) while the Vol/Ch rockers are still two bare
-// floating circles with a label between them, on the card's own plain background. Giving each
-// rocker its own matching disc (same radius/border/surface treatment) makes all three columns
-// read as one consistent family of controls instead of one styled differently from the other
-// two.
-//
-// Real-device regression, caught same day: the hub row's total width was already exactly
-// tuned to fit a 375pt screen (ADR-HEARTH-016: "316px... ~11px to spare") assuming each rocker
-// was exactly as wide as its own 52px button (no extra container width, just centered content).
-// An earlier version of this fix used circleDiameter.lg (68) per rocker, adding ~32px total
-// across both rockers — 21px past that budget, which is exactly the kind of overflow that pushes
-// a row into wrapping onto a second line ("now the icons at the bottom span two lines"). Using
-// circleDiameter.sm (52, the button's own diameter) instead keeps the disc exactly as wide as
-// the button it holds — same total hub-row width as before this whole rocker-disc change, so the
-// original, already-verified-fitting arithmetic is preserved exactly. The button sits tangent to
-// the pill's own rounded sides, the same "arrow tangent to its disc's rim" relationship the
-// d-pad's own arrows already have to their disc (ADR-HEARTH-037) — a deliberate visual echo, not
-// a compromise.
-const ROCKER_WIDTH = theme.circleDiameter.sm;
-
-const KEYPAD_ROWS = [
-  ["1", "2", "3"],
-  ["4", "5", "6"],
-  ["7", "8", "9"],
-];
 const MAX_CHANNEL_DIGITS = 4; // no real-world channel number needs more than this; guards against a runaway digit sequence being sent to the device
-const SLEEP_TIMER_DURATIONS_MINUTES = [15, 30, 45, 60]; // matches the presets Samsung's own native sleepTimer cycles through — familiar even for devices using the universal fallback
 
 const MS_PER_SECOND = 1000;
 
 /**
  * One remote screen that works for any TV driver. Every control shown here is gated on the
  * device's declared capabilities — this file has no Samsung- or LG-specific logic at all.
+ *
+ * This is the orchestrator: it owns the screen's state/effects and composes the extracted
+ * sub-components below (ADR-HEARTH-205) — DpadCluster/VolumeChannelCard (the d-pad hub and its
+ * no-d-pad fallback), StreamingAppsRow (Netflix/Hulu/Prime/YouTube), UtilityActionsRow
+ * (Home/Menu/Mute/Back/...), KeypadCard/KeyboardCard (the Keypad/Keyboard tabs) and
+ * SleepTimerModal — each a small, single-purpose file under src/ui/.
  */
 export function UniversalTvRemote({ device, commandEngine, stateStore, onReconnect, onRename, onBack }: UniversalTvRemoteProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
@@ -212,8 +87,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   useKeepScreenAwake();
   const isAway = connectivityMode === "away";
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
-  // (the "196 = 196, arrows land tangent to the disc" math in the styles
-  // below is derived from it) -- this is that same value scaled for the
+  // (the "196 = 196, arrows land tangent to the disc" math in DpadCluster.tsx's
+  // own styles is derived from it) -- this is that same value scaled for the
   // current device, applied at each JSX call site that needs a real
   // (non-percentage) pixel size, same reasoning as CapabilityButton's own
   // scale prop.
@@ -226,13 +101,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const [nameInput, setNameInput] = useState(device.name);
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
-  // Sean, directly (2026-09-20): "there should be a method for a sleep function on any tv to be
-  // easily activated." sleepTimerManager.ts is the plain in-memory countdown; this screen only
-  // tracks its current expiry (for the button's active/label state) and the picker modal's
-  // visibility. Resynced below whenever `device.id` changes, same pattern as commandError/
-  // editingName above, so switching devices never shows a stale timer from the last one.
-  const [sleepExpiresAt, setSleepExpiresAt] = useState<number | undefined>(() => getSleepTimerExpiration(device.id));
-  const [showSleepPicker, setShowSleepPicker] = useState(false);
   // ADR-HEARTH-182: media_player browse_media, offered as one more utility-row button next to Source/Settings.
   const [browsing, setBrowsing] = useState(false);
   // Real gap found in review (2026-09-09): `send()` fired commandEngine.execute() without
@@ -259,7 +127,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // Sean's reference (2026-09-10): volume/channel rockers sit directly beside the d-pad as one
   // control cluster, not stacked as separate cards above it. Only devices with a d-pad (LG,
   // Samsung, Roku) get that merged layout; Sony has volume but no d-pad or channel keys at all,
-  // so it keeps the older standalone rocker card as a fallback — see the render below.
+  // so it keeps the older standalone rocker card as a fallback — see VolumeChannelCard below.
   const hasDpad = has(device, "directionalNavigation");
   // Real-hardware/competitive research (2026-09-16, ADR-HEARTH-074): Apple TV Remote's signature
   // feature, layered on top of (not replacing) the existing arrow buttons — see
@@ -320,14 +188,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setNameInput(device.name);
   }, [device.id, device.name]);
 
-  useEffect(() => {
-    // Same reasoning again: navigating to a different device shouldn't carry over the previous
-    // device's picker or a stale expiry read before this effect resubscribes.
-    setShowSleepPicker(false);
-    setSleepExpiresAt(getSleepTimerExpiration(device.id));
-    return subscribeSleepTimer(device.id, (timerState) => setSleepExpiresAt(timerState?.expiresAt));
-  }, [device.id]);
-
   function commitNameEdit() {
     setEditingName(false);
     const trimmed = nameInput.trim();
@@ -346,6 +206,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       commandErrorTimer.current = setTimeout(() => setCommandError(""), 4000);
     });
   }
+
+  // Sean, directly (2026-09-20): "there should be a method for a sleep function on any tv to be
+  // easily activated." See useUniversalSleepTimer.ts's own doc comment for the full reasoning.
+  const sleepTimer = useUniversalSleepTimer(device, send);
 
   // ADR-HEARTH-204: left/right only (up/down have no seek/scrub meaning on a d-pad) — sends the
   // exact same one directionalNavigation command a plain tap always has, then feeds the tap to
@@ -390,134 +254,25 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setKeyboardInput("");
   }
 
-  // Universal sleep timer's own power-off — used instead of `send("sleepTimer")` (Samsung's real
-  // KEY_SLEEP, untouched) for every other device. Prefers the dedicated powerOff capability
-  // (LG/Roku) and falls back to the single toggle "power" capability (Sony/Samsung) otherwise —
-  // mirrors the same preference order the power button itself already renders.
-  function sendUniversalSleepPowerOff() {
-    if (has(device, "powerOff")) {
-      send("powerOff");
-    } else if (has(device, "power")) {
-      send("power");
-    }
-  }
-
-  function startUniversalSleep(minutes: number) {
-    startSleepTimer(device.id, minutes, sendUniversalSleepPowerOff);
-    setShowSleepPicker(false);
-  }
-
-  function cancelUniversalSleep() {
-    cancelSleepTimer(device.id);
-    setShowSleepPicker(false);
-  }
-
-  function formatSleepRemaining(expiresAt: number): string {
-    const minutes = Math.max(1, Math.ceil((expiresAt - Date.now()) / 60_000));
-    return minutes === 1 ? "1 min" : `${minutes} min`;
-  }
-
-  // Real-hardware finding (2026-09-14, spotted while building XboxDriver.ts): this used to default
-  // to "off" whenever state.values.power was simply undefined — honest for a device this screen
-  // has real readback for (every driver that declares "power", plus Roku's read-only power state),
-  // but XboxDriver never sets values.power at all (its own doc comment: no way to query power
-  // state without a full authenticated session it doesn't implement) — the pill was quietly
-  // claiming "Off" for a device that is, as far as this app can ever know, neither on nor off.
-  // undefined here means exactly that: unknown, not "assume off" — the pill below now hides itself
-  // rather than state a fact this app doesn't have.
-  // ADR-HEARTH-133: a disconnected device keeps its last-known values, so an LG that dropped while
-  // "on" kept claiming "On" — the power button then chose powerOff (and disabled itself) instead of
-  // waking it. While disconnected the power state is genuinely unknown, so it is treated that way.
-  const knownPower =
-    state.connection === "connected" && (state.values.power === "on" || state.values.power === "off") ? state.values.power : undefined;
-  // Real bug found live (2026-09-20): LgWebOsDriver is the first driver to declare BOTH powerOn
-  // (Wake-on-LAN, ADR-HEARTH-102) and powerOff (SSAP) as separate capabilities — every earlier
-  // driver had at most one of the two (Xbox/PS5: powerOn only; Roku: powerOff only), so this
-  // screen's original "one button per declared capability" rendering never had to consider both
-  // appearing on the same device together, and simply showed two power buttons side by side.
-  // Collapsed into the same single toggle-feeling button "power"-capable devices (Sony/Samsung)
-  // already get — the household shouldn't need to know which of two buttons is the "right" one
-  // for a TV that's currently on vs. off, the same "one button, real remotes don't make you
-  // choose" reasoning already documented below for why Power lives in the header at all.
-  const hasSeparatePowerOnOff = has(device, "powerOn") && has(device, "powerOff");
-  // Sean, directly (2026-09-20): "there should be a method for a sleep function on any tv to be
-  // easily activated." Samsung's real native sleepTimer (KEY_SLEEP) stays exactly as it is; every
-  // other device that has SOME power-off mechanism gets this client-side countdown fallback
-  // instead (see sleepTimerManager.ts's own doc comment for the full reasoning).
-  const hasNativeSleepTimer = has(device, "sleepTimer");
-  const canUniversalSleep = !hasNativeSleepTimer && (has(device, "power") || has(device, "powerOff"));
-  // ADR-HEARTH-134: equal-width columns so the utility buttons spread evenly (one row up to 5 buttons, else 3 or 4 across, wrapping
-  // to an even second row) instead of a ragged flex-wrap row of tiny chips.
-  const utilityButtonCount =
-    ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia"].filter((capability) => has(device, capability as CapabilityId)).length +
-    (hasNativeSleepTimer ? 1 : 0) +
-    (canUniversalSleep ? 1 : 0);
-  const utilityColumns = utilityButtonCount <= 5 ? Math.max(utilityButtonCount, 1) : utilityButtonCount === 6 ? 3 : 4;
-  const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
-  const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;
-  const muted = state.values.muted === true;
-  // Real-hardware finding (2026-09-14), same audit as knownPower above: Roku and Samsung both
-  // declare "mute" and track a real (if optimistic-only) muted value the moment it's pressed —
-  // but neither ever populates values.volume at all (Roku's ECP has no numeric volume query;
-  // Samsung's key-press-only channel has no readback of any kind), and the mute icon was only ever
-  // rendered bundled inside the volume pill below. Pressing Mute on either produced zero visible
-  // feedback — not a wrong claim like knownPower's bug, but a real missing one. knownMuted lets a
-  // standalone pill show once muted is known, independent of whether volume ever will be.
-  const knownMuted = state.values.muted === true || state.values.muted === false ? state.values.muted : undefined;
-  const input = typeof state.values.input === "string" ? state.values.input : undefined;
-  // Real live media-playback state (ADR-HEARTH-051) — never a guess based on whether a streaming
-  // app was launched. Only Roku and LG ever populate this (see Capability.ts's playPause entry
-  // for the per-brand research: Samsung's protocol has no query mechanism at all, and Sony's
-  // documented REST surface has no reliable playback-state field).
-  //
-  // Real-hardware correction (2026-09-15, ADR-HEARTH-068): ADR-HEARTH-051 originally had
-  // "playing"/"paused" SWAP the center d-pad button into a play/pause toggle, hiding the
-  // Select/checkmark button underneath whenever state was ambiguous. Two real, independent
-  // reports broke that design in opposite directions: (1) Netflix's PIN-protected profile lock
-  // makes /query/media-player's state genuinely ambiguous while a real app is still active — the
-  // center button silently became Select, which doesn't reliably get a user past a PIN/keyboard
-  // overlay, so the control felt "stuck"; (2) YouTube's in-video "Skip Ad" button appears while
-  // Roku correctly reports state="play" — but that's exactly when the center button was Select's
-  // OWN turn to disappear, so there was no way to tap Skip Ad at all. Both bugs are the same root
-  // cause: one physical button can't be exclusively Select OR exclusively Play/Pause, because
-  // real apps need either one at moments this driver can never reliably predict (deep research,
-  // 2026-09-15: neither Home Assistant's mature Roku integration nor any other reviewed
-  // remote-control product has solved this prediction problem either — it's a genuine, open gap
-  // in what ECP/similar protocols can tell a client, not something this app was uniquely missing).
-  // Fix: stop predicting. Select stays permanently in the d-pad center (its original, universal
-  // role); playPause is now its own always-visible button (see the dedicated row below the d-pad)
-  // whenever the capability exists, regardless of playbackState. Its icon/label still reflect
-  // real known state when available — this is now purely cosmetic, never gatekeeping.
-  const playbackState = state.values.playbackState;
-  // LG's real input ids/labels, read live off the TV (LgWebOsDriver's refreshInputList — which
-  // also filters out "Sling TV" at the source now, ADR-HEARTH-060, so every consumer of
-  // state.values.inputs agrees, not just this screen) — never knowable ahead of time the way
-  // Roku/Sony's fixed hdmi1/hdmi2/hdmi3 buttons are. Absent for every other driver, which falls
-  // back to that static list below.
-  const dynamicInputs = Array.isArray(state.values.inputs)
-    ? (state.values.inputs as unknown[]).filter(
-        (entry): entry is { id: string; label: string } =>
-          typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>).id === "string"
-      )
-    : undefined;
-  const isConnected = state.connection === "connected";
-  // ADR-HEARTH-163: the existing connection pill carries the plain-language status line (no added height).
-  const statusLine = describeDeviceStatus({
-    connection: state.connection,
+  // See deriveRemoteViewState.ts for the full reasoning behind each of these (ADR-HEARTH-205
+  // pulled this pure derivation out of the orchestrator; no logic changed).
+  const {
     knownPower,
-    wakeBurstActive: state.values.waking === true,
-    lastError: reconnectError || undefined,
-    connectivityMode,
-    fccReachable: connectivityMode === "unknown" ? undefined : true,
-    secondsSinceLastSeen: Math.max(0, Math.round((Date.now() - state.lastUpdated) / MS_PER_SECOND)),
-  });
-  // Real-hardware finding (2026-09-09): a persisted device reappears in the device list
-  // immediately on app load, but its live driver connection reconnects separately in the
-  // background (App.tsx) and can fail silently. Without this, every button stayed fully
-  // interactive regardless of `isConnected` and produced a raw "not connected" error on tap —
-  // confusing, since nothing on screen indicated why. Every action control below is now gated
-  // on this, matching the status pill that already showed the (previously ignored) real state.
-  const controlsDisabled = !isConnected;
+    hasSeparatePowerOnOff,
+    hasNativeSleepTimer,
+    canUniversalSleep,
+    utilityColumns,
+    volume,
+    channel,
+    muted,
+    knownMuted,
+    input,
+    playbackState,
+    dynamicInputs,
+    isConnected,
+    controlsDisabled,
+    statusLine,
+  } = deriveRemoteViewState(device, state, connectivityMode, reconnectError);
   const swipeBackHandlers = useSwipeBackGesture(onBack);
 
   // ADR-HEARTH-180: VoiceOver/TalkBack reads this screen once, on focus — a connection status
@@ -547,230 +302,39 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     // before either the ScrollView or the swipe gesture claims it.
     <View style={styles.container} {...swipeBackHandlers}>
     <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
-      {/* Sean, directly: "power off should be top left or right." Sourced: LG's own official
-          ThinQ remote app puts Power in a compact top row alongside volume/mute/home, not as a
-          large standalone button — every physical remote and every real remote app treats power
-          as a top-corner icon, never a centered hero control. Moved here from its own dedicated
-          row for exactly that reason. */}
-      <View style={styles.headerRow}>
-        <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerDivider}>|</Text>
-        <View style={styles.headerText}>
-          {editingName ? (
-            <TextInput
-              style={styles.deviceNameInput}
-              value={nameInput}
-              onChangeText={setNameInput}
-              autoFocus
-              selectTextOnFocus
-              maxLength={40}
-              returnKeyType="done"
-              onSubmitEditing={commitNameEdit}
-              onBlur={commitNameEdit}
-            />
-          ) : (
-            <Pressable
-              style={styles.deviceNameRow}
-              onPress={() => setEditingName(true)}
-              accessibilityRole="button"
-              accessibilityLabel={`Rename ${device.name}`}
-            >
-              <Text style={styles.deviceName} numberOfLines={1}>
-                {device.name}
-              </Text>
-              <Ionicons name="pencil-outline" size={14} color={theme.textTertiary} />
-            </Pressable>
-          )}
-          <Text style={styles.deviceMeta} numberOfLines={1}>
-            {device.manufacturer} {device.model}
-            {isAway ? " · Remote" : ""}
-          </Text>
-        </View>
-        {has(device, "power") && (
-          // ADR-HEARTH-133: Sony/Samsung's single "power" toggle falls back to Wake-on-LAN when the
-          // TV can't be reached, so like powerOn below it must stay pressable while disconnected.
-          <CapabilityButton
-            shape="circle"
-            scale={scale}
-            icon="power"
-            label="Power"
-            variant="accent"
-            onPress={() => send("power")}
-          />
-        )}
-        {hasSeparatePowerOnOff && (
-          // A device with real, separate powerOn/powerOff mechanisms (LG: Wake-on-LAN + SSAP) —
-          // one button, same as every other TV's "power" toggle above. Defaults to powerOn when
-          // state isn't known yet (a TV is more often reached for while off than on), otherwise
-          // sends whichever command is the real opposite of the last known state.
-          //
-          // Real bug found live (2026-09-22): this used to always disable on controlsDisabled,
-          // same as every other button — but powerOn (Wake-on-LAN) is specifically the ONE command
-          // designed to work with no live connection at all (ADR-HEARTH-102's whole point is that
-          // a fully-off TV has no SSAP socket to be "connected" through). That made the wake button
-          // unpressable in exactly the state it exists to handle. Only gate on connection when the
-          // next press would actually be powerOff, which is a real SSAP command over a live socket.
-          <CapabilityButton
-            shape="circle"
-            scale={scale}
-            icon={knownPower === "on" ? "power" : "power-outline"}
-            label="Power"
-            variant={knownPower === "on" ? "accent" : "ghost"}
-            onPress={() => send(knownPower === "on" ? "powerOff" : "powerOn")}
-            disabled={knownPower === "on" && controlsDisabled}
-          />
-        )}
-        {!hasSeparatePowerOnOff && has(device, "powerOn") && (
-          // Same reasoning as the merged button above — a powerOn-only device (Xbox/PS5) is also
-          // Wake-on-LAN, meant to work with no live connection at all. Never gated on controlsDisabled.
-          <CapabilityButton
-            shape="circle"
-            scale={scale}
-            icon="power"
-            label="Power On"
-            variant="accent"
-            onPress={() => send("powerOn")}
-          />
-        )}
-        {!hasSeparatePowerOnOff && has(device, "powerOff") && (
-          <CapabilityButton
-            shape="circle"
-            scale={scale}
-            icon="power-outline"
-            label="Power Off"
-            variant="ghost"
-            onPress={() => send("powerOff")}
-            disabled={controlsDisabled}
-          />
-        )}
-      </View>
+      <RemoteHeaderRow
+        device={device}
+        scale={scale}
+        isAway={isAway}
+        editingName={editingName}
+        nameInput={nameInput}
+        onChangeNameInput={setNameInput}
+        onStartEdit={() => setEditingName(true)}
+        onCommitEdit={commitNameEdit}
+        onBack={onBack}
+        knownPower={knownPower}
+        hasSeparatePowerOnOff={hasSeparatePowerOnOff}
+        disabled={controlsDisabled}
+        onSend={send}
+      />
 
-      <View style={styles.statusRow}>
-        <View
-          style={[styles.statusPill, styles.statusPillShrink, isConnected ? styles.statusPillOn : styles.statusPillOff]}
-          accessibilityLiveRegion="polite"
-          accessible
-          accessibilityLabel={statusLine}
-        >
-          <View style={[styles.statusDot, { backgroundColor: isConnected ? theme.statusOn : theme.statusOff }]} />
-          <Text style={styles.statusPillText} numberOfLines={1}>
-            {statusLine}
-          </Text>
-        </View>
-        {knownPower !== undefined && (
-          <View style={styles.statusPill}>
-            <Ionicons name={knownPower === "on" ? "power" : "power-outline"} size={14} color={theme.textSecondary} />
-            <Text style={styles.statusPillText}>{knownPower === "on" ? "On" : "Off"}</Text>
-          </View>
-        )}
-        {volume !== undefined && (
-          <View style={styles.statusPill}>
-            <Ionicons name={muted ? "volume-mute-outline" : "volume-medium-outline"} size={14} color={theme.textSecondary} />
-            <Text style={styles.statusPillText}>{volume}</Text>
-          </View>
-        )}
-        {volume === undefined && knownMuted !== undefined && (
-          <View style={styles.statusPill}>
-            <Ionicons name={knownMuted ? "volume-mute-outline" : "volume-medium-outline"} size={14} color={theme.textSecondary} />
-            <Text style={styles.statusPillText}>{knownMuted ? "Muted" : "Unmuted"}</Text>
-          </View>
-        )}
-        {channel !== undefined && (
-          <View style={styles.statusPill}>
-            <Text style={styles.statusPillText}>Ch {channel}</Text>
-          </View>
-        )}
-        {input !== undefined && (
-          <View style={styles.statusPill}>
-            <Text style={styles.statusPillText}>{input}</Text>
-          </View>
-        )}
-      </View>
+      <RemoteStatusRow
+        statusLine={statusLine}
+        isConnected={isConnected}
+        knownPower={knownPower}
+        volume={volume}
+        muted={muted}
+        knownMuted={knownMuted}
+        channel={channel}
+        input={input}
+      />
 
-      {/* Real bug found live (2026-09-22): this used to be gated on isConnected too, which meant
-          a failed powerOn (Wake-on-LAN) attempt — the one command meant to run while disconnected
-          — set commandError but the banner never rendered, so a real failure (no known MAC yet,
-          Family Command Center unreachable) looked identical to a silently-ignored button press. */}
-      {commandError ? (
-        <View style={styles.commandErrorBanner} accessibilityLiveRegion="assertive" accessible accessibilityLabel={commandError}>
-          <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-          <Text style={styles.commandErrorText}>{commandError}</Text>
-        </View>
-      ) : null}
+      {commandError ? <CommandErrorBanner message={commandError} /> : null}
 
-      {!isConnected && (
-        <View style={styles.reconnectCard}>
-          {/* Real-hardware/UX research (2026-09-17): "this should act like a normal remote
-              would... persist and not timeout, it should be on demand for the user." The
-              underlying behavior was already right — every driver retries forever in the
-              background whenever disconnected (ADR-HEARTH-017), and this screen already
-              auto-attempts on open — but the copy here read as a dead end ("Not connected,"
-              controls simply "disabled") rather than communicating the ongoing automatic effort
-              that's actually happening the entire time this card is showing. A real error is
-              still shown when there is one (never hidden), just framed as the last attempt's
-              outcome rather than a final, stuck state — background retry continues regardless of
-              whether this specific manual tap succeeded. */}
-          <View style={styles.reconnectTextGroup}>
-            <Text style={styles.reconnectTitle}>Reconnecting…</Text>
-            {reconnectError ? (
-              <Text style={styles.reconnectError}>{describeReconnectFailure(reconnectError)}</Text>
-            ) : (
-              <Text style={styles.reconnectBody}>Controls are off for now — retrying automatically in the background. Tap to try right now.</Text>
-            )}
-          </View>
-          {/* Real-device finding (2026-09-10), same bug as the Input buttons above: CapabilityButton
-              never shows both an icon and visible label together, so this button — reconnecting or
-              not — was rendering as a bare refresh glyph with no visible text at all. No icon here now. */}
-          <CapabilityButton
-            label={reconnecting ? "Trying…" : "Try Now"}
-            variant="accent"
-            onPress={handleReconnectPress}
-            disabled={reconnecting}
-          />
-        </View>
-      )}
+      {!isConnected && <ReconnectCard reconnecting={reconnecting} reconnectError={reconnectError} onTryNow={handleReconnectPress} />}
 
       {(hasKeypad || hasKeyboard) && (
-        // ADR-HEARTH-180: accessibilityRole="tab" + accessibilityState={{selected}} on each —
-        // without these a screen reader only ever hears "Remote", "Keypad", "Keyboard" as plain
-        // buttons, with no way to tell which one is currently showing.
-        <View style={styles.tabBar} accessibilityRole="tablist">
-          <Pressable
-            style={[styles.tab, activeTab === "remote" && styles.tabActive]}
-            onPress={() => setActiveTab("remote")}
-            accessibilityRole="tab"
-            accessibilityLabel="Remote"
-            accessibilityState={{ selected: activeTab === "remote" }}
-          >
-            <Text style={[styles.tabLabel, activeTab === "remote" && styles.tabLabelActive]}>Remote</Text>
-          </Pressable>
-          {hasKeypad && (
-            <Pressable
-              style={[styles.tab, activeTab === "keypad" && styles.tabActive]}
-              onPress={() => setActiveTab("keypad")}
-              accessibilityRole="tab"
-              accessibilityLabel={channelInput.length > 0 ? `Keypad, entered ${channelInput}` : "Keypad"}
-              accessibilityState={{ selected: activeTab === "keypad" }}
-            >
-              <Text style={[styles.tabLabel, activeTab === "keypad" && styles.tabLabelActive]}>
-                Keypad{channelInput.length > 0 ? ` (${channelInput})` : ""}
-              </Text>
-            </Pressable>
-          )}
-          {hasKeyboard && (
-            <Pressable
-              style={[styles.tab, activeTab === "keyboard" && styles.tabActive]}
-              onPress={() => setActiveTab("keyboard")}
-              accessibilityRole="tab"
-              accessibilityLabel="Keyboard"
-              accessibilityState={{ selected: activeTab === "keyboard" }}
-            >
-              <Text style={[styles.tabLabel, activeTab === "keyboard" && styles.tabLabelActive]}>Keyboard</Text>
-            </Pressable>
-          )}
-        </View>
+        <RemoteTabBar hasKeypad={hasKeypad} hasKeyboard={hasKeyboard} activeTab={activeTab} channelInput={channelInput} onSelectTab={setActiveTab} />
       )}
 
       {(!(hasKeypad || hasKeyboard) || activeTab === "remote") && (
@@ -781,233 +345,24 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           2026-09-10 — real-device feedback: "why the random orange circle" — a flat-color View
           has no blur in React Native, so a decorative wash just reads as a hard-edged circle.) */}
       {hasDpad && (
-        <View style={styles.hubCard}>
-          {/* ADR-HEARTH-204: a fast same-direction d-pad left/right tap streak — purely an honest
-              label for Hearth's own tap cadence, never a claim about what the TV/app itself is
-              doing with it. position:"absolute" so it never adds height even while shown. */}
-          {dpadSeek.multiplier !== null && (
-            <View style={styles.seekMultiplierOverlay} pointerEvents="none">
-              <View style={styles.seekMultiplierBadge}>
-                <Text style={styles.seekMultiplierLabel}>{`Seeking ${dpadSeek.multiplier}x`}</Text>
-              </View>
-            </View>
-          )}
-          <View style={styles.hubRow}>
-            {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
-                {has(device, "volumeUp") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-up"
-                    label="Vol +"
-                    onPress={() => send("volumeUp")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-                <Text style={styles.rockerColumnLabel}>Vol</Text>
-                {has(device, "volumeDown") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-down"
-                    label="Vol -"
-                    onPress={() => send("volumeDown")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-              </View>
-            )}
-            <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2 }]} {...dpadSwipeHandlers}>
-              <CapabilityButton
-                shape="circle"
-                scale={scale}
-                icon="chevron-up"
-                label="Up"
-                onPress={() => send("directionalNavigation", { direction: "up" })}
-                disabled={controlsDisabled}
-                containerStyle={styles.dpadArrow}
-              />
-              <View style={styles.dpadMiddleRow}>
-                <CapabilityButton
-                  shape="circle"
-                  scale={scale}
-                  icon="chevron-back"
-                  label="Left"
-                  onPress={() => pressDpadSeekDirection("left")}
-                  disabled={controlsDisabled}
-                  containerStyle={styles.dpadArrow}
-                />
-                {has(device, "selectPlayPause") ? (
-                  // Sean, directly (2026-09-20, ADR-HEARTH-114): his real LG remote's OK/wheel-
-                  // click button already does select, play, AND pause with one press — this is
-                  // still purely capability-gated (has(device, "selectPlayPause")), not brand logic;
-                  // it just happens that only LgWebOsDriver currently declares this capability, the
-                  // same way only Samsung currently declares "sleepTimer" above.
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    size="lg"
-                    icon={playbackState === "playing" ? "pause" : playbackState === "paused" ? "play" : "checkmark"}
-                    label={playbackState === "playing" ? "Pause" : playbackState === "paused" ? "Play" : "Select"}
-                    variant="accent"
-                    onPress={pressCenterSelect}
-                    onLongPress={has(device, "play") && has(device, "pause") ? holdCenterPlayPause : undefined}
-                    disabled={controlsDisabled}
-                  />
-                ) : has(device, "select") ? (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    size="lg"
-                    icon="checkmark"
-                    label="Select"
-                    variant="accent"
-                    onPress={() => send("select")}
-                    disabled={controlsDisabled}
-                  />
-                ) : (
-                  <View style={[styles.dpadCenterSpacer, { width: scaledSmDiameter, height: scaledSmDiameter }]} />
-                )}
-                <CapabilityButton
-                  shape="circle"
-                  scale={scale}
-                  icon="chevron-forward"
-                  label="Right"
-                  onPress={() => pressDpadSeekDirection("right")}
-                  disabled={controlsDisabled}
-                  containerStyle={styles.dpadArrow}
-                />
-              </View>
-              <CapabilityButton
-                shape="circle"
-                scale={scale}
-                icon="chevron-down"
-                label="Down"
-                onPress={() => send("directionalNavigation", { direction: "down" })}
-                disabled={controlsDisabled}
-                containerStyle={styles.dpadArrow}
-              />
-            </View>
-            {(has(device, "channelUp") || has(device, "channelDown")) && (
-              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
-                {has(device, "channelUp") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-up"
-                    label="Ch +"
-                    onPress={() => send("channelUp")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-                <Text style={styles.rockerColumnLabel}>Ch</Text>
-                {has(device, "channelDown") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-down"
-                    label="Ch -"
-                    onPress={() => send("channelDown")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-              </View>
-            )}
-          </View>
-          {/* ADR-HEARTH-068 (2026-09-15): always visible whenever the capability exists, never
-              gated on playbackState — see this file's own comment above playbackState's
-              declaration for why hiding this behind a state guess broke on real hardware twice
-              in opposite directions (Netflix's PIN lock, YouTube's Skip Ad). Icon/label reflect
-              real known state when available; otherwise a neutral, non-committal label rather
-              than asserting a guess. LG and Roku have both folded "playPause" into the merged
-              "selectPlayPause" center d-pad button above (ADR-HEARTH-114, ADR-HEARTH-116), so this
-              row no longer renders for either — it still applies to any other driver (e.g. Apple
-              TV, Sonos) that declares "playPause" as its own separate capability. */}
-          {has(device, "playPause") && (
-            <View style={styles.playPauseRow}>
-              <CapabilityButton
-                shape="circle"
-                scale={scale}
-                size="lg"
-                icon={playbackState === "playing" ? "pause" : "play"}
-                label={playbackState === "playing" ? "Pause" : playbackState === "paused" ? "Play" : "Play/Pause"}
-                variant="accent"
-                onPress={() => send("playPause")}
-                disabled={controlsDisabled}
-              />
-            </View>
-          )}
-        </View>
+        <DpadCluster
+          device={device}
+          scale={scale}
+          scaledDpadSize={scaledDpadSize}
+          scaledSmDiameter={scaledSmDiameter}
+          disabled={controlsDisabled}
+          playbackState={playbackState}
+          seekMultiplier={dpadSeek.multiplier}
+          dpadSwipeHandlers={dpadSwipeHandlers}
+          onSend={send}
+          onSeekDirection={pressDpadSeekDirection}
+          onCenterSelect={pressCenterSelect}
+          onHoldCenterPlayPause={holdCenterPlayPause}
+        />
       )}
 
-      {/* Fallback for a device with volume but no d-pad at all (Sony: no directionalNavigation,
-          no channel keys) — the merged hub above needs a d-pad to anchor to, so this keeps volume
-          reachable on its own rather than disappearing. */}
       {!hasDpad && (has(device, "volumeUp") || has(device, "volumeDown") || has(device, "channelUp") || has(device, "channelDown")) && (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Volume &amp; Channel</Text>
-          <View style={styles.rockerRow}>
-            {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
-                {has(device, "volumeUp") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-up"
-                    label="Vol +"
-                    onPress={() => send("volumeUp")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-                <Text style={styles.rockerColumnLabel}>Vol</Text>
-                {has(device, "volumeDown") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-down"
-                    label="Vol -"
-                    onPress={() => send("volumeDown")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-              </View>
-            )}
-            {(has(device, "channelUp") || has(device, "channelDown")) && (
-              <View style={[styles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
-                {has(device, "channelUp") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-up"
-                    label="Ch +"
-                    onPress={() => send("channelUp")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-                <Text style={styles.rockerColumnLabel}>Ch</Text>
-                {has(device, "channelDown") && (
-                  <CapabilityButton
-                    shape="circle"
-                    scale={scale}
-                    icon="chevron-down"
-                    label="Ch -"
-                    onPress={() => send("channelDown")}
-                    disabled={controlsDisabled}
-                    containerStyle={styles.dpadArrow}
-                  />
-                )}
-              </View>
-            )}
-          </View>
-        </View>
+        <VolumeChannelCard device={device} scale={scale} scaledDpadSize={scaledDpadSize} disabled={controlsDisabled} onSend={send} />
       )}
 
       {/* Real-hardware research (2026-09-10): Roku (POST /launch/<channel id>) and LG
@@ -1015,21 +370,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
           because neither has a confirmed equivalent, not because this row forgot them. */}
       {has(device, "launchApp") && (
-        <View style={[styles.card, styles.compactCard]}>
-          <View style={styles.streamingRow}>
-            {STREAMING_APPS.map((app) => (
-              <StreamingAppTile
-                key={app.service}
-                label={app.label}
-                bg={app.bg}
-                fg={app.fg}
-                fontScale={app.fontScale}
-                onPress={() => send("launchApp", { service: app.service })}
-                disabled={controlsDisabled}
-              />
-            ))}
-          </View>
-        </View>
+        <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} />
       )}
 
       {/* A flex:1 spacer here previously tried to push the utility/Input cards toward the bottom
@@ -1043,43 +384,15 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           content (e.g. a fixed-position footer outside the ScrollView) rather than retrying the
           same approach. */}
 
-      {/* Real-device ask (2026-09-10): "the inputs should be above the card above" — reordered
-          ahead of the utility row (Mute/Back/Home/Menu/...) rather than after it. */}
       {has(device, "inputSelection") && (
-        <View style={[styles.card, styles.compactCard]}>
-          {/* Real-device ask (2026-09-10): "change the arrangement of the inputs to be fewer
-              rows" — the old styles.row (plain flexWrap, no column count) let the number of
-              buttons per row vary with each label's own width, so a TV reporting several inputs
-              with longer names (e.g. "Component", "Antenna") could wrap down to 2 per row,
-              stretching a 6-7-input list to 3-4 rows. Fixed at 3 columns regardless of label
-              length — deterministic row count (ceil(inputs/3)) instead of however-many-happen-
-              to-fit. numberOfLines=1 on each button (CapabilityButton's own new, optional prop)
-              keeps a longer label from wrapping to a second line and giving just that one tile a
-              different height than its row-mates — same fix already applied to the utility row
-              for the same reason. */}
-          <View style={styles.inputGrid}>
-            {(dynamicInputs ?? ["hdmi1", "hdmi2", "hdmi3"].map((id) => ({ id, label: id.toUpperCase() }))).map((option) => (
-              <CapabilityButton
-                key={option.id}
-                label={option.label}
-                variant={input === option.id ? "accent" : "default"}
-                selected={input === option.id}
-                onPress={() => send("inputSelection", { input: option.id })}
-                disabled={controlsDisabled}
-                numberOfLines={1}
-                containerStyle={styles.inputTile}
-              />
-            ))}
-          </View>
-        </View>
+        <InputSelectionCard
+          options={dynamicInputs}
+          selectedInput={input}
+          disabled={controlsDisabled}
+          onSelect={(inputId) => send("inputSelection", { input: inputId })}
+        />
       )}
 
-      {/* Sean's reference (2026-09-10): mute/back/home/menu read as one row of icon-over-caption
-          chips — a physical remote's secondary buttons, small and labeled below rather than
-          competing with the hub above for attention. Real-device ask (2026-09-10): "that card
-          needs better spacing" — gap widened from spacing.md to spacing.lg and the card's own
-          padding from spacing.lg to spacing.xl for more breathing room between and around these
-          buttons than the denser hub/input cards need. */}
       {(has(device, "mute") ||
         has(device, "back") ||
         has(device, "home") ||
@@ -1089,161 +402,47 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         canUniversalSleep ||
         has(device, "openSourceList") ||
         has(device, "browseMedia")) && (
-        <View style={[styles.card, styles.utilityCard]}>
-          {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
-          <View style={styles.utilityRow}>
-            {has(device, "home") && <UtilityAction columns={utilityColumns} scale={scale} icon="home-outline" label="Home" onPress={() => send("home")} disabled={controlsDisabled} />}
-            {has(device, "menu") && <UtilityAction columns={utilityColumns} scale={scale} icon="menu-outline" label="Menu" onPress={() => send("menu")} disabled={controlsDisabled} />}
-            {has(device, "mute") && (
-              <UtilityAction
-                columns={utilityColumns}
-                scale={scale}
-                icon={muted ? "volume-mute" : "volume-medium-outline"}
-                label={muted ? "Unmute" : "Mute"}
-                active={muted}
-                onPress={() => send("mute")}
-                disabled={controlsDisabled}
-              />
-            )}
-            {has(device, "back") && <UtilityAction columns={utilityColumns} scale={scale} icon="arrow-back-outline" label="Back" onPress={() => send("back")} disabled={controlsDisabled} />}
-            {/* Real-hardware ask (2026-09-10): "settings and sleep timer should be next to
-                eachother" — Samsung only; verified real KEY_TOOLS/KEY_SLEEP codes exist for this
-                protocol specifically (see Capability.ts). LG/Roku don't declare these capabilities
-                because their own public APIs genuinely have no equivalent — not omitted by
-                oversight. */}
-            {has(device, "settings") && <UtilityAction columns={utilityColumns} scale={scale} icon="settings-outline" label="Settings" onPress={() => send("settings")} disabled={controlsDisabled} />}
-            {hasNativeSleepTimer && <UtilityAction columns={utilityColumns} scale={scale} icon="moon-outline" label="Sleep" onPress={() => send("sleepTimer")} disabled={controlsDisabled} />}
-            {canUniversalSleep && (
-              <UtilityAction
-                columns={utilityColumns}
-                scale={scale}
-                icon={sleepExpiresAt ? "moon" : "moon-outline"}
-                label="Sleep"
-                active={sleepExpiresAt !== undefined}
-                onPress={() => setShowSleepPicker(true)}
-                disabled={controlsDisabled}
-              />
-            )}
-            {/* Real-hardware research (2026-09-10): Samsung's KEY_SOURCE opens the TV's own
-                on-screen source picker rather than jumping to a named input directly — a
-                genuinely different mechanism from inputSelection, not the same feature under a
-                different name (see ADR-HEARTH-027 and Capability.ts). The user drives the opened
-                picker with the d-pad/select this driver already has. */}
-            {has(device, "openSourceList") && (
-              <UtilityAction columns={utilityColumns} scale={scale} icon="tv-outline" label="Source" onPress={() => send("openSourceList")} disabled={controlsDisabled} />
-            )}
-            {/* ADR-HEARTH-182: media_player browse_media — its own full-screen modal, opened here rather than folded into this row's send()s since browsing is a read, not a dispatched Command. */}
-            {has(device, "browseMedia") && (
-              <UtilityAction columns={utilityColumns} scale={scale} icon="folder-outline" label="Browse" onPress={() => setBrowsing(true)} disabled={controlsDisabled} />
-            )}
-          </View>
-        </View>
+        <UtilityActionsRow
+          device={device}
+          scale={scale}
+          columns={utilityColumns}
+          disabled={controlsDisabled}
+          muted={muted}
+          hasNativeSleepTimer={hasNativeSleepTimer}
+          canUniversalSleep={canUniversalSleep}
+          sleepActive={sleepTimer.sleepExpiresAt !== undefined}
+          onSend={send}
+          onOpenSleepPicker={sleepTimer.openPicker}
+          onOpenBrowse={() => setBrowsing(true)}
+        />
       )}
         </>
       )}
 
       {hasKeypad && activeTab === "keypad" && (
-        <View style={styles.card}>
-          <View style={styles.keypadHeader}>
-            <Text style={styles.cardLabel}>Number Keys</Text>
-            <Text style={styles.keypadDisplay}>{channelInput.length > 0 ? channelInput : "—"}</Text>
-          </View>
-          {KEYPAD_ROWS.map((digitRow) => (
-            <View key={digitRow.join("")} style={styles.row}>
-              {digitRow.map((digit) => (
-                <CapabilityButton key={digit} shape="circle" scale={scale} label={digit} onPress={() => pressKeypadDigit(digit)} disabled={controlsDisabled} />
-              ))}
-            </View>
-          ))}
-          <View style={styles.row}>
-            <CapabilityButton
-              shape="circle"
-              scale={scale}
-              icon="backspace-outline"
-              label="Clear"
-              variant="ghost"
-              onPress={() => setChannelInput("")}
-              disabled={controlsDisabled || channelInput.length === 0}
-            />
-            <CapabilityButton shape="circle" scale={scale} label="0" onPress={() => pressKeypadDigit("0")} disabled={controlsDisabled} />
-            <CapabilityButton
-              shape="circle"
-              scale={scale}
-              icon="checkmark"
-              label="Enter"
-              variant="accent"
-              onPress={pressKeypadEnter}
-              disabled={controlsDisabled || !(has(device, "selectPlayPause") || has(device, "select"))}
-            />
-          </View>
-        </View>
+        <KeypadCard
+          scale={scale}
+          channelInput={channelInput}
+          disabled={controlsDisabled}
+          canSubmit={has(device, "selectPlayPause") || has(device, "select")}
+          onPressDigit={pressKeypadDigit}
+          onClear={() => setChannelInput("")}
+          onEnter={pressKeypadEnter}
+        />
       )}
 
       {hasKeyboard && activeTab === "keyboard" && (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Type on the TV</Text>
-          <View style={styles.keyboardHintCard}>
-            <Text style={styles.keyboardHint}>
-              Type using your phone's own keyboard, then tap Send to type it on the TV — no more navigating letter by letter with
-              the d-pad. Use the Remote tab's Select button to move to the next field or submit.
-            </Text>
-          </View>
-          <TextInput
-            style={styles.keyboardInput}
-            value={keyboardInput}
-            onChangeText={setKeyboardInput}
-            placeholder="Type a username, password, or search term…"
-            placeholderTextColor={theme.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!controlsDisabled}
-            onSubmitEditing={submitKeyboardInput}
-            returnKeyType="send"
-          />
-          {/* Real-device finding (2026-09-10, this codebase's own established pattern — see the
-              Reconnect button above): CapabilityButton never shows both an icon and a visible
-              label together, so an icon+label pill button silently renders as a bare glyph with
-              no visible text at all. No icon here, matching every other named pill action. */}
-          <CapabilityButton
-            label="Send"
-            variant="accent"
-            onPress={submitKeyboardInput}
-            disabled={controlsDisabled || keyboardInput.length === 0}
-          />
-        </View>
+        <KeyboardCard value={keyboardInput} disabled={controlsDisabled} onChangeValue={setKeyboardInput} onSubmit={submitKeyboardInput} />
       )}
     </ScrollView>
 
-      <Modal visible={showSleepPicker} transparent animationType="fade" onRequestClose={() => setShowSleepPicker(false)}>
-        {/* accessible={false} on both wrapping Pressables (ADR-HEARTH-180): a Pressable defaults
-            to accessible=true, which collapses every descendant into ONE opaque VoiceOver/
-            TalkBack node — without this, the sleep-duration options and Close link below would
-            never be individually reachable. */}
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowSleepPicker(false)} accessible={false}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()} accessible={false}>
-            {sleepExpiresAt !== undefined ? (
-              <>
-                <Text style={styles.modalTitle}>Sleep Timer</Text>
-                <Pressable style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]} onPress={cancelUniversalSleep}>
-                  <Text style={styles.modalOptionLabel}>Cancel sleep ({formatSleepRemaining(sleepExpiresAt)} left)</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Text style={styles.modalTitle}>Sleep after…</Text>
-                {SLEEP_TIMER_DURATIONS_MINUTES.map((minutes) => (
-                  <Pressable key={minutes} style={({ pressed }) => [styles.modalOption, pressed && styles.modalOptionPressed]} onPress={() => startUniversalSleep(minutes)}>
-                    <Text style={styles.modalOptionLabel}>{minutes} minutes</Text>
-                  </Pressable>
-                ))}
-              </>
-            )}
-            <Pressable style={styles.modalCancel} onPress={() => setShowSleepPicker(false)}>
-              <Text style={styles.modalCancelLabel}>Close</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <SleepTimerModal
+        visible={sleepTimer.showSleepPicker}
+        sleepExpiresAt={sleepTimer.sleepExpiresAt}
+        onClose={sleepTimer.closePicker}
+        onCancel={sleepTimer.cancel}
+        onStart={sleepTimer.start}
+      />
 
       <MediaBrowseModal visible={browsing} device={device} commandEngine={commandEngine} onClose={() => setBrowsing(false)} />
     </View>
@@ -1253,11 +452,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
   // Real bug found 2026-09-10: at spacing.xl (24) edge padding + the hub card's own horizontal
-  // padding, the merged Vol/D-pad/Ch row (348px wide — see hubRow below) doesn't fit inside a
-  // 375pt-wide iPhone (SE and similar) at all — 53px too wide, silently clipped by hubCard's
-  // overflow:hidden. Caught by building an exact-dimension reconstruction and doing the actual
-  // arithmetic, not by eyeballing it. Tightened to spacing.lg — a physical remote's controls sit
-  // close together anyway, so tighter edges read as intentional, not cramped.
+  // padding, the merged Vol/D-pad/Ch row (348px wide — see DpadCluster.tsx's hubRow) doesn't fit
+  // inside a 375pt-wide iPhone (SE and similar) at all — 53px too wide, silently clipped by
+  // hubCard's overflow:hidden. Caught by building an exact-dimension reconstruction and doing the
+  // actual arithmetic, not by eyeballing it. Tightened to spacing.lg — a physical remote's
+  // controls sit close together anyway, so tighter edges read as intentional, not cramped.
   // Top safe-area clearance (now computed per-device via useSafeAreaInsets, applied inline at
   // the call site) restores what used to live in App.tsx's now-removed `backRow` wrapper — the
   // Back button moved into headerRow below (real-device feedback, 2026-09-10: "tv name should be
@@ -1271,314 +470,4 @@ const styles = StyleSheet.create({
   // target or undoing spacing just asked for elsewhere (the utility card's own padding).
   // ADR-HEARTH-135: padding lg->md so the whole remote fits an iPhone 17 without scrolling.
   content: { padding: theme.spacing.md, gap: theme.spacing.sm },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
-  headerDivider: { color: theme.border, fontSize: theme.type.title, fontWeight: "300" },
-  // minWidth: 0 overrides Yoga's default min-content floor for a flex:1 item — same fix as
-  // DeviceListScreen's header (2026-09-12): without it, a long/renamed device name can force
-  // this box wider than the space left by the back chevron/divider/power buttons, overlapping
-  // them instead of truncating.
-  headerText: { flex: 1, minWidth: 0 },
-  // Real-hardware finding (2026-09-12, live emulator test with a realistic long device name
-  // "Downstairs Living Room"): headerText's own minWidth:0 above never actually constrained this
-  // row, because deviceNameRow's `alignSelf: "flex-start"` opts it OUT of stretching to headerText's
-  // bounded width in the first place — it sized to its own full content instead, so numberOfLines={1}
-  // on deviceName never had a narrower box to truncate against, and the pencil icon got pushed into
-  // the power button. minWidth: 0 here is the same New-Architecture Yoga fix as headerText's own
-  // (a flex row child gets an implicit min-content floor unless told otherwise); alignSelf reverts to
-  // the default "stretch" so this row is actually bounded by its parent's width.
-  // Sean, directly (2026-09-12): "make the header font smaller" — theme.type.title (24) was sized
-  // for DeviceListScreen's one-time "Hearth" wordmark, not a per-visit device name; subtitle (17)
-  // reads clearly while leaving more width before truncation and less header height overall.
-  deviceName: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", flexShrink: 1 },
-  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minWidth: 0 },
-  deviceNameInput: {
-    color: theme.textPrimary,
-    fontSize: theme.type.subtitle,
-    fontWeight: "700",
-    borderBottomWidth: 1,
-    borderBottomColor: theme.accentEnd,
-    paddingVertical: theme.spacing.xs,
-  },
-  deviceMeta: { color: theme.textSecondary, fontSize: theme.type.body, marginTop: theme.spacing.xs },
-  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
-  statusPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.xs,
-    backgroundColor: theme.surfaceRaised,
-    borderRadius: theme.radius.full,
-    paddingVertical: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-  },
-  statusPillShrink: { flexShrink: 1 },
-  statusPillOn: { backgroundColor: theme.statusOnSoft },
-  statusPillOff: { backgroundColor: theme.surfaceRaised },
-  statusDot: { width: 7, height: 7, borderRadius: theme.radius.full },
-  statusPillText: { color: theme.textSecondary, fontSize: theme.type.caption, fontWeight: "600" },
-  reconnectCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    backgroundColor: theme.statusErrorSoft,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.statusError,
-    padding: theme.spacing.lg,
-  },
-  reconnectTextGroup: { flex: 1, gap: theme.spacing.xs },
-  reconnectTitle: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "700" },
-  reconnectBody: { color: theme.textSecondary, fontSize: theme.type.label },
-  reconnectError: { color: theme.statusError, fontSize: theme.type.label },
-  commandErrorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    backgroundColor: theme.statusErrorSoft,
-    borderRadius: theme.radius.md,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-  },
-  commandErrorText: { color: theme.statusError, fontSize: theme.type.label, flex: 1 },
-  tabBar: {
-    flexDirection: "row",
-    backgroundColor: theme.surface,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.border,
-    padding: theme.spacing.xs,
-    gap: theme.spacing.xs,
-  },
-  tab: { flex: 1, paddingVertical: theme.spacing.sm, borderRadius: theme.radius.sm, alignItems: "center" },
-  tabActive: { backgroundColor: theme.accentEnd },
-  tabLabel: { color: theme.textSecondary, fontSize: theme.type.label, fontWeight: "700" },
-  tabLabelActive: { color: theme.background },
-  card: {
-    backgroundColor: theme.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.border,
-    padding: theme.spacing.md,
-    gap: theme.spacing.sm,
-  },
-  // Real-device ask (2026-09-10): "that card needs better spacing" — more generous padding than
-  // the base `card` for the utility row specifically, since a sparse row of a few icon+caption
-  // chips reads as cramped at the same padding a denser card (the hub, the keypad) uses well.
-  // Real-device ask (2026-09-11): "add a little padding to the bottom under the menu that has
-  // mute back home etc" — this card is the last one on the "remote" tab, so its own marginBottom
-  // is what actually controls the gap between it and the bottom of the scrollable content
-  // (the ScrollView's own contentContainerStyle padding applies equally above the first card too,
-  // not extra room specific to this one).
-  // ADR-HEARTH-157: measured 22px of overflow on the LG remote (4 inputs, iPhone 17 frame) - the "next levers" ADR-HEARTH-135 named: streaming/input card padding, plus the utility card bottom margin that the scroll content padding already covers.
-  compactCard: { padding: theme.spacing.sm },
-  utilityCard: { paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.lg },
-  cardLabel: {
-    color: theme.textSecondary,
-    fontSize: theme.type.label,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  row: { flexDirection: "row", gap: theme.spacing.md, alignItems: "center", justifyContent: "center", flexWrap: "wrap" },
-  // Fixed 3-column grid for input-selection (see the call site's own comment) — same
-  // flexBasis-percentage + gap technique DeviceListScreen.tsx's addGrid already uses for its own
-  // 2-column layout: 3 × 31% = 93%, leaving real margin for the gap between tiles (2 gaps of
-  // spacing.sm ≈ 5% of this card's interior width) without overflowing 100%.
-  inputGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
-  // No flexGrow: a remainder tile on the last row (e.g. 7 inputs = two full rows + one leftover)
-  // must NOT stretch to fill the row on its own — that's the exact "boxes not the same size" bug
-  // the streaming row's own fix (above) already had to correct for the same reason.
-  inputTile: { flexBasis: "31%" },
-  // Same fixed-3-column technique as inputGrid/inputTile just above, for the same reason (a
-  // remainder tile on the last row must not stretch to fill it alone) — app names vary more in
-  // length than HDMI1/2/3, hence numberOfLines={1} at the call site rather than relying on this
-  // layout alone to keep every tile the same height.
-  rockerRow: { flexDirection: "row", gap: theme.spacing.xl, alignItems: "center", justifyContent: "center" },
-  // Real-device ask (2026-09-10): "fix the navigation of the up down arrows... to be more
-  // neatly oriented" — see the ROCKER_WIDTH comment above. Same surface/border treatment as
-  // `dpad` below (theme.surfaceRaised fill, theme.border outline) so the Vol/Ch columns read as
-  // matching discs beside the d-pad's own, not two differently-styled control types next to each
-  // other. paddingVertical keeps the Up/Down buttons from touching the pill's own rounded caps.
-  rockerColumn: {
-    alignItems: "center",
-    justifyContent: "space-between",
-    height: DPAD_HEIGHT,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  rockerColumnLabel: {
-    color: theme.textTertiary,
-    fontSize: theme.type.caption,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  hubCard: {
-    backgroundColor: theme.surface,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.border,
-    // Was spacing.xxl (32) — real-device ask (2026-09-10): "make it one page, no scrolling."
-    // Matching the horizontal padding (spacing.sm) instead of the old, much larger vertical value
-    // both reads as better-proportioned (the old 32px-top/bottom vs 8px-sides read lopsided) and
-    // buys back real height toward fitting one screen.
-    paddingVertical: theme.spacing.sm,
-    // Was spacing.lg (16) — part of the width-overflow fix above; every horizontal pixel here is
-    // one the Vol/D-pad/Ch row doesn't have to spare on a 375pt-wide screen.
-    paddingHorizontal: theme.spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  // Was spacing.xl (24, two gaps = 48px) — the other half of the width-overflow fix above. At
-  // spacing.sm the rocker/d-pad/rocker cluster is 316px, fitting a 375pt screen with ~11px to
-  // spare; tighter gaps also read more like one cluster, not three separate groups near each other.
-  hubRow: { flexDirection: "row", gap: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
-  // ADR-HEARTH-204: position:"absolute" (zero layout height, satisfying "no new scroll/height")
-  // overlaid near the top of hubCard — hubCard's own overflow:"hidden" clips it if pushed further
-  // up, so this sits inside its bounds rather than floating above the card.
-  seekMultiplierOverlay: { position: "absolute", top: theme.spacing.xs, left: 0, right: 0, alignItems: "center", zIndex: 1 },
-  seekMultiplierBadge: {
-    backgroundColor: theme.surfaceOverlay,
-    borderRadius: theme.radius.full,
-    borderWidth: 1,
-    borderColor: theme.border,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
-  },
-  seekMultiplierLabel: { color: theme.textPrimary, fontSize: theme.type.caption, fontWeight: "700" },
-  // ADR-HEARTH-068: kept tight (spacing.sm top margin, same button size as the d-pad's own
-  // center button) rather than a full separate card — this hub is already fighting for vertical
-  // space on a 375pt screen (see hubCard's own comment, "make it one page, no scrolling").
-  playPauseRow: { marginTop: theme.spacing.sm, alignItems: "center", justifyContent: "center" },
-  // Sean, directly (2026-09-21, ADR-HEARTH-121): "reduce the button size to make the bottom card
-  // one row." Previously this row wrapped by design once a device's set grew past ~4 items (see
-  // git history for the full prior arithmetic) — Samsung's real 7-item case (home/menu/mute/back/
-  // settings/sleep/source) is the actual worst case now designed for. At the new xs circle size
-  // (36px item width, ADR-HEARTH-121) and a tightened spacing.xs (4px) gap: 7×36 + 6×4 = 276px,
-  // against this card's ~295px available content width (375 baseline − 32px outer content
-  // padding − 48px utilityCard's own padding) — 19px of margin, deliberately generous given this
-  // exact row's history of underestimated arithmetic (reported broken three times before this).
-  // flexWrap/rowGap stay in place as a defensive fallback only — not expected to trigger for any
-  // current driver's capability set, but a future driver adding an 8th+ item degrades to a second
-  // line instead of clipping off-card.
-  utilityRow: { flexDirection: "row", flexWrap: "wrap", rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
-  // Real-device finding (2026-09-10): "the settings label/button is still overlapping" — an
-  // unconstrained-width column meant a longer caption ("Settings") could wrap to a second line
-  // while its siblings ("Mute", "Home") stayed single-line, giving that one item a different
-  // total height than the row it wrapped alongside — visually reading as two rows overlapping.
-  // Fixed width + single line + tail-ellipsis makes every utility action exactly the same height,
-  // no matter how long its label is, so a wrapped grid can never have mismatched row heights.
-  utilityAction: { alignItems: "center", gap: theme.spacing.xs },
-  utilityActionLabel: { color: theme.textSecondary, fontSize: theme.type.caption, fontWeight: "600", textAlign: "center" },
-  // Real-device finding (2026-09-10): "boxes are not the same size" — flexBasis+flexGrow with
-  // flexWrap meant that if the wordmark text in any one tile (e.g. "prime video") needed more
-  // than its equal share of the row, React Native's default flexShrink:0 refused to shrink it,
-  // which could push the 4th tile onto its own wrapped row — where flexGrow:1 with no siblings
-  // stretches it to the FULL row width, becoming a completely different size/shape than the other
-  // three. Fixed width, no flexGrow, no flexWrap: exactly four tiles always render (STREAMING_APPS
-  // is a fixed 4-entry list), and the arithmetic (4 × 22% + 3 gaps of spacing.sm) fits with real
-  // margin on a 375pt screen — verified by calculation, not assumed, same discipline as the hub
-  // row's own overflow fix (ADR-HEARTH-016).
-  // Real-device finding (2026-09-10): "things need to be spread out and spaced properly" —
-  // a fixed spacing.sm (8px) gap between four fixed-22%-width tiles left ~12% of the row's
-  // width unused on the right, so the tiles read as clustered to the left rather than filling
-  // the card. justifyContent:"space-between" distributes that leftover width as the gap
-  // between tiles instead of leaving it stranded — doesn't touch each tile's own width/sizing
-  // (still fixed %, no flexGrow, no flexWrap), so the "boxes not the same size" bug the comment
-  // below describes can't recur; that bug was specifically about flexGrow+flexWrap sizing, not
-  // about how the parent row distributes its own free space.
-  streamingRow: { flexDirection: "row", justifyContent: "space-between" },
-  streamingTile: {
-    width: "22%",
-    aspectRatio: 1.6,
-    borderRadius: theme.radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.xs,
-  },
-  streamingTileWordmark: { fontSize: theme.type.label, fontWeight: "700", letterSpacing: 0.3, textAlign: "center" },
-  disabled: { opacity: 0.35 },
-  keypadHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  keypadDisplay: { color: theme.textPrimary, fontSize: theme.type.title, fontWeight: "700", letterSpacing: 2, minWidth: 48, textAlign: "right" },
-  // Matches addDeviceFormStyles.ts's hintCard/hint pattern (the app's established look for
-  // neutral informational copy, used across every Add*DeviceScreen) rather than plain floating
-  // text — real-device ask (2026-09-16): "make sure the visual is consistent with the rest of
-  // the app." Same token choices this file already uses for a "raised" element against a
-  // theme.surface card (see CapabilityButton's own default button background) plus borderSubtle,
-  // matching that reference pattern's own weight for a non-error callout.
-  keyboardHintCard: {
-    backgroundColor: theme.surfaceRaised,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.borderSubtle,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-  },
-  keyboardHint: { color: theme.textSecondary, fontSize: theme.type.label, lineHeight: 18 },
-  keyboardInput: {
-    color: theme.textPrimary,
-    fontSize: theme.type.body,
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: theme.radius.md,
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
-  },
-  // Design pass (2026-09-10) on "the arrows on the front page" — four
-  // individually-boxed circle buttons in a plus shape read as generic UI
-  // chrome, indistinguishable from every other button on the screen, for
-  // what's actually the most-used control in the whole app. A real remote's
-  // d-pad is one physical wheel, not four separate switches. DPAD_HEIGHT
-  // (196px) is exactly the width of the middle row too (sm+md+lg+md+sm =
-  // 52+12+68+12+52 = 196) — not a coincidence, the existing rocker-column
-  // alignment fix already made this container a perfect square — so giving
-  // it that same fixed size + full border-radius turns it into a circular
-  // disc the arrows sit ON, with each arrow's outer edge landing exactly
-  // tangent to the disc's rim (verified by the same arithmetic: an arrow
-  // centered 72px from the disc's center, with its own 26px radius, reaches
-  // exactly 98px = the disc's own radius). The select button stays boxed
-  // and accent-colored — the one control that should still stand out.
-  dpad: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing.md,
-    width: DPAD_HEIGHT,
-    height: DPAD_HEIGHT,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  dpadMiddleRow: { flexDirection: "row", gap: theme.spacing.md, alignItems: "center" },
-  dpadCenterSpacer: { width: theme.circleDiameter.sm, height: theme.circleDiameter.sm },
-  // Removes the individual button chrome (background+border) CapabilityButton
-  // normally draws for shape="circle" — on the shared disc above, a second
-  // ring around each arrow would compete with the disc's own edge instead of
-  // reading as one wheel. containerStyle is CapabilityButton's existing
-  // escape hatch (built for a non-default background), applied here instead
-  // of adding a new variant since this is the only call site that needs it.
-  dpadArrow: { backgroundColor: "transparent", borderWidth: 0 },
-  // Same modal styling pattern as DeviceListScreen.tsx's own picker modals — reused here for the
-  // universal sleep timer's duration picker so it reads as the same kind of control, not a
-  // one-off design.
-  modalBackdrop: { flex: 1, backgroundColor: "#00000099", alignItems: "center", justifyContent: "center", padding: theme.spacing.xl },
-  modalCard: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: theme.surfaceRaised,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    gap: theme.spacing.sm,
-  },
-  modalTitle: { color: theme.textPrimary, fontSize: theme.type.subtitle, fontWeight: "700", marginBottom: theme.spacing.xs },
-  modalOption: { paddingVertical: theme.spacing.md, borderRadius: theme.radius.sm },
-  modalOptionPressed: { backgroundColor: theme.surfaceRaised },
-  modalOptionLabel: { color: theme.accentEnd, fontSize: theme.type.body, fontWeight: "600" },
-  modalCancel: { paddingVertical: theme.spacing.md, marginTop: theme.spacing.xs, borderTopWidth: 1, borderTopColor: theme.border },
-  modalCancelLabel: { color: theme.textSecondary, fontSize: theme.type.body, fontWeight: "600", textAlign: "center" },
 });

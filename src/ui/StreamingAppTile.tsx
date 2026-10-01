@@ -1,0 +1,85 @@
+import { Pressable, StyleSheet, Text } from "react-native";
+import { StreamingService } from "../core/types/Capability";
+import { fireHapticClick } from "./CapabilityButton";
+import { theme } from "./theme";
+
+// Real brand identity colors (public, not the trademarked logo artwork itself) — sourced 2026-09-10
+// from each service's actual wordmark/background. No bundled logo image assets exist in this app,
+// so a colored tile with a styled wordmark is the honest stand-in: recognizable, not a copy of the
+// real mark. YouTube previously used Ionicons' own "logo-youtube" glyph — dropped 2026-09-10 after
+// two rounds of layout fixes still left it reported as "not middle aligned": an icon-font glyph's
+// visual mark isn't always centered within its own em-square the way a container's flex-centering
+// assumes, and no amount of wrapper/box fixing can correct that from outside the font. A text
+// wordmark, like the other three tiles already use and have now had their alignment confirmed
+// fixed, is the more reliable choice — one rendering mechanism for all four tiles, not two.
+// Real-device ask (2026-09-10): "adjust the size of the hulu button to match" — all four tiles
+// are already the exact same box size (styles.streamingTile, same width/aspectRatio for all),
+// so this was never about the box; it's the wordmark itself. Hulu's real logotype is short and
+// entirely lowercase (no tall ascenders like "l" aside, no caps), which reads visually smaller
+// than "NETFLIX"/"YouTube" at the identical declared font size — a real typographic effect
+// (x-height vs. cap-height), not a sizing bug in the layout. `fontScale` (default 1, so every
+// other tile renders exactly as before) lets one wordmark compensate without touching the shared
+// box/tile styling every entry uses.
+export const STREAMING_APPS: { service: StreamingService; label: string; bg: string; fg: string; fontScale?: number }[] = [
+  { service: "netflix", label: "NETFLIX", bg: "#141414", fg: "#E50914" },
+  { service: "hulu", label: "hulu", bg: "#1CE783", fg: "#0B0B0B", fontScale: 1.35 },
+  { service: "primeVideo", label: "prime video", bg: "#0F171E", fg: "#00A8E1" },
+  { service: "youtube", label: "YouTube", bg: "#141414", fg: "#FF0000" },
+];
+
+/** One branded streaming-app tile in the remote screen's Netflix/Hulu/Prime/YouTube launch row. */
+export function StreamingAppTile({
+  label,
+  bg,
+  fg,
+  fontScale = 1,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  bg: string;
+  fg: string;
+  fontScale?: number;
+  onPress: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={disabled ? undefined : fireHapticClick}
+      disabled={disabled}
+      style={[styles.streamingTile, { backgroundColor: bg }, disabled && styles.disabled]}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${label.trim()}`}
+    >
+      {/* Real-device finding (2026-09-10): "the other logos are not centered" too, not just
+          YouTube's — "prime video" (11 characters) almost certainly wraps to two lines at this
+          tile's width, and a fixed-aspectRatio box doesn't grow to fit that second line, so
+          centered-but-overflowing text reads as visibly off-center. numberOfLines +
+          adjustsFontSizeToFit forces every wordmark onto one line, shrinking down rather than
+          wrapping, so centering is guaranteed the same way for all four tiles now that they all
+          go through this one rendering path. */}
+      <Text
+        style={[styles.streamingTileWordmark, { color: fg, fontSize: theme.type.label * fontScale }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  streamingTile: {
+    width: "22%",
+    aspectRatio: 1.6,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.xs,
+  },
+  streamingTileWordmark: { fontSize: theme.type.label, fontWeight: "700", letterSpacing: 0.3, textAlign: "center" },
+  disabled: { opacity: 0.35 },
+});
