@@ -342,6 +342,19 @@ export const SCENARIOS = [
     },
   },
   { name: "remote-lg", screen: "remote:lg", assertFit: true },
+  // ADR-HEARTH-204: a fast same-direction tap streak on the Left d-pad arrow escalates an
+  // on-screen "Seeking Nx" label. Clicks stay well under TAP_STREAK_WINDOW_MS (650ms) apart, and
+  // the screenshot is taken immediately after steps() returns, inside that same window, so the
+  // label should still be visible (4th tap -> 10x) without requiring a sustained hold.
+  {
+    name: "remote-lg-seek-tap-streak",
+    screen: "remote:lg",
+    assertFit: true,
+    steps: async (page) => {
+      const left = page.getByLabel("Left", { exact: true });
+      for (let i = 0; i < 4; i++) await left.click();
+    },
+  },
   // ADR-HEARTH-180: Dynamic Type approximation — Playwright can't emulate iOS's real accessibility
   // text sizes, so ?fontScale= scales theme.type instead (demoFontScale.ts). assertFit stays false
   // here on purpose: the remote's no-scroll invariant (ADR-HEARTH-135) is only asserted at the
