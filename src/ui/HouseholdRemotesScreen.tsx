@@ -10,6 +10,15 @@ import { theme } from "./theme";
 
 const TICK_MS = 1000;
 
+/** Groups a pairing code into 3-digit chunks ("123 456") for readability — purely cosmetic, the
+ * raw code (no spaces) is what the physical remote's keypad ever produces, so grouping here never
+ * has to be undone anywhere it's typed back in. Any length not evenly divisible by 3 (e.g. an
+ * older 8-character code) is shown ungrouped rather than breaking mid-character. */
+function formatPairingCode(code: string): string {
+  if (code.length % 3 !== 0) return code;
+  return code.match(/.{1,3}/g)?.join(" ") ?? code;
+}
+
 function relativeLastUsed(lastUsedAt: string | null): string {
   if (!lastUsedAt) return "Never used";
   const minutes = Math.max(0, Math.round((Date.now() - Date.parse(lastUsedAt)) / 60_000));
@@ -116,7 +125,7 @@ export function HouseholdRemotesScreen({ onDone, onEditButtons }: HouseholdRemot
 
   function sharePairingCode() {
     if (!pairing) return;
-    Share.share({ message: `Pairing code for your Hearth physical remote: ${pairing.code}` });
+    Share.share({ message: `Pairing code for your Hearth physical remote: ${formatPairingCode(pairing.code)}` });
   }
 
   const pairingExpired = pairing !== null && secondsLeft <= 0;
@@ -183,7 +192,7 @@ export function HouseholdRemotesScreen({ onDone, onEditButtons }: HouseholdRemot
       {pairing && !pairingExpired ? (
         <>
           <Text style={styles.code} selectable>
-            {pairing.code}
+            {formatPairingCode(pairing.code)}
           </Text>
           <Text style={styles.meta}>Expires in {formatCountdown(secondsLeft)} · works once</Text>
           <CapabilityButton label="Share pairing code" variant="accent" onPress={sharePairingCode} />
