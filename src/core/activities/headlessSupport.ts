@@ -6,8 +6,13 @@ import { Activity, ActivityStep } from "../types/Activity";
 /** Driver ids the headless runner is allowed to drive on a schedule. Extend only after a live check. */
 export const HEADLESS_DRIVER_IDS: ReadonlySet<string> = new Set(["lg-webos-wss3001", "sony-bravia", "roku-ecp", "kasa-plug", "shelly-relay"]);
 
-/** Unattended runs only switch things off. `power` is a toggle, so the runner also confirms the device is on first. */
-export const HEADLESS_COMMAND_CAPABILITIES: ReadonlySet<string> = new Set(["powerOff", "power"]);
+/** Unattended runs only switch things off, plus launchApp (ADR-HEARTH-206: this allow-list is
+ * also what gates a physical remote's button-event execution, adr/0257 on the Pi -- a button
+ * press is never actually unattended, someone is standing at the remote, but it reuses this exact
+ * shared runner/allow-list rather than a second execution path. Opening an app is low-risk and
+ * reversible, unlike most other capabilities this list still excludes). `power` is a toggle, so
+ * the runner also confirms the device is on first. */
+export const HEADLESS_COMMAND_CAPABILITIES: ReadonlySet<string> = new Set(["powerOff", "power", "launchApp"]);
 
 /** The capability whose command flips the current state, and therefore needs an "is on" check first. */
 export const TOGGLE_POWER_CAPABILITY = "power";

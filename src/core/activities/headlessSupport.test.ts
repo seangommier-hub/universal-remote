@@ -22,6 +22,16 @@ test("an unsupported driver, unknown device or other capability is reported with
   expect(headlessProblem({ kind: "waitFor", deviceId: "samsung", stateKey: "power", equals: "off", timeoutMs: 1000 }, driverIdOf)).toMatch(/samsung-tizen/);
 });
 
+// ADR-HEARTH-206: launchApp joined power/powerOff in HEADLESS_COMMAND_CAPABILITIES (also gates a
+// physical remote's button-event execution, adr/0257 -- someone pressing Netflix on the remote in
+// the room is never actually "unattended" the way a 3am schedule is, but it shares this exact
+// allow-list rather than a second execution path). Opening an app is low-risk/reversible, unlike
+// most other capabilities this list still excludes.
+test("launchApp on a supported driver runs; on an unsupported driver it's still blocked", () => {
+  expect(headlessProblem({ kind: "command", deviceId: "roku", capability: "launchApp" }, driverIdOf)).toBeNull();
+  expect(headlessProblem({ kind: "command", deviceId: "samsung", capability: "launchApp" }, driverIdOf)).toMatch(/samsung-tizen.*cannot run on a schedule/);
+});
+
 test("unsupportedHeadlessSteps lists each blocked step by index", () => {
   const activity: Activity = {
     id: "a",
@@ -32,7 +42,7 @@ test("unsupportedHeadlessSteps lists each blocked step by index", () => {
       { kind: "command", deviceId: "lg", capability: "powerOff" },
       { kind: "command", deviceId: "samsung", capability: "powerOff" },
       { kind: "delay", ms: 1 },
-      { kind: "command", deviceId: "roku", capability: "launchApp" },
+      { kind: "command", deviceId: "lg", capability: "setVolume" },
     ],
   };
   expect(unsupportedHeadlessSteps(activity, driverIdOf).map((step) => step.index)).toEqual([1, 3]);
