@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createRemotePairingCode, fetchHouseholdRemotes, HouseholdRemote, HouseholdRemotesError, renameHouseholdRemote, revokeHouseholdRemote } from "../discovery/householdRemotes";
 import { formatCountdown, secondsUntilExpiry } from "../discovery/inviteCountdown";
 import { CapabilityButton } from "./CapabilityButton";
+import { RemoteSettingsPinPanel } from "./RemoteSettingsPinPanel";
 import { addDeviceFormStyles as formStyles } from "./addDeviceFormStyles";
 import { theme } from "./theme";
 
@@ -183,6 +184,10 @@ export function HouseholdRemotesScreen({ onDone, onEditButtons }: HouseholdRemot
             {rowError?.id === remote.id && <Text style={styles.rowError}>{rowError.message}</Text>}
           </View>
         ))}
+
+      <View style={styles.divider} />
+      {/* ADR-HEARTH-209: the PIN the physical remote asks for before its device settings open. */}
+      <RemoteSettingsPinPanel />
 
       <View style={styles.divider} />
       <Text style={formStyles.title}>Pair a remote</Text>
