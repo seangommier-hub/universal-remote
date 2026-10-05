@@ -19,6 +19,7 @@ import { scheduleHaOAuthRefresh } from "./src/drivers/homeAssistant/haOAuthRefre
 import { hydrateHaOAuthStates } from "./src/drivers/homeAssistant/haOAuthStateStore";
 import { migrateHaDevices } from "./src/runtime/haDeviceMigration";
 import { startClientLogShipper } from "./src/runtime/clientLogShipper";
+import { reportUnfinishedSettingsVisit } from "./src/runtime/settingsVisitBreadcrumb";
 import { startActivityLog } from "./src/runtime/startActivityLog";
 import { runAutoDeviceSync } from "./src/runtime/autoDeviceSync";
 import { syncFccCameras } from "./src/runtime/fccCameraSync";
@@ -173,6 +174,8 @@ function HearthApp() {
   // type change).
   // ADR-HEARTH-146: quietly ship warn/error log lines to Family Command Center for remote diagnosis.
   useEffect(() => startClientLogShipper(), []);
+  // ADR-HEARTH-207: says so (at error level, so it ships too) when the last run died with Settings open.
+  useEffect(() => void reportUnfinishedSettingsVisit(), []);
   // ADR-HEARTH-170: household activity log ("Sean turned off Den TV"), delivered in the background.
   useEffect(() => (isDemoMode() ? undefined : startActivityLog(runtime.activityLog)), [runtime]);
   // ADR-HEARTH-149: hearth://pair invite links + silent public-address learning.

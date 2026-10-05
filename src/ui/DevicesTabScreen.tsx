@@ -20,6 +20,7 @@ import { ENTITY_SCREEN_CATEGORIES, EntityControlScreen } from "./EntityControlSc
 import { TeachBroadlinkCommandScreen } from "./TeachBroadlinkCommandScreen";
 import { DiscoverDevicesScreen } from "./DiscoverDevicesScreen";
 import { FamilyCommandCenterSettingsScreen } from "./FamilyCommandCenterSettingsScreen";
+import { ScreenErrorBoundary } from "./ScreenErrorBoundary";
 import { WhatLeavesYourHouseScreen } from "./WhatLeavesYourHouseScreen";
 import { HouseholdPhonesScreen } from "./HouseholdPhonesScreen";
 import { HouseholdRemotesScreen } from "./HouseholdRemotesScreen";
@@ -328,6 +329,8 @@ export function DevicesTabScreen({
         // an already-configured household's settings (e.g. adding the public/away URL,
         // ADR-HEARTH-123) — dropping straight into a device-discovery scan afterward would be a
         // surprising detour for that case. Back to the device list, same as Cancel, matches both.
+        // ADR-HEARTH-207: a render error here shows a fallback with a way back instead of closing the app.
+        <ScreenErrorBoundary screenName="Settings" onBack={() => setScreen({ name: "list" })}>
         <FamilyCommandCenterSettingsScreen
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "list" })}
@@ -341,6 +344,7 @@ export function DevicesTabScreen({
           onDeviceAdded={onDeviceAdded}
           onDeviceUpdated={onDeviceUpdatedInPlace}
         />
+        </ScreenErrorBoundary>
       )}
       {screen.name === "fcc-privacy" && (
         <WhatLeavesYourHouseScreen devices={devices} onDone={() => setScreen({ name: "fcc-settings" })} />

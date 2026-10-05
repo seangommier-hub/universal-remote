@@ -17,6 +17,7 @@ import { RecentActivityList } from "./RecentActivityList";
 import type { KidModeControls } from "./useKidMode";
 import { theme } from "./theme";
 import { refreshOwnRole } from "../discovery/householdPhones";
+import { finishSettingsVisit, markSettingsVisitStage } from "../runtime/settingsVisitBreadcrumb";
 
 const LOG_SCOPE = "FamilyCommandCenterSettingsScreen";
 
@@ -56,6 +57,12 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
   const [errorMessage, setErrorMessage] = useState("");
   const [failure, setFailure] = useState<NetworkFailureDiagnosis | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+
+  // ADR-HEARTH-207: a visit that never reaches this cleanup is reported on the next launch.
+  useEffect(() => {
+    void markSettingsVisitStage("opened");
+    return () => void finishSettingsVisit();
+  }, []);
 
   useEffect(() => {
     // Real gap found live (2026-09-28, ADR-HEARTH-196): loadFamilyCommandCenterConfig() reads
