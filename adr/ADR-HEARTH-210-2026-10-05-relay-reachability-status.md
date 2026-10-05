@@ -1,4 +1,4 @@
-# ADR-HEARTH-209: fccReachable reflects the most recent relay attempt, not just "ever succeeded"
+# ADR-HEARTH-210: fccReachable reflects the most recent relay attempt, not just "ever succeeded"
 
 ## Status
 
