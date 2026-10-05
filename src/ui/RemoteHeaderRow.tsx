@@ -6,6 +6,9 @@ import { CapabilityButton } from "./CapabilityButton";
 import { has } from "./hasCapability";
 import { theme } from "./theme";
 
+// ADR-HEARTH-208: a 22px glyph + 8px slop each side was a 38px target, under the 44pt minimum.
+const BACK_HIT_SLOP = 12;
+
 interface RemoteHeaderRowProps {
   device: Device;
   scale: number;
@@ -48,7 +51,7 @@ export function RemoteHeaderRow({
   const hasPowerOff = has(device, "powerOff");
   return (
     <View style={styles.headerRow}>
-      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={8}>
+      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={BACK_HIT_SLOP}>
         <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
       </Pressable>
       <Text style={styles.headerDivider}>|</Text>

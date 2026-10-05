@@ -441,7 +441,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.full,
     backgroundColor: theme.accentEnd,
   },
-  title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700" },
+  // flexShrink (ADR-HEARTH-208): adjustsFontSizeToFit is iOS-only, so on Android a long title pushed the
+  // fixed-width Home/Away badge past headerText into the first header icon. The title gives way instead.
+  title: { color: theme.textPrimary, fontSize: theme.type.display, fontWeight: "700", flexShrink: 1 },
   subtitle: { color: theme.textSecondary, fontSize: theme.type.body },
   // flexWrap: at large text sizes the switch drops under the label instead of squeezing it to "CONN...".
   sectionLabelRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", columnGap: theme.spacing.sm, rowGap: theme.spacing.xs, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },

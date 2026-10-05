@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { classifyNetworkFailure, NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
 import { logger } from "../core/logging/logger";
@@ -174,8 +174,8 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
         </View>
       )}
 
-      <View style={styles.row}>
-        <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "checking"} />
+      <View style={screenStyles.buttonRow}>
+        <CapabilityButton label="Cancel" variant="ghost" onPress={onCancel} disabled={status === "checking"} containerStyle={screenStyles.rowButton} />
         {/* Real-device finding (2026-09-10): CapabilityButton never shows both an icon and a
             visible label — this button rendered as a bare checkmark glyph with no visible "Save"
             / "Checking..." text at all. No icon here now. */}
@@ -184,6 +184,7 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
           variant="accent"
           onPress={handleSave}
           disabled={!canSubmit}
+          containerStyle={screenStyles.rowButton}
         />
       </View>
       {status === "checking" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
@@ -206,3 +207,11 @@ export function FamilyCommandCenterSettingsScreen({ onCancel, onSaved, onJoinWit
     </ScrollView>
   );
 }
+
+// ADR-HEARTH-208: Cancel/Save were two different content-sized pills (212 vs 176px) centred above
+// full-width buttons, with 32dp above the row and 8dp below. They now split the full width evenly,
+// with matching space either side.
+const screenStyles = StyleSheet.create({
+  buttonRow: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm },
+  rowButton: { flex: 1 },
+});

@@ -57,12 +57,12 @@ export function InviteSomeonePanel() {
         <>
           <Text style={styles.code} selectable>{invite.code}</Text>
           <Text style={styles.countdown}>Expires in {formatCountdown(secondsLeft)} - works once</Text>
-          <CapabilityButton label="Share invite" variant="accent" onPress={handleShare} />
+          <CapabilityButton label="Share invite" variant="accent" onPress={handleShare} containerStyle={styles.fullWidth} />
         </>
       )}
       {expired && <Text style={styles.countdown}>That code expired.</Text>}
       {error.length > 0 && <Text style={styles.error}>{error}</Text>}
-      <CapabilityButton label={invite && !expired ? "New code" : "Create invite code"} variant="ghost" onPress={handleCreate} disabled={busy} />
+      <CapabilityButton label={invite && !expired ? "New code" : "Create invite code"} variant="ghost" onPress={handleCreate} disabled={busy} containerStyle={styles.fullWidth} />
       {busy && <ActivityIndicator color={theme.accentEnd} />}
     </View>
   );
@@ -83,4 +83,6 @@ const styles = StyleSheet.create({
   code: { color: theme.accentEnd, fontSize: 40, fontWeight: "800", letterSpacing: 6 },
   countdown: { color: theme.textSecondary, fontSize: theme.type.label },
   error: { color: theme.statusError, fontSize: theme.type.label, textAlign: "center" },
+  // ADR-HEARTH-208: full width like every other Settings button (it was a 414px pill centred in the card).
+  fullWidth: { alignSelf: "stretch" },
 });

@@ -40,6 +40,8 @@ function describeAdminError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const NO_PERSONAL_PHONES_TEXT = "No phone has its own pairing yet. Phones still using the shared household token show up here once they re-pair (Re-pair on the Devices tab).";
+
 interface HouseholdPhonesScreenProps {
   onDone: () => void;
 }
@@ -176,9 +178,12 @@ export function HouseholdPhonesScreen({ onDone }: HouseholdPhonesScreenProps) {
       )}
       {phones === null && loadError === "" && <ActivityIndicator color={theme.accentEnd} style={styles.spinner} />}
 
+      {/* ADR-HEARTH-208: an empty list read as broken. Phones still on the shared household token (every
+          phone before ADR-HEARTH-181 re-pairing) have no per-phone record, so they are not listed. */}
+      {phones !== null && phones.length === 0 && loadError === "" && <Text style={styles.meta}>{NO_PERSONAL_PHONES_TEXT}</Text>}
       {phones !== null &&
-        phones.map((phone) => (
-          <View key={phone.id} style={styles.row}>
+        phones.map((phone, index) => (
+          <View key={phone.id} style={[styles.row, index === phones.length - 1 && styles.lastRow]}>
             {renamingId === phone.id ? (
               <TextInput
                 style={formStyles.input}
@@ -261,6 +266,8 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   name: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600", flexShrink: 1 },
   meta: { color: theme.textTertiary, fontSize: theme.type.label },
+  // ADR-HEARTH-208: same double-line fix as HouseholdRemotesScreen.
+  lastRow: { borderBottomWidth: 0 },
   roleRow: { flexDirection: "row", gap: theme.spacing.xs, flexWrap: "wrap" },
   rowError: { color: theme.statusError, fontSize: theme.type.label },
   divider: { height: 1, backgroundColor: theme.borderSubtle, marginVertical: theme.spacing.lg },

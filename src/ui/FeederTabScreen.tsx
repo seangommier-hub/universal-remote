@@ -218,7 +218,8 @@ function FeederStatusView({ device, stateStore, commandEngine, onReconnect, onRe
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
-  content: { padding: theme.spacing.lg, gap: theme.spacing.md },
+  // ADR-HEARTH-208: same page gutter as the Devices tab and Settings (spacing.xl); this was the one tab at lg.
+  content: { padding: theme.spacing.xl, gap: theme.spacing.md },
   headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
   iconBadge: {
     width: 44,

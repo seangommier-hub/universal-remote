@@ -16,7 +16,7 @@ export function ConnectivityBadge({ mode }: { mode: ConnectivityMode }) {
 }
 
 const styles = StyleSheet.create({
-  badge: { borderRadius: theme.radius.full, paddingVertical: 2, paddingHorizontal: theme.spacing.sm },
+  badge: { borderRadius: theme.radius.full, paddingVertical: 2, paddingHorizontal: theme.spacing.sm, flexShrink: 0 },
   home: { backgroundColor: theme.statusOnSoft },
   away: { backgroundColor: theme.surfaceRaised },
   label: { color: theme.textSecondary, fontSize: theme.type.caption, fontWeight: "600" },

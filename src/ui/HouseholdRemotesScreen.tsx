@@ -152,8 +152,8 @@ export function HouseholdRemotesScreen({ onDone, onEditButtons }: HouseholdRemot
       {remotes !== null && remotes.length === 0 && loadError === "" && <Text style={styles.meta}>No physical remotes paired yet.</Text>}
 
       {remotes !== null &&
-        remotes.map((remote) => (
-          <View key={remote.id} style={styles.row}>
+        remotes.map((remote, index) => (
+          <View key={remote.id} style={[styles.row, index === remotes.length - 1 && styles.lastRow]}>
             {renamingId === remote.id ? (
               <TextInput
                 style={formStyles.input}
@@ -221,6 +221,8 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
   name: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600", flexShrink: 1 },
   meta: { color: theme.textTertiary, fontSize: theme.type.label },
+  // ADR-HEARTH-208: the last row border sat right above the section divider, drawing two lines.
+  lastRow: { borderBottomWidth: 0 },
   roleRow: { flexDirection: "row", gap: theme.spacing.xs, flexWrap: "wrap" },
   rowError: { color: theme.statusError, fontSize: theme.type.label },
   divider: { height: 1, backgroundColor: theme.borderSubtle, marginVertical: theme.spacing.lg },

@@ -55,7 +55,7 @@ export type DevicesScreen =
   | { name: "fcc-household-phones" }
   | { name: "fcc-household-remotes" }
   | { name: "edit-remote-buttons"; remote: HouseholdRemote }
-  | { name: "fcc-join"; invite?: PairInvite }
+  | { name: "fcc-join"; invite?: PairInvite; fromSettings?: boolean }
   | { name: "fcc-remote" }
   | { name: "ha-assist"; instanceId: string }
   | { name: "edit-address"; device: Device }
@@ -321,7 +321,7 @@ export function DevicesTabScreen({
           onUseManualEntry={() => setScreen({ name: "fcc-settings" })}
         />
       )}
-      {screen.name === "fcc-join" && <JoinWithCodeScreen key={screen.invite?.code ?? "manual"} initialInvite={screen.invite} onCancel={() => setScreen({ name: "list" })} onJoined={() => setScreen({ name: "discover" })} />}
+      {screen.name === "fcc-join" && <JoinWithCodeScreen key={screen.invite?.code ?? "manual"} initialInvite={screen.invite} onCancel={() => setScreen(screen.fromSettings ? { name: "fcc-settings" } : { name: "list" })} onJoined={() => setScreen({ name: "discover" })} />}
       {screen.name === "fcc-settings" && (
         // Real gap found live (2026-09-21): always advancing to "discover" after saving made sense
         // for this screen's original only-entry-point (first-time setup via the QR-scan flow's
@@ -334,7 +334,8 @@ export function DevicesTabScreen({
         <FamilyCommandCenterSettingsScreen
           onCancel={() => setScreen({ name: "list" })}
           onSaved={() => setScreen({ name: "list" })}
-          onJoinWithCode={() => setScreen({ name: "fcc-join" })}
+          // ADR-HEARTH-208: Cancel on the join screen comes back here, not all the way to the list.
+          onJoinWithCode={() => setScreen({ name: "fcc-join", fromSettings: true })}
           kid={kid}
           onKidModeOn={() => setScreen({ name: "list" })}
           onOpenPrivacy={() => setScreen({ name: "fcc-privacy" })}
