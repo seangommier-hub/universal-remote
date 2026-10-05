@@ -7,6 +7,7 @@ import { has } from "./hasCapability";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { theme } from "./theme";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
+import { useHoldRepeat } from "./useHoldRepeat";
 
 interface DpadClusterProps {
   device: Device;
@@ -46,6 +47,24 @@ export function DpadCluster({
   onCenterSelect,
   onHoldCenterPlayPause,
 }: DpadClusterProps) {
+  // ADR-HEARTH-211: press-and-hold repeats the direction, like a real remote's d-pad, instead of
+  // needing rapid manual taps to move continuously (which raced LG's pointer-socket setup). Hooks
+  // called unconditionally regardless of which buttons the device's capabilities actually render.
+  const upHold = useHoldRepeat(() => onSend("directionalNavigation", { direction: "up" }));
+  const downHold = useHoldRepeat(() => onSend("directionalNavigation", { direction: "down" }));
+  // left/right: the genuine first press still goes through onSeekDirection exactly as before (real
+  // command + tap-streak registration for the seek-multiplier badge, ADR-HEARTH-204) -- only a
+  // held repeat past the initial delay falls back to the plain command, deliberately bypassing the
+  // streak tracker so a hold can never drive the multiplier the way ADR-HEARTH-204 says it
+  // shouldn't ("the increase in speed should be due to multiple taps," not a hold timer).
+  const leftHold = useHoldRepeat(
+    () => onSend("directionalNavigation", { direction: "left" }),
+    () => onSeekDirection("left")
+  );
+  const rightHold = useHoldRepeat(
+    () => onSend("directionalNavigation", { direction: "right" }),
+    () => onSeekDirection("right")
+  );
   return (
     <View style={styles.hubCard}>
       {/* ADR-HEARTH-204: a fast same-direction d-pad left/right tap streak — purely an honest
@@ -92,7 +111,9 @@ export function DpadCluster({
             scale={scale}
             icon="chevron-up"
             label="Up"
-            onPress={() => onSend("directionalNavigation", { direction: "up" })}
+            onPress={() => {}}
+            onPressIn={upHold.onPressIn}
+            onPressOut={upHold.onPressOut}
             disabled={disabled}
             containerStyle={styles.dpadArrow}
           />
@@ -102,7 +123,9 @@ export function DpadCluster({
               scale={scale}
               icon="chevron-back"
               label="Left"
-              onPress={() => onSeekDirection("left")}
+              onPress={() => {}}
+              onPressIn={leftHold.onPressIn}
+              onPressOut={leftHold.onPressOut}
               disabled={disabled}
               containerStyle={styles.dpadArrow}
             />
@@ -142,7 +165,9 @@ export function DpadCluster({
               scale={scale}
               icon="chevron-forward"
               label="Right"
-              onPress={() => onSeekDirection("right")}
+              onPress={() => {}}
+              onPressIn={rightHold.onPressIn}
+              onPressOut={rightHold.onPressOut}
               disabled={disabled}
               containerStyle={styles.dpadArrow}
             />
@@ -152,7 +177,9 @@ export function DpadCluster({
             scale={scale}
             icon="chevron-down"
             label="Down"
-            onPress={() => onSend("directionalNavigation", { direction: "down" })}
+            onPress={() => {}}
+            onPressIn={downHold.onPressIn}
+            onPressOut={downHold.onPressOut}
             disabled={disabled}
             containerStyle={styles.dpadArrow}
           />
