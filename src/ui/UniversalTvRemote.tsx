@@ -23,6 +23,7 @@ import { RemoteTabBar } from "./RemoteTabBar";
 import { SleepTimerModal } from "./SleepTimerModal";
 import { StreamingAppsRow } from "./StreamingAppsRow";
 import { theme } from "./theme";
+import { useCallCommandCenterButton } from "./useCallCommandCenterButton";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
@@ -81,6 +82,11 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // this hook only tracks tap cadence for the on-screen label.
   const dpadSeek = useDpadSeekMultiplier();
   const connectivityMode = useConnectivityMode();
+  // ADR-HEARTH-213: "there needs to be a button in the hearth app on all of the tvs it can be
+  // called from" (Sean, directly) -- a manual, always-available check independent of whatever
+  // Hearth's own debounced outage detection currently believes (OfflineAlertBanner.tsx's own
+  // "Retry" only appears once that detection has already decided there's a problem).
+  const commandCenter = useCallCommandCenterButton();
   // ADR-HEARTH-183: keep the screen from auto-locking only while a remote is actually open —
   // scoped by this component's own mount/unmount (see useKeepScreenAwake's own doc comment), never
   // the whole app.
@@ -414,6 +420,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           onSend={send}
           onOpenSleepPicker={sleepTimer.openPicker}
           onOpenBrowse={() => setBrowsing(true)}
+          commandCenterStatus={commandCenter.status}
+          onCallCommandCenter={commandCenter.call}
         />
       )}
         </>
