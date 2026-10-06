@@ -14,6 +14,17 @@ const IPV4_OCTET_COUNT = 4;
 
 let mode: ConnectivityMode = "unknown";
 let lanFailedAt: number | undefined;
+// 2026-10-05: mode only ever moves forward on a SUCCESS (see recordRouteSuccess) -- it never had a
+// way to notice the public/relay route failing again after once succeeding. That left
+// deriveRemoteViewState.ts with nothing real to check, so it hardcoded fccReachable to `true`
+// whenever mode wasn't "unknown" (describeDeviceStatus.ts's "relay isn't answering" branch was
+// consequently dead code from any real call site, only reachable in its own unit tests). A device
+// stuck on "away" from an earlier successful relay connection kept showing "Reachable through the
+// relay only" even while the relay (and the whole Pi it runs on) was fully down -- confirmed live,
+// 2026-10-05, Sean: "downstairs saying only reachable through relay" during a real Pi outage where
+// hearth-relay.*/hearth-ws.* both answered 502. publicFailedAt mirrors lanFailedAt so that case has
+// a real signal to report instead of an assumption.
+let publicFailedAt: number | undefined;
 const listeners = new Set<(mode: ConnectivityMode) => void>();
 
 function setMode(next: ConnectivityMode): void {
@@ -43,14 +54,29 @@ export function recordLanFailure(now: number = Date.now()): void {
   lanFailedAt = now;
 }
 
+/** Records that the public tunnel/relay could not be reached. */
+export function recordPublicFailure(now: number = Date.now()): void {
+  publicFailedAt = now;
+}
+
 /** Records which route just succeeded; a public success after a LAN failure means away, a LAN success means home. */
 export function recordRouteSuccess(route: FccRoute): void {
   if (route === "lan") {
     lanFailedAt = undefined;
     setMode("home");
-  } else if (lanFailedAt !== undefined) {
-    setMode("away");
+  } else {
+    publicFailedAt = undefined;
+    if (lanFailedAt !== undefined) setMode("away");
   }
+}
+
+/** True once the public/relay route has failed more recently than it last succeeded -- i.e. being
+ * in "away" mode no longer means the relay is actually answering right now, just that it did at
+ * some point this app session. Undefined signals (fccReachable) should read this as "not proven
+ * reachable", not "proven unreachable", which is why deriveRemoteViewState.ts negates it rather
+ * than treating "never failed" and "never tried" the same. */
+export function isPublicRouteCurrentlyFailing(): boolean {
+  return publicFailedAt !== undefined;
 }
 
 /** True for RFC 1918 private addresses, which a phone away from home can never reach directly. */
@@ -71,5 +97,6 @@ export function shouldSkipDirectAttempt(host: string): boolean {
 export function resetConnectivityForTests(): void {
   mode = "unknown";
   lanFailedAt = undefined;
+  publicFailedAt = undefined;
   listeners.clear();
 }

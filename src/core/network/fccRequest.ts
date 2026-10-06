@@ -1,7 +1,7 @@
 import type { FamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 import { FccUnreachableError } from "./fccErrors";
 import { recordFccReached, recordFccUnreachable } from "./fccOutage";
-import { FccRoute, recordLanFailure, recordRouteSuccess, shouldPreferPublicRoute } from "./fccConnectivity";
+import { FccRoute, recordLanFailure, recordPublicFailure, recordRouteSuccess, shouldPreferPublicRoute } from "./fccConnectivity";
 import { DEFAULT_FETCH_TIMEOUT_MS, FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
 
 // The single client for every direct call to Family Command Center (ADR-HEARTH-147). It tries the
@@ -93,6 +93,7 @@ export async function fccFetch(
     } catch (err) {
       if (init.signal?.aborted) throw err;
       if (route === "lan") recordLanFailure();
+      else recordPublicFailure();
       lastError = err;
     }
   }

@@ -1,5 +1,12 @@
 import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
-import { recordLanFailure, recordRouteSuccess, resetConnectivityForTests, shouldPreferPublicRoute, shouldSkipDirectAttempt } from "./fccConnectivity";
+import {
+  recordLanFailure,
+  recordPublicFailure,
+  recordRouteSuccess,
+  resetConnectivityForTests,
+  shouldPreferPublicRoute,
+  shouldSkipDirectAttempt,
+} from "./fccConnectivity";
 
 // See ADR-HEARTH-011. Mirrors httpRelayFallback.ts's fallback pattern for WebSocket-based
 // drivers (Samsung, LG): try a direct connection to the device first, and only relay through
@@ -90,9 +97,17 @@ async function openViaLanRelay(config: FamilyCommandCenterConfig, targetUrl: str
 // forwards to the LAN relay's real port internally (ADR-HEARTH-123).
 async function openViaPublicRelay(publicBaseUrl: string, token: string, targetUrl: string): Promise<WebSocket> {
   const publicRelayUrl = buildRelayUrl("wss", publicRelayHost(publicBaseUrl), undefined, token, targetUrl);
-  const socket = await tryOpenSocket(publicRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center's public tunnel`);
-  recordRouteSuccess("public");
-  return socket;
+  try {
+    const socket = await tryOpenSocket(publicRelayUrl, RELAY_CONNECT_TIMEOUT_MS, `relaying to ${targetUrl} through Family Command Center's public tunnel`);
+    recordRouteSuccess("public");
+    return socket;
+  } catch (err) {
+    // 2026-10-05: this used to just propagate with no recordPublicFailure() call -- the LG/Samsung
+    // WS path (this file) is exactly how Sean saw "Reachable through the relay only" during a real
+    // outage where the relay was actually down (fccConnectivity.ts has the full story).
+    recordPublicFailure();
+    throw err;
+  }
 }
 
 /** Tries the LAN relay then the public one (public first while away from home, ADR-HEARTH-147); rejects with the last failure. */

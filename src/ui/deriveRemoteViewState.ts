@@ -1,4 +1,4 @@
-import { ConnectivityMode } from "../core/network/fccConnectivity";
+import { ConnectivityMode, isPublicRouteCurrentlyFailing } from "../core/network/fccConnectivity";
 import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
@@ -123,7 +123,13 @@ export function deriveRemoteViewState(device: Device, state: DeviceState, connec
     wakeBurstActive: state.values.waking === true,
     lastError: reconnectError || undefined,
     connectivityMode,
-    fccReachable: connectivityMode === "unknown" ? undefined : true,
+    // 2026-10-05: used to hardcode `true` whenever mode wasn't "unknown" -- that's "the relay
+    // answered at SOME point this session", not "the relay answered recently", so a device stuck
+    // on "away" kept claiming the relay was reachable straight through a real Pi outage (fixed by
+    // isPublicRouteCurrentlyFailing() actually tracking the most recent public-route result; see
+    // fccConnectivity.ts for the full story). Still undefined at "unknown" mode -- nothing's been
+    // tried yet, which is different from "tried and failed".
+    fccReachable: connectivityMode === "unknown" ? undefined : !isPublicRouteCurrentlyFailing(),
     secondsSinceLastSeen: Math.max(0, Math.round((Date.now() - state.lastUpdated) / MS_PER_SECOND)),
   });
   // Real-hardware finding (2026-09-09): a persisted device reappears in the device list

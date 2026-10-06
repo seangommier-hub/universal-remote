@@ -1,6 +1,13 @@
 import { fccFetch } from "./fccRequest";
 import { FccUnreachableError } from "./fccErrors";
-import { AWAY_MEMORY_MS, getConnectivityMode, isPrivateLanHost, resetConnectivityForTests, shouldSkipDirectAttempt } from "./fccConnectivity";
+import {
+  AWAY_MEMORY_MS,
+  getConnectivityMode,
+  isPrivateLanHost,
+  isPublicRouteCurrentlyFailing,
+  resetConnectivityForTests,
+  shouldSkipDirectAttempt,
+} from "./fccConnectivity";
 import { DEFAULT_FETCH_TIMEOUT_MS } from "./fetchWithTimeout";
 import type { FamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 
@@ -51,6 +58,25 @@ describe("fccFetch", () => {
     (global.fetch as jest.Mock).mockRejectedValue(new TypeError("Network request failed"));
     await expect(fccFetch(CONFIG, PATH)).rejects.toBeInstanceOf(FccUnreachableError);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // 2026-10-05: a failed public-address attempt used to go unrecorded, so deriveRemoteViewState.ts
+  // had nothing real to tell "away" (relay answered recently) apart from "away, but the relay just
+  // failed" -- confirmed live during a real Pi outage, see fccConnectivity.ts's own comment.
+  test("a failed public address is recorded, not just a failed LAN one", async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new TypeError("Network request failed"));
+    await expect(fccFetch(CONFIG, PATH)).rejects.toBeInstanceOf(FccUnreachableError);
+    expect(isPublicRouteCurrentlyFailing()).toBe(true);
+  });
+
+  test("a public address that answers clears an earlier public failure", async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new TypeError("Network request failed"));
+    await expect(fccFetch(CONFIG, PATH)).rejects.toBeInstanceOf(FccUnreachableError);
+    expect(isPublicRouteCurrentlyFailing()).toBe(true);
+
+    (global.fetch as jest.Mock).mockReset().mockRejectedValueOnce(new TypeError("Network request failed")).mockResolvedValueOnce(ok());
+    await fccFetch(CONFIG, PATH);
+    expect(isPublicRouteCurrentlyFailing()).toBe(false);
   });
 
   test("without a public address only the LAN is tried", async () => {

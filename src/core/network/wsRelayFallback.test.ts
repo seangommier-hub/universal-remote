@@ -1,4 +1,5 @@
 import { openSocketWithRelayFallback } from "./wsRelayFallback";
+import { isPublicRouteCurrentlyFailing, resetConnectivityForTests } from "./fccConnectivity";
 import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../testUtils/mockWebSocket";
 
@@ -17,6 +18,7 @@ describe("openSocketWithRelayFallback", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    resetConnectivityForTests();
   });
 
   test("connects directly when the device answers, without ever touching Family Command Center", async () => {
@@ -82,6 +84,23 @@ describe("openSocketWithRelayFallback", () => {
 
       const socket = await openPromise;
       expect(socket).toBe(publicSocket);
+      expect(isPublicRouteCurrentlyFailing()).toBe(false); // a real success, not just "never tried"
+    });
+
+    // 2026-10-05: before this, a failed public relay attempt was never recorded anywhere -- the
+    // app kept reporting "Reachable through the relay only" (deriveRemoteViewState.ts's
+    // fccReachable) straight through a real outage where the relay was actually down, because
+    // nothing ever told fccConnectivity.ts the most recent attempt had failed.
+    test("a failed public relay attempt is recorded so the app can tell 'away' apart from 'away, and the relay just failed'", async () => {
+      const openPromise = openSocketWithRelayFallback("wss://192.168.1.70:3001");
+      MockWebSocket.at(0).simulateError(); // direct
+      await flushMicrotasks();
+      MockWebSocket.at(1).simulateError(); // LAN relay
+      await flushMicrotasks();
+      MockWebSocket.at(2).simulateError(); // public relay also fails -- the real outage case
+
+      await expect(openPromise).rejects.toThrow();
+      expect(isPublicRouteCurrentlyFailing()).toBe(true);
     });
 
     test("no publicBaseUrl configured -- a failed LAN relay surfaces its own error normally, exactly as before this feature existed", async () => {
