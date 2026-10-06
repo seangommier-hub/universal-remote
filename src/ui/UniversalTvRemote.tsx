@@ -23,6 +23,7 @@ import { RemoteTabBar } from "./RemoteTabBar";
 import { SleepTimerModal } from "./SleepTimerModal";
 import { StreamingAppsRow } from "./StreamingAppsRow";
 import { theme } from "./theme";
+import { TouchpadModal } from "./TouchpadModal";
 import { useCallCommandCenterButton } from "./useCallCommandCenterButton";
 import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
@@ -109,6 +110,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const [reconnectError, setReconnectError] = useState("");
   // ADR-HEARTH-182: media_player browse_media, offered as one more utility-row button next to Source/Settings.
   const [browsing, setBrowsing] = useState(false);
+  // ADR-HEARTH-215: real pointer control (drag-to-move, tap-to-click), offered next to Touchpad's button in the utility row.
+  const [touchpadOpen, setTouchpadOpen] = useState(false);
   // Real gap found in review (2026-09-09): `send()` fired commandEngine.execute() without
   // awaiting it, so a failed command (device dropped mid-press, TV rejected the request) vanished
   // silently — CommandEngine.execute() never throws, it resolves a CommandResult either way, so
@@ -420,6 +423,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           onSend={send}
           onOpenSleepPicker={sleepTimer.openPicker}
           onOpenBrowse={() => setBrowsing(true)}
+          onOpenTouchpad={() => setTouchpadOpen(true)}
           commandCenterStatus={commandCenter.status}
           onCallCommandCenter={commandCenter.call}
         />
@@ -453,6 +457,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       />
 
       <MediaBrowseModal visible={browsing} device={device} commandEngine={commandEngine} onClose={() => setBrowsing(false)} />
+      <TouchpadModal visible={touchpadOpen} onSend={send} onClose={() => setTouchpadOpen(false)} />
     </View>
   );
 }

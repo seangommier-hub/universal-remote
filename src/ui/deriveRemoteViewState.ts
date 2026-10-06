@@ -64,7 +64,8 @@ export function deriveRemoteViewState(device: Device, state: DeviceState, connec
   // ADR-HEARTH-134: equal-width columns so the utility buttons spread evenly (one row up to 5 buttons, else 3 or 4 across, wrapping
   // to an even second row) instead of a ragged flex-wrap row of tiny chips.
   const utilityButtonCount =
-    ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia"].filter((capability) => has(device, capability as CapabilityId)).length +
+    ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia", "pointerMove"].filter((capability) => has(device, capability as CapabilityId))
+      .length +
     (hasNativeSleepTimer ? 1 : 0) +
     (canUniversalSleep ? 1 : 0) +
     1; // ADR-HEARTH-213: "Call Command Center" always renders, unlike every other item counted above
