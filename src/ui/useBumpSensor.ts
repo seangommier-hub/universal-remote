@@ -1,11 +1,15 @@
+import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import { AccelerometerModule, startBumpSubscription } from "../runtime/bumpSubscription";
+import { binaryHasMotionSensor } from "../runtime/motionSensorSupport";
 import { markSettingsVisitStage } from "../runtime/settingsVisitBreadcrumb";
 
-// A build made before expo-sensors was added has no native motion module, and importing it there
-// throws — so it is loaded lazily and any failure just means "no motion bump on this build"
-// (the on-screen Bump button still works). Returns whether motion detection is active.
+// A build made before expo-sensors was added has no native motion module. The try/catch below was
+// meant to make that harmless, but on the real 1.1.0 iPhone binary the app died the instant
+// Settings mounted (ADR-HEARTH-212), so a binary known to lack the module never looks it up at all.
+// Either way the on-screen Bump button still works. Returns whether motion detection is active.
 function loadAccelerometer(): AccelerometerModule | null {
+  if (!binaryHasMotionSensor(Updates.runtimeVersion)) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return (require("expo-sensors") as { Accelerometer: AccelerometerModule }).Accelerometer;
