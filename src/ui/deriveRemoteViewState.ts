@@ -66,7 +66,8 @@ export function deriveRemoteViewState(device: Device, state: DeviceState, connec
   const utilityButtonCount =
     ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia"].filter((capability) => has(device, capability as CapabilityId)).length +
     (hasNativeSleepTimer ? 1 : 0) +
-    (canUniversalSleep ? 1 : 0);
+    (canUniversalSleep ? 1 : 0) +
+    1; // ADR-HEARTH-213: "Call Command Center" always renders, unlike every other item counted above
   const utilityColumns = utilityButtonCount <= 5 ? Math.max(utilityButtonCount, 1) : utilityButtonCount === 6 ? 3 : 4;
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;

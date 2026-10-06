@@ -4,6 +4,7 @@ import { Device } from "../core/types/Device";
 import { has } from "./hasCapability";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { theme } from "./theme";
+import { CallCommandCenterStatus } from "./useCallCommandCenterButton";
 import { UtilityAction } from "./UtilityAction";
 
 interface UtilityActionsRowProps {
@@ -18,7 +19,19 @@ interface UtilityActionsRowProps {
   onSend: (capability: CapabilityId) => void;
   onOpenSleepPicker: () => void;
   onOpenBrowse: () => void;
+  /** ADR-HEARTH-213: always available, on every TV's remote screen, unlike every other button in
+   * this row -- not gated on the device's own capabilities, since this calls Family Command
+   * Center itself, not the TV. */
+  commandCenterStatus: CallCommandCenterStatus;
+  onCallCommandCenter: () => void;
 }
+
+const COMMAND_CENTER_DISPLAY: Record<CallCommandCenterStatus, { icon: "call-outline" | "checkmark-circle" | "close-circle"; label: string }> = {
+  idle: { icon: "call-outline", label: "Call Center" },
+  checking: { icon: "call-outline", label: "Calling…" },
+  reached: { icon: "checkmark-circle", label: "Reached" },
+  unreachable: { icon: "close-circle", label: "No Answer" },
+};
 
 // Sean's reference (2026-09-10): mute/back/home/menu read as one row of icon-over-caption
 // chips — a physical remote's secondary buttons, small and labeled below rather than
@@ -39,7 +52,10 @@ export function UtilityActionsRow({
   onSend,
   onOpenSleepPicker,
   onOpenBrowse,
+  commandCenterStatus,
+  onCallCommandCenter,
 }: UtilityActionsRowProps) {
+  const commandCenterDisplay = COMMAND_CENTER_DISPLAY[commandCenterStatus];
   return (
     <View style={[remoteCardStyles.card, styles.utilityCard]}>
       {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
@@ -88,6 +104,19 @@ export function UtilityActionsRow({
         {has(device, "browseMedia") && (
           <UtilityAction columns={columns} scale={scale} icon="folder-outline" label="Browse" onPress={onOpenBrowse} disabled={disabled} />
         )}
+        {/* ADR-HEARTH-213: unconditional -- every TV, regardless of capabilities, since this calls
+            Family Command Center itself, not the TV. Never disabled by `disabled` (controlsDisabled
+            reflects the TV's own connection, not FCC's) -- the whole point is to work when nothing
+            else on this screen does. */}
+        <UtilityAction
+          columns={columns}
+          scale={scale}
+          icon={commandCenterDisplay.icon}
+          label={commandCenterDisplay.label}
+          active={commandCenterStatus === "reached" || commandCenterStatus === "unreachable"}
+          onPress={onCallCommandCenter}
+          disabled={commandCenterStatus === "checking"}
+        />
       </View>
     </View>
   );
