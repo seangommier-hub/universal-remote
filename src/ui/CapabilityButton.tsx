@@ -24,6 +24,13 @@ interface CapabilityButtonProps {
   onPress: () => void;
   /** Optional press-and-hold action (ADR-HEARTH-139). A held press fires this instead of onPress. */
   onLongPress?: () => void;
+  /** ADR-HEARTH-211: optional press-in/press-out passthrough for a caller driving its own
+   * hold-to-repeat (useHoldRepeat.ts) -- e.g. the d-pad's directional buttons, where a held press
+   * should fire repeatedly, not once on release like onPress/onLongPress. Merged with the
+   * button's own always-on haptic (onPressIn), never replacing it. Omitted (the default) renders
+   * exactly as before these props existed. */
+  onPressIn?: () => void;
+  onPressOut?: () => void;
   variant?: "default" | "accent" | "ghost";
   disabled?: boolean;
   /** Optional leading icon (Ionicons glyph name). Purely decorative/additive — every existing call site with no icon renders exactly as before. */
@@ -60,6 +67,8 @@ export function CapabilityButton({
   label,
   onPress,
   onLongPress,
+  onPressIn,
+  onPressOut,
   variant = "default",
   disabled = false,
   icon,
@@ -91,7 +100,15 @@ export function CapabilityButton({
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={LONG_PRESS_DELAY_MS}
-      onPressIn={disabled ? undefined : fireHapticClick}
+      onPressIn={
+        disabled
+          ? undefined
+          : () => {
+              fireHapticClick();
+              onPressIn?.();
+            }
+      }
+      onPressOut={disabled ? undefined : onPressOut}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
