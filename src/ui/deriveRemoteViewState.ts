@@ -63,12 +63,13 @@ export function deriveRemoteViewState(device: Device, state: DeviceState, connec
   const canUniversalSleep = !hasNativeSleepTimer && (has(device, "power") || has(device, "powerOff"));
   // ADR-HEARTH-134: equal-width columns so the utility buttons spread evenly (one row up to 5 buttons, else 3 or 4 across, wrapping
   // to an even second row) instead of a ragged flex-wrap row of tiny chips.
+  // ADR-HEARTH-216: Command Center moved to its own full-width row below this grid, so it no
+  // longer counts toward the grid's own column layout (it did, briefly, under ADR-HEARTH-213).
   const utilityButtonCount =
     ["home", "menu", "mute", "back", "settings", "openSourceList", "browseMedia", "pointerMove"].filter((capability) => has(device, capability as CapabilityId))
       .length +
     (hasNativeSleepTimer ? 1 : 0) +
-    (canUniversalSleep ? 1 : 0) +
-    1; // ADR-HEARTH-213: "Call Command Center" always renders, unlike every other item counted above
+    (canUniversalSleep ? 1 : 0);
   const utilityColumns = utilityButtonCount <= 5 ? Math.max(utilityButtonCount, 1) : utilityButtonCount === 6 ? 3 : 4;
   const volume = typeof state.values.volume === "number" ? state.values.volume : undefined;
   const channel = typeof state.values.channel === "number" ? state.values.channel : undefined;

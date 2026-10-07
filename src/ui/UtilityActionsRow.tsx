@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
+import { CapabilityButton } from "./CapabilityButton";
 import { has } from "./hasCapability";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { theme } from "./theme";
@@ -31,7 +32,10 @@ interface UtilityActionsRowProps {
 }
 
 const COMMAND_CENTER_DISPLAY: Record<CallCommandCenterStatus, { icon: "call-outline" | "checkmark-circle" | "close-circle"; label: string }> = {
-  idle: { icon: "call-outline", label: "Call Center" },
+  // "Call Center" read as the unrelated customer-service kind (Sean, directly, 2026-10-07) -- this
+  // is a noun (the destination), matching every other button in this row (Home, Menu, Mute,
+  // Settings), not a verb phrase.
+  idle: { icon: "call-outline", label: "Command Center" },
   checking: { icon: "call-outline", label: "Calling…" },
   reached: { icon: "checkmark-circle", label: "Reached" },
   unreachable: { icon: "close-circle", label: "No Answer" },
@@ -115,20 +119,20 @@ export function UtilityActionsRow({
         {has(device, "pointerMove") && (
           <UtilityAction columns={columns} scale={scale} icon="hand-left-outline" label="Touchpad" onPress={onOpenTouchpad} disabled={disabled} />
         )}
-        {/* ADR-HEARTH-213: unconditional -- every TV, regardless of capabilities, since this calls
-            Family Command Center itself, not the TV. Never disabled by `disabled` (controlsDisabled
-            reflects the TV's own connection, not FCC's) -- the whole point is to work when nothing
-            else on this screen does. */}
-        <UtilityAction
-          columns={columns}
-          scale={scale}
-          icon={commandCenterDisplay.icon}
-          label={commandCenterDisplay.label}
-          active={commandCenterStatus === "reached" || commandCenterStatus === "unreachable"}
-          onPress={onCallCommandCenter}
-          disabled={commandCenterStatus === "checking"}
-        />
       </View>
+      {/* ADR-HEARTH-213/216: Sean, directly (2026-10-07) -- "make command center it's own button
+          full width below those buttons," out of the icon-chip grid above (unconditional, every
+          TV, regardless of capabilities, since this calls Family Command Center itself, not the
+          TV). Never disabled by `disabled` (controlsDisabled reflects the TV's own connection, not
+          FCC's) -- the whole point is to work when nothing else on this screen does. */}
+      <CapabilityButton
+        label={commandCenterDisplay.label}
+        icon={commandCenterDisplay.icon}
+        variant={commandCenterStatus === "reached" || commandCenterStatus === "unreachable" ? "accent" : "default"}
+        onPress={onCallCommandCenter}
+        disabled={commandCenterStatus === "checking"}
+        containerStyle={styles.commandCenterButton}
+      />
     </View>
   );
 }
@@ -147,4 +151,8 @@ const styles = StyleSheet.create({
   // current driver's capability set, but a future driver adding an 8th+ item degrades to a second
   // line instead of clipping off-card.
   utilityRow: { flexDirection: "row", flexWrap: "wrap", rowGap: theme.spacing.lg, alignItems: "flex-start", justifyContent: "center" },
+  // ADR-HEARTH-216: full width, its own row below the icon-chip grid -- a destination
+  // (Command Center) reads differently from this card's TV-control buttons, so it's styled as a
+  // normal pill button (icon + label inline) rather than another small icon-over-caption chip.
+  commandCenterButton: { width: "100%", marginTop: theme.spacing.lg },
 });
