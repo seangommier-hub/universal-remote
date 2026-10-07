@@ -28,7 +28,7 @@ export function UtilityAction({
   disabled: boolean;
   active?: boolean;
   scale: number;
-  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale), defaulting to 1 so
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale), defaulting to 1 so
    * a caller that hasn't adopted it (none currently; kept optional for the same reason `scale`
    * itself defaults safely elsewhere) renders exactly as before. Multiplied into this button's own
    * circle size as a genuine last resort, only once the hub and every card's own padding/gaps have

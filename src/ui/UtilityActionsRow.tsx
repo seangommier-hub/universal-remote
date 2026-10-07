@@ -11,7 +11,7 @@ import { UtilityAction } from "./UtilityAction";
 interface UtilityActionsRowProps {
   device: Device;
   scale: number;
-  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale) -- applied to this
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied to this
    * card's own padding/gap directly, and passed through to each UtilityAction below as a true
    * last resort (its own circle size only actually shrinks once the hub and every card's padding
    * have already hit fitScale.ts's own floor and the screen still doesn't fit). These buttons

@@ -14,7 +14,7 @@ interface InputSelectionCardProps {
   selectedInput: string | undefined;
   disabled: boolean;
   onSelect: (inputId: string) => void;
-  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale) -- applied to this
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied to this
    * card's own padding/grid gap, and as a last resort to each pill tile's own vertical padding
    * (never its text) once the hub and every card's padding have already hit fitScale.ts's floor
    * and the screen still doesn't fit. */

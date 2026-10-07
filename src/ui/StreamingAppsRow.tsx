@@ -7,7 +7,7 @@ import { theme } from "./theme";
 interface StreamingAppsRowProps {
   onLaunch: (service: StreamingService) => void;
   disabled: boolean;
-  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale) -- applied here only
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
    * to this card's own padding, never to a tile's own size (those stay readable/tappable, see
    * StreamingAppTile.tsx). */
   fitScale: number;

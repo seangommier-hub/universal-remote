@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
   // gap between them is one of a handful of places left to reclaim without shrinking a touch
   // target or undoing spacing just asked for elsewhere (the utility card's own padding).
   // ADR-HEARTH-135: padding lg->md so the whole remote fits an iPhone 17 without scrolling.
-  // ADR-HEARTH-216: vertical padding and gap moved to the ScrollView's own contentContainerStyle
+  // ADR-HEARTH-217: vertical padding and gap moved to the ScrollView's own contentContainerStyle
   // override above (paddingTop/paddingBottom/gap), scaled live by the fit-correction factor --
   // only horizontal padding is a fixed value here now, since the overflow this screen fights is
   // vertical, not horizontal (the width-fit arithmetic cited elsewhere on this screen already

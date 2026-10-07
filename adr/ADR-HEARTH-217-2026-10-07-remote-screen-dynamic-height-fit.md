@@ -1,4 +1,4 @@
-# ADR-HEARTH-216: The remote screen measures its own fit and shrinks to never scroll
+# ADR-HEARTH-217: The remote screen measures its own fit and shrinks to never scroll
 
 **Date:** 2026-10-07
 **Status:** Accepted, implemented

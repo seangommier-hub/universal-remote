@@ -14,7 +14,7 @@ interface DpadClusterProps {
   scale: number;
   scaledDpadSize: number;
   scaledSmDiameter: number;
-  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale) -- applied here only
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
    * to this card's own vertical padding/margin, never to a tap target (those are already covered
    * by `scale`, which the caller has combined with this same factor for the circles above). */
   fitScale: number;
