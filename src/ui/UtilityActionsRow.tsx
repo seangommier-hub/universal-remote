@@ -11,6 +11,15 @@ import { UtilityAction } from "./UtilityAction";
 interface UtilityActionsRowProps {
   device: Device;
   scale: number;
+  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale) -- applied to this
+   * card's own padding/gap directly, and passed through to each UtilityAction below as a true
+   * last resort (its own circle size only actually shrinks once the hub and every card's padding
+   * have already hit fitScale.ts's own floor and the screen still doesn't fit). These buttons
+   * ship today at `size="sm"` (52px, ADR-HEARTH-134) with real room above the 32px "xs" size
+   * ADR-HEARTH-121 already shipped on this exact row -- shrinking toward, not below, an already-
+   * shipped size on a genuinely tight device (e.g. iPhone SE's 667pt height) is a real, bounded
+   * tradeoff, not the "control nobody can tap" failure this feature's own task warned against. */
+  fitScale: number;
   columns: number;
   disabled: boolean;
   muted: boolean;
@@ -51,6 +60,7 @@ const COMMAND_CENTER_DISPLAY: Record<CallCommandCenterStatus, { icon: "call-outl
 export function UtilityActionsRow({
   device,
   scale,
+  fitScale,
   columns,
   disabled,
   muted,
@@ -66,15 +76,16 @@ export function UtilityActionsRow({
 }: UtilityActionsRowProps) {
   const commandCenterDisplay = COMMAND_CENTER_DISPLAY[commandCenterStatus];
   return (
-    <View style={[remoteCardStyles.card, styles.utilityCard]}>
+    <View style={[remoteCardStyles.card, styles.utilityCard, { paddingVertical: theme.spacing.md * fitScale }]}>
       {/* Real-device ask (2026-09-11): "the order should be Home, Menu, Mute, Back." */}
-      <View style={styles.utilityRow}>
-        {has(device, "home") && <UtilityAction columns={columns} scale={scale} icon="home-outline" label="Home" onPress={() => onSend("home")} disabled={disabled} />}
-        {has(device, "menu") && <UtilityAction columns={columns} scale={scale} icon="menu-outline" label="Menu" onPress={() => onSend("menu")} disabled={disabled} />}
+      <View style={[styles.utilityRow, { rowGap: theme.spacing.lg * fitScale }]}>
+        {has(device, "home") && <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="home-outline" label="Home" onPress={() => onSend("home")} disabled={disabled} />}
+        {has(device, "menu") && <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="menu-outline" label="Menu" onPress={() => onSend("menu")} disabled={disabled} />}
         {has(device, "mute") && (
           <UtilityAction
             columns={columns}
             scale={scale}
+            fitScale={fitScale}
             icon={muted ? "volume-mute" : "volume-medium-outline"}
             label={muted ? "Unmute" : "Mute"}
             active={muted}
@@ -82,18 +93,19 @@ export function UtilityActionsRow({
             disabled={disabled}
           />
         )}
-        {has(device, "back") && <UtilityAction columns={columns} scale={scale} icon="arrow-back-outline" label="Back" onPress={() => onSend("back")} disabled={disabled} />}
+        {has(device, "back") && <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="arrow-back-outline" label="Back" onPress={() => onSend("back")} disabled={disabled} />}
         {/* Real-hardware ask (2026-09-10): "settings and sleep timer should be next to
             eachother" — Samsung only; verified real KEY_TOOLS/KEY_SLEEP codes exist for this
             protocol specifically (see Capability.ts). LG/Roku don't declare these capabilities
             because their own public APIs genuinely have no equivalent — not omitted by
             oversight. */}
-        {has(device, "settings") && <UtilityAction columns={columns} scale={scale} icon="settings-outline" label="Settings" onPress={() => onSend("settings")} disabled={disabled} />}
-        {hasNativeSleepTimer && <UtilityAction columns={columns} scale={scale} icon="moon-outline" label="Sleep" onPress={() => onSend("sleepTimer")} disabled={disabled} />}
+        {has(device, "settings") && <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="settings-outline" label="Settings" onPress={() => onSend("settings")} disabled={disabled} />}
+        {hasNativeSleepTimer && <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="moon-outline" label="Sleep" onPress={() => onSend("sleepTimer")} disabled={disabled} />}
         {canUniversalSleep && (
           <UtilityAction
             columns={columns}
             scale={scale}
+            fitScale={fitScale}
             icon={sleepActive ? "moon" : "moon-outline"}
             label="Sleep"
             active={sleepActive}
@@ -107,17 +119,17 @@ export function UtilityActionsRow({
             different name (see ADR-HEARTH-027 and Capability.ts). The user drives the opened
             picker with the d-pad/select this driver already has. */}
         {has(device, "openSourceList") && (
-          <UtilityAction columns={columns} scale={scale} icon="tv-outline" label="Source" onPress={() => onSend("openSourceList")} disabled={disabled} />
+          <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="tv-outline" label="Source" onPress={() => onSend("openSourceList")} disabled={disabled} />
         )}
         {/* ADR-HEARTH-182: media_player browse_media — its own full-screen modal, opened here rather than folded into this row's send()s since browsing is a read, not a dispatched Command. */}
         {has(device, "browseMedia") && (
-          <UtilityAction columns={columns} scale={scale} icon="folder-outline" label="Browse" onPress={onOpenBrowse} disabled={disabled} />
+          <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="folder-outline" label="Browse" onPress={onOpenBrowse} disabled={disabled} />
         )}
         {/* ADR-HEARTH-215: real pointer control (drag-to-move, tap-to-click), for content that
             expects a mouse rather than the d-pad's focus-based navigation -- e.g. Family Command
             Center's own dashboard, shown in the LG's built-in browser. */}
         {has(device, "pointerMove") && (
-          <UtilityAction columns={columns} scale={scale} icon="hand-left-outline" label="Touchpad" onPress={onOpenTouchpad} disabled={disabled} />
+          <UtilityAction columns={columns} scale={scale} fitScale={fitScale} icon="hand-left-outline" label="Touchpad" onPress={onOpenTouchpad} disabled={disabled} />
         )}
       </View>
       {/* ADR-HEARTH-213/216: Sean, directly (2026-10-07) -- "make command center it's own button
@@ -131,7 +143,7 @@ export function UtilityActionsRow({
         variant={commandCenterStatus === "reached" || commandCenterStatus === "unreachable" ? "accent" : "default"}
         onPress={onCallCommandCenter}
         disabled={commandCenterStatus === "checking"}
-        containerStyle={styles.commandCenterButton}
+        containerStyle={[styles.commandCenterButton, { marginTop: theme.spacing.lg * fitScale }]}
       />
     </View>
   );

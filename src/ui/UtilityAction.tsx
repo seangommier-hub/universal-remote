@@ -19,6 +19,7 @@ export function UtilityAction({
   disabled,
   active,
   scale,
+  fitScale = 1,
   columns,
 }: {
   icon: IconName;
@@ -27,11 +28,33 @@ export function UtilityAction({
   disabled: boolean;
   active?: boolean;
   scale: number;
+  /** ADR-HEARTH-216: the live overflow-correction factor (useRemoteFitScale), defaulting to 1 so
+   * a caller that hasn't adopted it (none currently; kept optional for the same reason `scale`
+   * itself defaults safely elsewhere) renders exactly as before. Multiplied into this button's own
+   * circle size as a genuine last resort, only once the hub and every card's own padding/gaps have
+   * already shrunk as far as fitScale.ts's floor allows and the screen still doesn't fit (the real
+   * case this exists for: a short device, e.g. iPhone SE's 667pt height, combined with a
+   * capability-heavy device). ADR-HEARTH-134's 52px circle has real room above the 32px "xs" size
+   * ADR-HEARTH-121 already shipped and ADR-HEARTH-134 itself only reversed on taste, not legibility
+   * grounds -- shrinking toward, not below, that already-shipped size on a genuinely tight device
+   * is a real tradeoff this screen has shipped before, not a new one. */
+  fitScale?: number;
   columns: number;
 }) {
+  const effectiveScale = scale * fitScale;
   return (
     <View style={[styles.utilityAction, { width: `${100 / columns}%` }]}>
-      <CapabilityButton shape="circle" size="sm" scale={scale} icon={icon} label={label} variant={active ? "accent" : "default"} selected={active} onPress={onPress} disabled={disabled} />
+      <CapabilityButton
+        shape="circle"
+        size="sm"
+        scale={effectiveScale}
+        icon={icon}
+        label={label}
+        variant={active ? "accent" : "default"}
+        selected={active}
+        onPress={onPress}
+        disabled={disabled}
+      />
       {/* ADR-HEARTH-180: hidden from VoiceOver/TalkBack — this caption repeats the exact text the
           button above already carries as its own accessibilityLabel, so leaving it exposed would
           announce the same word twice for every utility action on this screen. */}
