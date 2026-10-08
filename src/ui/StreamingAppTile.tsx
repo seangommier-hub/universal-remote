@@ -23,7 +23,15 @@ import { theme } from "./theme";
 export const STREAMING_APPS: { service: StreamingService; label: string; bg: string; fg: string; fontScale?: number }[] = [
   { service: "netflix", label: "NETFLIX", bg: "#141414", fg: "#E50914" },
   { service: "hulu", label: "hulu", bg: "#1CE783", fg: "#0B0B0B", fontScale: 1.35 },
-  { service: "primeVideo", label: "prime video", bg: "#0F171E", fg: "#00A8E1" },
+  // fontScale 0.7 (visual sweep, 2026-10-06): "prime video" (11 characters, the longest of the
+  // four wordmarks) only fit this tile's ~60px text area through `adjustsFontSizeToFit` shrinking
+  // down to its own `minimumFontScale` floor of 0.7 below -- an iOS-only API (see this file's own
+  // "not centered" comment above) that never shrinks anything on web/Android, where it rendered as
+  // a bare, numberOfLines-truncated "prime vi...", the one visibly broken tile beside three full
+  // wordmarks. Declaring the same 0.7 scale as this tile's actual base size (same mechanism Hulu's
+  // 1.35 already uses) makes every platform render what iOS was already settling on, instead of
+  // only iOS.
+  { service: "primeVideo", label: "prime video", bg: "#0F171E", fg: "#00A8E1", fontScale: 0.7 },
   { service: "youtube", label: "YouTube", bg: "#141414", fg: "#FF0000" },
 ];
 

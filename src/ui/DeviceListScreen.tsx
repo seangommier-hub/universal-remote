@@ -416,7 +416,15 @@ const styles = StyleSheet.create({
   // brandMark + both fccButtons, pushing/overlapping those icons instead of wrapping (the
   // "settings gear overlapping other items" report, 2026-09-12).
   headerText: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  // flexWrap (visual sweep, 2026-10-06): with 3 fixed 44px header icon buttons + the 44px brandMark,
+  // headerText's own width drops to ~121px at a 393pt viewport (393 - 48 outer padding - 4*44 fixed
+  // squares - 4*12 header gaps). Without wrap, flexbox's default shrink-the-flexible-sibling-first
+  // behavior (title has flexShrink:1, ConnectivityBadge has flexShrink:0) squeezed "Hearth" itself
+  // down to an unreadable "H..." before the badge gave up any width -- adjustsFontSizeToFit (the
+  // intended rescue, ADR-HEARTH-208) is iOS-only and never fires on web/Android. Wrapping lets the
+  // badge drop to its own line under the title instead, the same pattern sectionLabelRow below
+  // already uses for its own large-text-size overflow.
+  titleRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: theme.spacing.sm },
   fccButton: {
     width: 44,
     height: 44,
