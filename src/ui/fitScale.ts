@@ -19,7 +19,15 @@
 // 0.85 * 0.7 = 0.595; 68px (circleDiameter.lg) * 0.595 ≈ 40px, still bigger than that accepted xs
 // tradeoff, not below it.
 export const FIT_SCALE_FLOOR = 0.5;
+/** Where every correction starts (and restarts): the width-derived size, untouched. */
 export const FIT_SCALE_CEILING = 1;
+/** ADR-HEARTH-219: how far the remote may GROW past its width-derived size to use spare height
+ * (iPhone Pro Max vs. Pro). A hard cap so a tablet or a very tall window never produces
+ * cartoonishly large controls -- the combined width*fit scale is also capped, see useRemoteFitScale. */
+export const FIT_SCALE_GROW_CEILING = 1.4;
+/** Spare height (beyond the safety margin) required before growing at all -- a dead band between
+ * "grow" and "shrink" so the two corrections can never chase each other. */
+export const FIT_GROW_THRESHOLD_PX = 24;
 
 // Matches the ui-verify harness's own PASS threshold (measureOverflow.mjs: "overflow <= 1 is
 // PASS") — there is no reason to keep correcting once the real check this is built to satisfy
@@ -54,11 +62,20 @@ export const FIT_SAFETY_MARGIN_PX = 16;
  * than trusting one estimate, and exactly why this never needs to overshoot past the floor in one
  * jump.
  */
-export function nextFitScale(currentFitScale: number, availableHeight: number, contentHeight: number): number {
+export function nextFitScale(currentFitScale: number, availableHeight: number, contentHeight: number, maxFitScale: number = FIT_SCALE_GROW_CEILING): number {
   if (availableHeight <= 0 || contentHeight <= 0) return currentFitScale; // not measured yet
   const target = Math.max(1, availableHeight - FIT_SAFETY_MARGIN_PX); // leave real headroom, not just enough to pass
   const overflow = contentHeight - target;
-  if (overflow <= FIT_TOLERANCE_PX) return currentFitScale; // already fits, with margin -- stop adjusting
-  const proportionalEstimate = currentFitScale * (target / contentHeight);
-  return Math.max(FIT_SCALE_FLOOR, Math.min(FIT_SCALE_CEILING, proportionalEstimate));
+  if (overflow > FIT_TOLERANCE_PX) {
+    const proportionalEstimate = currentFitScale * (target / contentHeight);
+    return Math.max(FIT_SCALE_FLOOR, Math.min(proportionalEstimate, currentFitScale));
+  }
+  // Fits. If there's real spare height (a Pro Max, a tablet), grow toward it. The same proportional
+  // estimate UNDERSHOOTS on growth too (the fixed, non-scaling part of the content means the true
+  // scale needed is larger than the proportional one), so growth approaches the fit from below and
+  // never overshoots into overflow -- and the dead band above keeps it from re-triggering a shrink.
+  const spare = target - contentHeight;
+  if (spare <= FIT_GROW_THRESHOLD_PX || currentFitScale >= maxFitScale) return currentFitScale;
+  const growthEstimate = currentFitScale * (target / contentHeight);
+  return Math.min(maxFitScale, Math.max(currentFitScale, growthEstimate));
 }

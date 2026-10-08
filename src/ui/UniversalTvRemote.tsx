@@ -137,7 +137,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // until it fits, converging to a stop rather than looping forever (fitScale.ts). Keyed by
   // device+tab so switching to a smaller tab (e.g. Keypad) or a different device starts fresh
   // instead of staying shrunk for content that never needed it.
-  const fit = useRemoteFitScale(`${device.id}:${activeTab}`);
+  const fit = useRemoteFitScale(`${device.id}:${activeTab}`, scale);
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
   // (the "196 = 196, arrows land tangent to the disc" math in DpadCluster.tsx's
   // own styles is derived from it) -- this is that same value scaled for the

@@ -10,13 +10,15 @@ import { measureInPage, verdictLine } from "./measureOverflow.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
 import { serveDirectory } from "./staticServer.mjs";
 
-const VIEWPORT = { width: 393, height: 852 };
+// UI_VERIFY_VIEWPORT=430x932 re-runs every scenario at another device size (iPhone Pro vs. Pro Max, SE, ...).
+const [VIEWPORT_WIDTH, VIEWPORT_HEIGHT] = (process.env.UI_VERIFY_VIEWPORT ?? "393x852").split("x").map(Number);
+const VIEWPORT = { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
 const DEVICE_SCALE_FACTOR = 3;
 const DEFAULT_SETTLE_MS = 1500;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
-const OUT_DIR = join(HERE, "out");
-const DIST_DIR = join(OUT_DIR, "web-dist");
+const OUT_DIR = join(HERE, "out", process.env.UI_VERIFY_VIEWPORT ?? "");
+const DIST_DIR = join(HERE, "out", "web-dist"); // shared across viewports so one build serves every UI_VERIFY_VIEWPORT run
 
 function buildWebExport() {
   rmSync(DIST_DIR, { recursive: true, force: true });
