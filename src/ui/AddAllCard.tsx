@@ -22,6 +22,7 @@ interface AddAllCardProps {
   onDismissRun: () => void;
   onStartStep: (item: StepItem) => void;
   onStartEdit: (device: Device) => void;
+  onPickRoom: (device: Device, room: string) => void;
   onDraftChange: (text: string) => void;
   onCommitEdit: () => void;
   onTestAll: () => void;
@@ -48,13 +49,14 @@ interface RunProgressProps {
   followup: BulkFollowupState;
   onDismiss: () => void;
   onStartEdit: (device: Device) => void;
+  onPickRoom: (device: Device, room: string) => void;
   onDraftChange: (text: string) => void;
   onCommitEdit: () => void;
   onTestAll: () => void;
   onFinishFollowup: () => void;
 }
 
-function RunProgress({ run, queuedSteps, followup, onDismiss, onStartEdit, onDraftChange, onCommitEdit, onTestAll, onFinishFollowup }: RunProgressProps) {
+function RunProgress({ run, queuedSteps, followup, onDismiss, onStartEdit, onPickRoom, onDraftChange, onCommitEdit, onTestAll, onFinishFollowup }: RunProgressProps) {
   const showSummaryCard = run.phase === "done" && followup.devices.length > 0;
   return (
     <View style={styles.stack}>
@@ -78,6 +80,7 @@ function RunProgress({ run, queuedSteps, followup, onDismiss, onStartEdit, onDra
         <BulkAddSummaryCard
           state={followup}
           onStartEdit={onStartEdit}
+          onPickRoom={onPickRoom}
           onDraftChange={onDraftChange}
           onCommitEdit={onCommitEdit}
           onTestAll={onTestAll}
@@ -111,7 +114,7 @@ function StepsChecklist({ steps, onStart }: { steps: StepItem[]; onStart: (item:
 }
 
 /** Top of the Discover list: one tap to add everything that needs no input, live progress while it runs, and a checklist for the devices that need a quick step (ADR-HEARTH-167). */
-export function AddAllCard({ plan, run, followup, onAddAll, onDismissRun, onStartStep, onStartEdit, onDraftChange, onCommitEdit, onTestAll, onFinishFollowup }: AddAllCardProps) {
+export function AddAllCard({ plan, run, followup, onAddAll, onDismissRun, onStartStep, onStartEdit, onPickRoom, onDraftChange, onCommitEdit, onTestAll, onFinishFollowup }: AddAllCardProps) {
   if (run.phase !== "idle") {
     return (
       <RunProgress
@@ -120,6 +123,7 @@ export function AddAllCard({ plan, run, followup, onAddAll, onDismissRun, onStar
         followup={followup}
         onDismiss={onDismissRun}
         onStartEdit={onStartEdit}
+        onPickRoom={onPickRoom}
         onDraftChange={onDraftChange}
         onCommitEdit={onCommitEdit}
         onTestAll={onTestAll}

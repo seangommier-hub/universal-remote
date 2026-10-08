@@ -9,3 +9,12 @@ export async function applyImportedRooms(roomsByDeviceId: Record<string, string>
   for (const [deviceId, room] of entries) layout = setDeviceRoom(layout, deviceId, room);
   await saveDeviceLayout(layout);
 }
+
+/** Like applyImportedRooms, but an empty name takes that device OUT of its room (the add screens' "no room" choice). */
+export async function applyRoomChoices(roomsByDeviceId: Record<string, string>): Promise<void> {
+  const entries = Object.entries(roomsByDeviceId);
+  if (entries.length === 0) return;
+  let layout = await loadDeviceLayout();
+  for (const [deviceId, room] of entries) layout = setDeviceRoom(layout, deviceId, room);
+  await saveDeviceLayout(layout);
+}

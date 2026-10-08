@@ -1,4 +1,8 @@
 import { useCallback, useState } from "react";
+import { cleanRoomName, roomChoices, ROOM_SUGGESTIONS } from "../core/layout/deviceLayout";
+import { loadDeviceLayout } from "../runtime/deviceLayoutPersistence";
+import { applyImportedRooms, applyRoomChoices } from "../runtime/haImportRooms";
+import { nextRoom, planInitialRooms } from "./bulkRooms";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
 import { Device } from "../core/types/Device";
@@ -14,6 +18,10 @@ export interface BulkFollowupState {
   draft: string;
   testing: boolean;
   results: Record<string, BatchWakeRowResult>;
+  /** ADR-HEARTH-224: the room picked per device id (pre-selected from each name); a missing id means no room. */
+  rooms: Record<string, string>;
+  /** Rooms offered as chips: rooms already in use plus the built-in suggestions. */
+  roomOptions: string[];
 }
 
 interface Options {
@@ -22,7 +30,7 @@ interface Options {
   onRenameDevice: (device: Device, newName: string) => Promise<Device>;
 }
 
-const CLOSED: BulkFollowupState = { devices: [], editingId: null, draft: "", testing: false, results: {} };
+const CLOSED: BulkFollowupState = { devices: [], editingId: null, draft: "", testing: false, results: {}, rooms: {}, roomOptions: [...ROOM_SUGGESTIONS] };
 
 /**
  * Drives the post-"Add all" summary card: inline rename per row and one combined wake test across
@@ -32,7 +40,29 @@ export function useBulkFollowup({ commandEngine, stateStore, onRenameDevice }: O
   const [state, setState] = useState<BulkFollowupState>(CLOSED);
 
   /** Opens the card for a freshly finished "Add all" run. */
-  const present = useCallback((added: Device[]) => setState({ ...CLOSED, devices: added }), []);
+  const present = useCallback((added: Device[]) => {
+    setState({ ...CLOSED, devices: added });
+    // Pre-select a room from each device's name and save those right away (one tap to change or clear),
+    // the way the single-device post-add screen does (ADR-HEARTH-221).
+    void loadDeviceLayout().then((layout) => {
+      const options = roomChoices(layout);
+      const planned = planInitialRooms(added, options);
+      setState((current) => (current.devices === added ? { ...current, roomOptions: options, rooms: planned } : current));
+      void applyImportedRooms(planned).catch(() => undefined);
+    });
+  }, []);
+
+  const pickRoom = useCallback(
+    (device: Device, picked: string) => {
+      const room = cleanRoomName(nextRoom(state.rooms[device.id], picked));
+      const rooms = { ...state.rooms };
+      if (room) rooms[device.id] = room;
+      else delete rooms[device.id];
+      setState((current) => ({ ...current, rooms }));
+      void applyRoomChoices({ [device.id]: room }).catch(() => undefined);
+    },
+    [state.rooms]
+  );
 
   const close = useCallback(() => setState(CLOSED), []);
 
@@ -64,5 +94,5 @@ export function useBulkFollowup({ commandEngine, stateStore, onRenameDevice }: O
     setState((current) => ({ ...current, testing: false }));
   }, [commandEngine, stateStore, state.devices, state.testing]);
 
-  return { state, present, close, startEditing, changeDraft, cancelEditing, commitEditing, testAll };
+  return { state, present, close, startEditing, changeDraft, cancelEditing, commitEditing, testAll, pickRoom };
 }
