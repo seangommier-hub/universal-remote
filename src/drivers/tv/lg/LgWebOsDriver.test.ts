@@ -203,6 +203,33 @@ describe("LgWebOsDriver", () => {
     await resultPromise;
   });
 
+  // ADR-HEARTH-220: the on-screen keyboard's Delete key.
+  test("textEntry with backspace calls ssap://com.webos.service.ime/deleteCharacters for one character", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { backspace: true } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(sent.uri).toBe("ssap://com.webos.service.ime/deleteCharacters");
+    expect(sent.payload).toEqual({ count: 1 });
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    await resultPromise;
+  });
+
+  test("a single typed character is sent as its own insertText", async () => {
+    await connectDriver(driver);
+    const socket = MockWebSocket.latest();
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { text: "q" } });
+    const sent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(sent.uri).toBe("ssap://com.webos.service.ime/insertText");
+    expect(sent.payload).toEqual({ text: "q", replace: 0 });
+    socket.simulateMessage({ type: "response", id: sent.id, payload: { returnValue: true } });
+
+    await resultPromise;
+  });
+
   test("textEntry rejects an empty string without sending anything", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();
