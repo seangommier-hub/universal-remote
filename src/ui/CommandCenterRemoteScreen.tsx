@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { logger } from "../core/logging/logger";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { shouldPreferPublicRoute } from "../core/network/fccConnectivity";
 import { buildPublicVncRelayUrl, buildVncRelayUrl } from "../discovery/familyCommandCenterVncRelay";
@@ -23,6 +24,10 @@ const TRACKPAD_SENSITIVITY = 2.2;
 // heuristic to tell a click from an intentional (if tiny) drag.
 const TAP_MOVEMENT_THRESHOLD = 8;
 const CLICK_RELEASE_DELAY_MS = 60;
+const LOG_SCOPE = "CommandCenterRemote";
+// How long a transient "that didn't send" notice stays up before clearing itself -- same pattern
+// as UniversalTvRemote.tsx's own commandError, long enough to read, short enough not to feel stuck.
+const ACTION_ERROR_DISPLAY_MS = 4000;
 
 type ConnectionStatus = "connecting" | "connected" | "error";
 
@@ -47,11 +52,35 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
   const [serverInfo, setServerInfo] = useState<RfbServerInfo | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [shift, setShift] = useState(false);
+  // Real ask (2026-10-08, Sean, directly): "phone touch pad shows the cursor but doesn't allow
+  // clicking" -- investigation proved the RFB click itself works end-to-end (a raw click over the
+  // same relay did navigate the live dashboard), so whatever's actually failing on a real phone was
+  // previously invisible: neither this screen nor RfbClient ever logged a send failure, and a dead
+  // connection left `status` stuck on "connected" with no sign anything was wrong. This surfaces it.
+  const [actionError, setActionError] = useState("");
+  const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clientRef = useRef<RfbClient | null>(null);
   const cursorRef = useRef({ x: 0, y: 0 });
   const lastTouchRef = useRef<{ x: number; y: number } | null>(null);
   const totalMovementRef = useRef(0);
+
+  function reportActionFailure(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(LOG_SCOPE, `${action} failed to send`, { message });
+    if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
+    // "Not connected" is RfbClient's own message for a socket that's already closed -- the
+    // connection is actually gone, not a one-off send glitch, so say that plainly instead of a
+    // vague "didn't send" that would just repeat on every subsequent tap.
+    if (message === "Not connected") {
+      clientRef.current = null;
+      setStatus("error");
+      setErrorMessage("Lost the connection to Family Command Center. Go back and reopen this screen.");
+      return;
+    }
+    setActionError(`Couldn't send ${action} — ${message}`);
+    actionErrorTimer.current = setTimeout(() => setActionError(""), ACTION_ERROR_DISPLAY_MS);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -121,32 +150,62 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
       cancelled = true;
       clientRef.current?.disconnect();
       clientRef.current = null;
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
     };
   }, []);
 
   function moveCursor(dx: number, dy: number) {
     const info = serverInfo;
     const client = clientRef.current;
-    if (!info || !client) return;
+    if (!info || !client) {
+      // Silent before this fix -- status says "connected" but there's nothing to actually send to.
+      if (!client) logger.warn(LOG_SCOPE, "moveCursor had no client -- status was stale");
+      return;
+    }
     const nextX = Math.max(0, Math.min(info.width - 1, cursorRef.current.x + dx));
     const nextY = Math.max(0, Math.min(info.height - 1, cursorRef.current.y + dy));
     cursorRef.current = { x: nextX, y: nextY };
-    client.sendPointerEvent(nextX, nextY, 0);
+    try {
+      client.sendPointerEvent(nextX, nextY, 0);
+    } catch (err) {
+      reportActionFailure("move", err);
+    }
   }
 
   function click(button: number) {
     const client = clientRef.current;
-    if (!client) return;
+    if (!client) {
+      logger.warn(LOG_SCOPE, "click had no client -- status was stale");
+      return;
+    }
     const { x, y } = cursorRef.current;
-    client.sendPointerEvent(x, y, button);
-    setTimeout(() => client.sendPointerEvent(x, y, 0), CLICK_RELEASE_DELAY_MS);
+    try {
+      client.sendPointerEvent(x, y, button);
+    } catch (err) {
+      reportActionFailure("click", err);
+      return;
+    }
+    setTimeout(() => {
+      try {
+        client.sendPointerEvent(x, y, 0);
+      } catch (err) {
+        reportActionFailure("click release", err);
+      }
+    }, CLICK_RELEASE_DELAY_MS);
   }
 
   function pressKey(keysym: number) {
     const client = clientRef.current;
-    if (!client) return;
-    client.sendKeyEvent(keysym, true);
-    client.sendKeyEvent(keysym, false);
+    if (!client) {
+      logger.warn(LOG_SCOPE, "pressKey had no client -- status was stale");
+      return;
+    }
+    try {
+      client.sendKeyEvent(keysym, true);
+      client.sendKeyEvent(keysym, false);
+    } catch (err) {
+      reportActionFailure("key", err);
+    }
   }
 
   function pressChar(char: string) {
@@ -237,6 +296,7 @@ export function CommandCenterRemoteScreen({ onBack }: CommandCenterRemoteScreenP
             accessibilityHint="Drag to move the cursor, tap to click. If you can't drag with VoiceOver on, open the keyboard below and use its arrow keys instead."
           >
             <Text style={styles.trackpadHint}>Drag to move • Tap to click</Text>
+            {actionError.length > 0 && <Text style={styles.actionErrorText}>{actionError}</Text>}
           </View>
 
           <View style={styles.clickRow}>
@@ -342,6 +402,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trackpadHint: { color: theme.textTertiary, fontSize: theme.type.label },
+  actionErrorText: { color: theme.statusError, fontSize: theme.type.caption, marginTop: theme.spacing.xs, textAlign: "center" },
   clickRow: { flexDirection: "row", gap: theme.spacing.md },
   clickButton: { flex: 1 },
   keyboard: { backgroundColor: theme.surface, borderRadius: theme.radius.lg, padding: theme.spacing.sm, gap: theme.spacing.xs },
