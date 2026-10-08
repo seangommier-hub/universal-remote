@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { NetworkFailureDiagnosis } from "../core/network/classifyNetworkFailure";
-import { discoverAll, NetworkDevice } from "../discovery/discoverAll";
+import { discoverAll, DiscoverAllResult, NetworkDevice } from "../discovery/discoverAll";
 import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
 import { ScanStatus } from "../discovery/discoverySections";
 import { shouldRescanOnForeground } from "../discovery/scanProgress";
+import { publishScan, trackScan } from "../discovery/scanSnapshot";
 
 export type NetworkScanStatus = ScanStatus;
 
+/** The one place a scan runs: counted as in flight, and its result shared when the Pi was reachable (ADR-HEARTH-222). */
+async function scanNetwork(): Promise<DiscoverAllResult> {
+  const result = await trackScan(discoverAll);
+  if (!result.failure) publishScan(result.devices);
+  return result;
+}
+
 /** A scan that does not touch any screen state — used to re-identify one device without blanking the list. */
 export async function scanNetworkQuietly(): Promise<NetworkDevice[]> {
-  return (await discoverAll()).devices;
+  return (await scanNetwork()).devices;
 }
 
 /** Scans the network on mount and on demand; keeps the last list, when it finished, and the classified failure when the Pi could not be reached. */
@@ -26,7 +34,7 @@ export function useNetworkDevices() {
   const rescan = useCallback(async (): Promise<NetworkDevice[]> => {
     setStatus("scanning");
     setScanStartedAt(Date.now());
-    const [result, config] = await Promise.all([discoverAll(), loadFamilyCommandCenterConfig().catch(() => null)]);
+    const [result, config] = await Promise.all([scanNetwork(), loadFamilyCommandCenterConfig().catch(() => null)]);
     if (mounted.current) {
       setDevices(result.devices);
       setFailure(result.failure);

@@ -31,6 +31,7 @@ import { SuggestedDevicesSection } from "./SuggestedDevicesSection";
 import { theme } from "./theme";
 import { useNameSuggestion } from "./useNameSuggestion";
 import { useNowSummary } from "./useNowSummary";
+import { NewDevicesBanner } from "./NewDevicesBanner";
 import { OfflineAlertBanner } from "./OfflineAlertBanner";
 import { TokenUpgradeBanner } from "./TokenUpgradeBanner";
 import { UpdateBanner } from "./UpdateBanner";
@@ -53,6 +54,9 @@ interface DeviceListScreenProps {
   /** A quick-add from the inline "Suggested from your network" section (ADR-HEARTH-092) — routed through the same handler as every other add path (App.tsx's handleDeviceAdded), so duplicate prevention and persistence work identically regardless of which screen the add started from. */
   onQuickAdd: (device: Device) => void;
   onDiscover: () => void;
+  /** ADR-HEARTH-222: recognized, addable devices the person has not been told about yet; the banner is hidden at 0. */
+  newDeviceCount: number;
+  onDismissNewDevices: () => void;
   /** Opens Family Command Center pairing (first-time) or its settings (already configured) — also where a "requires Family Command Center" row sends the user. */
   onConnectFamilyCommandCenter: () => void;
   /** Whether Family Command Center is already configured — see `onConnectFamilyCommandCenter`'s own comment for why this changes the header button's destination, icon, and label. */
@@ -112,6 +116,8 @@ export function DeviceListScreen({
   onOpenBrandScreen,
   onQuickAdd,
   onDiscover,
+  newDeviceCount,
+  onDismissNewDevices,
   onConnectFamilyCommandCenter,
   fccConfigured,
   onJoinWithCode,
@@ -246,6 +252,7 @@ export function DeviceListScreen({
       <OfflineAlertBanner devices={devices} stateStore={stateStore} driverRegistry={driverRegistry} commandEngine={commandEngine} fccConfigured={fccConfigured} onReconnect={onReconnect} />
       <TokenUpgradeBanner fccConfigured={fccConfigured} onJoinWithCode={onJoinWithCode} />
       {updateBanner && <UpdateBanner status={updateBanner.status} onApply={onApplyUpdate} onDismiss={onDismissUpdateBanner} />}
+      <NewDevicesBanner count={newDeviceCount} onReview={onDiscover} onDismiss={onDismissNewDevices} />
 
       {/* Real bug found live (2026-09-12): a horizontal FlatList's data-item cells rendered at a
           wildly oversized, distorted height (a ~300px-tall oval instead of a compact chip) while

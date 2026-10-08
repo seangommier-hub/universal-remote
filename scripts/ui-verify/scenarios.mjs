@@ -6,6 +6,8 @@ const ADD_ALL_MIDWAY_MS = 900;
 const ADD_ALL_FINISHED_MS = 3600;
 const SCROLL_STEP_PX = 700;
 const OFFLINE_SETTLE_MS = 4000;
+const NEW_DEVICES_SETTLE_MS = 3500;
+const NEW_DEVICES_PASSIVE_SETTLE_MS = 7500;
 const LONG_PRESS_MS = 800;
 
 // A real long press: hold the pointer over the row long enough for onLongPress to fire.
@@ -52,6 +54,22 @@ export const SCENARIOS = [
       await page.waitForTimeout(TAB_SETTLE_MS);
     },
   },
+  // ADR-HEARTH-222: the passive "N new devices found" notice -- a banner on the list and a count
+  // badge on the Devices tab. The demo network has unadded recognized devices, so it shows by default.
+  { name: "new-devices-banner", screen: "list", assertFit: false, settleMs: NEW_DEVICES_SETTLE_MS },
+  {
+    name: "new-devices-dismissed",
+    screen: "list",
+    assertFit: false,
+    settleMs: NEW_DEVICES_SETTLE_MS,
+    steps: async (page) => {
+      await page.getByLabel("Dismiss new devices notice").click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  // No list is mounted here, so the badge only appears if the indicator's own quiet scan ran
+  // (it waits PASSIVE_CHECK_DELAY_MS first) -- the part that matters while someone is elsewhere in the app.
+  { name: "new-devices-badge-on-remote", screen: "remote:roku", assertFit: false, settleMs: NEW_DEVICES_PASSIVE_SETTLE_MS },
   { name: "offline-banner-fcc", screen: "list", query: "&offline=fcc", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
   { name: "offline-banner-device", screen: "list", query: "&offline=device", assertFit: false, settleMs: OFFLINE_SETTLE_MS },
   {
