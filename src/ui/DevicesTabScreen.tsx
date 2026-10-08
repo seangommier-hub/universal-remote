@@ -35,6 +35,7 @@ import { HomeAssistantAssistScreen } from "./HomeAssistantAssistScreen";
 import { EditDeviceAddressScreen } from "./EditDeviceAddressScreen";
 import { RenameDeviceScreen } from "./RenameDeviceScreen";
 import { ActivityEditorScreen } from "./ActivityEditorScreen";
+import { applyImportedRooms } from "../runtime/haImportRooms";
 import { PostAddResult, PostAddScreen } from "./PostAddScreen";
 import type { useActivities } from "./useActivities";
 import { isShared } from "../runtime/sharedDevices";
@@ -181,6 +182,8 @@ export function DevicesTabScreen({
         current = { ...current, shared: result.shared };
         onDeviceUpdatedInPlace(current);
       }
+      // ADR-HEARTH-221: the room picked on the post-add screen goes into this phone's layout store.
+      await applyImportedRooms({ [current.id]: result.room }).catch(() => undefined);
     }
     setScreen(mode === "post-add" ? { name: "remote", device: current } : { name: "list" });
   }
