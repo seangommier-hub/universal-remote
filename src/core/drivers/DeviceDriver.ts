@@ -32,6 +32,9 @@ export interface DeviceDriver {
   /** Optional cheap proof that this device's existing connection still works right now (ADR-HEARTH-138). Drivers holding a persistent socket implement it so a return to the app does not tear down a healthy connection. Omitted means "unknown, just reconnect". */
   isConnectionAlive?(device: Device): Promise<boolean>;
 
+  /** Optional (ADR-HEARTH-223): forgets the device's saved pairing credential and registers again from scratch, so the device shows its own approval prompt. Resolves once approved, with the new credential stored in `device.config`; on failure the old credential is put back and the error is thrown. Only ever called from an explicit user action, never from a retry loop. A driver that sets `needsRePair` in its state (see needsRePair.ts) must implement it. */
+  rePair?(device: Device): Promise<void>;
+
   connect(device: Device): Promise<void>;
   disconnect(device: Device): Promise<void>;
 

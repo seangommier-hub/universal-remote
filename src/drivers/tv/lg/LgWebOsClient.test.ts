@@ -1,4 +1,5 @@
 import { LgWebOsClient } from "./LgWebOsClient";
+import { SavedPairingRejectedError } from "../../shared/savedPairingRejected";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
 
@@ -366,6 +367,72 @@ describe("LgWebOsClient", () => {
       jest.advanceTimersByTime(30000);
 
       await expect(connectPromise).rejects.toThrow(/isn't recognizing a previous pairing anymore/);
+    });
+  });
+
+  // ADR-HEARTH-223: only a TV that answers the saved client-key with a fresh approval prompt has
+  // positively refused it; silence is indistinguishable from a TV that is off or asleep.
+  describe("a refused saved client-key (ADR-HEARTH-223)", () => {
+    const PROMPT_REPLY = { type: "response", id: "1", payload: { pairingType: "PROMPT", returnValue: true } };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test("a saved client-key answered with an approval prompt that nobody accepts is reported as a refused saved pairing", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70", clientKey: "stale-key" });
+      const connectPromise = client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateOpen();
+      await flushMicrotasks();
+      socket.simulateMessage(PROMPT_REPLY);
+
+      jest.advanceTimersByTime(30000);
+
+      await expect(connectPromise).rejects.toBeInstanceOf(SavedPairingRejectedError);
+      await expect(connectPromise).rejects.toThrow(/isn't recognizing a previous pairing anymore/);
+    });
+
+    test("a saved client-key and complete silence from the TV is NOT reported as refused (it may simply be off or asleep)", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70", clientKey: "stale-key" });
+      const connectPromise = client.connect();
+      MockWebSocket.latest().simulateOpen();
+      await flushMicrotasks();
+
+      jest.advanceTimersByTime(30000);
+
+      const failure = await connectPromise.catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(SavedPairingRejectedError);
+    });
+
+    test("a first-time pairing that nobody accepts is never reported as a refused saved pairing", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+      const connectPromise = client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateOpen();
+      await flushMicrotasks();
+      socket.simulateMessage(PROMPT_REPLY);
+
+      jest.advanceTimersByTime(30000);
+
+      const failure = await connectPromise.catch((error: unknown) => error);
+      expect(failure).not.toBeInstanceOf(SavedPairingRejectedError);
+    });
+
+    test("a saved client-key the TV accepts connects without ever being flagged", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70", clientKey: "good-key" });
+      const connectPromise = client.connect();
+      const socket = MockWebSocket.latest();
+      socket.simulateOpen();
+      await flushMicrotasks();
+      socket.simulateMessage({ type: "registered", id: "1", payload: { "client-key": "good-key" } });
+
+      await expect(connectPromise).resolves.toBe("good-key");
     });
   });
 });

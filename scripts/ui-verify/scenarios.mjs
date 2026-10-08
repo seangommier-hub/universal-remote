@@ -7,6 +7,8 @@ const ADD_ALL_FINISHED_MS = 3600;
 const SCROLL_STEP_PX = 700;
 const OFFLINE_SETTLE_MS = 4000;
 const LONG_PRESS_MS = 800;
+const REPAIR_STEP_TIMEOUT_MS = 6000;
+const REPAIR_ROW_SCROLL_PX = 480;
 
 // A real long press: hold the pointer over the row long enough for onLongPress to fire.
 async function longPress(page, label) {
@@ -383,6 +385,41 @@ export const SCENARIOS = [
     },
   },
   { name: "remote-samsung", screen: "remote:samsung", assertFit: true },
+  // ADR-HEARTH-223: the demo LG TV refuses its saved pairing (?repair=...), so the remote shows the
+  // re-pair card in place of the reconnect card. All four views must still fit without scrolling.
+  { name: "remote-lg-repair-offer", screen: "remote:lg", query: "&repair=rejected", assertFit: true },
+  {
+    name: "remote-lg-repair-waiting",
+    screen: "remote:lg",
+    query: "&repair=rejected",
+    assertFit: true,
+    steps: async (page) => {
+      await page.getByText("Re-pair this TV", { exact: true }).click();
+      await page.waitForTimeout(TAB_SETTLE_MS);
+    },
+  },
+  {
+    name: "remote-lg-repair-failed",
+    screen: "remote:lg",
+    query: "&repair=rejected-fails",
+    assertFit: true,
+    steps: async (page) => {
+      await page.getByText("Re-pair this TV", { exact: true }).click();
+      await page.getByText("Try again", { exact: true }).waitFor({ timeout: REPAIR_STEP_TIMEOUT_MS });
+    },
+  },
+  {
+    name: "remote-lg-repair-connected",
+    screen: "remote:lg",
+    query: "&repair=rejected-ok",
+    assertFit: true,
+    steps: async (page) => {
+      await page.getByText("Re-pair this TV", { exact: true }).click();
+      await page.getByText("Connected!", { exact: true }).waitFor({ timeout: REPAIR_STEP_TIMEOUT_MS });
+    },
+  },
+  { name: "devices-home-repair-needed", screen: "list", query: "&repair=rejected", assertFit: false, steps: async (page) => scrollList(page, REPAIR_ROW_SCROLL_PX) },
+  { name: "offline-banner-repair", screen: "list", query: "&repair=rejected", assertFit: false },
   { name: "remote-roku-offline", screen: "remote:roku", assertFit: false },
   { name: "discover", screen: "discover", assertFit: false, settleMs: 2500 },
   {

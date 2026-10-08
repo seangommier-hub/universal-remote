@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceOutageTracker } from "../core/network/deviceOutageTracker";
 import { getFccOutageMs, subscribeFccOutage } from "../core/network/fccOutage";
+import { stateNeedsRePair } from "../core/state/needsRePair";
 import type { StateStore } from "../core/state/StateStore";
 import type { Device } from "../core/types/Device";
 import { demoOfflineParam, offlineClock, startDemoOutage } from "../demo/demoOffline";
@@ -88,10 +89,12 @@ export function useOfflineAlert({ devices, stateStore, fccConfigured }: UseOffli
     const deviceNames = new Map(devices.map((device) => [device.id, device.name]));
     const keys = new Set<string>(outages.map((outage) => `device:${outage.deviceId}`));
     if (fccConfigured && fccOutageMs !== null) keys.add(FCC_ALERT_KEY);
-    const chosen = chooseOfflineAlert({ fccOutageMs, fccConfigured, outages, deviceNames, dismissed });
+    const rePairDeviceIds = new Set(devices.filter((device) => stateNeedsRePair(stateStore.get(device.id))).map((device) => device.id));
+    rePairDeviceIds.forEach((deviceId) => keys.add(`device:${deviceId}`));
+    const chosen = chooseOfflineAlert({ fccOutageMs, fccConfigured, outages, deviceNames, dismissed, rePairDeviceIds });
     return { candidate: chosen, activeKeys: keys };
     // tickCount re-runs this on a timer and on every state or outage change.
-  }, [tickCount, tracker, devices, fccConfigured, dismissed]);
+  }, [tickCount, tracker, devices, stateStore, fccConfigured, dismissed]);
 
   useEffect(() => {
     if (Array.from(dismissed).some((key) => !activeKeys.has(key))) {

@@ -12,6 +12,7 @@
 
 import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 import { logger } from "../../../core/logging/logger";
+import { SavedPairingRejectedError } from "../../shared/savedPairingRejected";
 
 const LOG_SCOPE = "LgWebOsClient";
 // Tested against a real LG on 2026-09-26: a TV that already knows this app's client-key registers with
@@ -143,8 +144,12 @@ const { signed: _signedBlock, signatures: _signatureBlock, ...unsignedManifestBo
 /* The same manifest without the signed certificate parts, for firmware that rejects the old one. */
 const UNSIGNED_PAIRING_MANIFEST = { forcePairing: PAIRING_MANIFEST.forcePairing, pairingType: PAIRING_MANIFEST.pairingType, manifest: unsignedManifestBody };
 
+const PAIRING_PROMPT_TYPE = "PROMPT";
+
 interface PendingEntry {
   isRegister?: boolean;
+  /** Called when the TV answers a register request with its "an approval prompt is showing" reply (no client-key yet). */
+  onPrompt?: () => void;
   // Real-hardware research (2026-09-12, ADR-HEARTH-051): a subscription entry, unlike a normal
   // one-shot request, must keep receiving pushes for the lifetime of the subscription rather than
   // resolving once and being deleted — see handleMessage's isSubscription branch and subscribe()
@@ -231,6 +236,10 @@ export class LgWebOsClient {
     const registerId = String(this.nextId++);
 
     return new Promise<string | undefined>((resolve, reject) => {
+      // ADR-HEARTH-223: the TV answering a register request with its approval-prompt reply means it is
+      // asking for a fresh approval. Seen after a saved client-key was sent, that is the TV positively
+      // refusing the saved pairing -- as opposed to saying nothing at all (TV off, asleep, unreachable).
+      let promptShown = false;
       const timeout = setTimeout(() => {
         this.pending.delete(registerId);
         socket.close();
@@ -244,11 +253,14 @@ export class LgWebOsClient {
         const message = this.config.clientKey
           ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
           : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
-        reject(new Error(message));
+        reject(this.config.clientKey && promptShown ? new SavedPairingRejectedError(message) : new Error(message));
       }, LG_PAIRING_TIMEOUT_MS);
 
       this.pending.set(registerId, {
         isRegister: true,
+        onPrompt: () => {
+          promptShown = true;
+        },
         resolve: (payload) => {
           clearTimeout(timeout);
           this.socket = socket;
@@ -439,6 +451,7 @@ export class LgWebOsClient {
         entry.resolve(message.payload ?? {});
       }
       // Otherwise this is the intermediate "prompt is showing" response — keep waiting.
+      if (message.payload?.pairingType === PAIRING_PROMPT_TYPE) entry.onPrompt?.();
       return;
     }
 

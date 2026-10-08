@@ -1243,3 +1243,148 @@ describe("LgWebOsDriver reconnect burst after Wake-on-LAN", () => {
     expect((await driver.getState(offDevice)).connection).toBe("disconnected");
   });
 });
+
+// ADR-HEARTH-223: a TV that positively refuses its saved client-key is flagged, and rePair() registers it again from scratch.
+describe("LgWebOsDriver re-pair", () => {
+  const PAIRING_TIMEOUT_MS = 30000;
+  const FIRST_BACKOFF_MS = 2000;
+  const PROMPT_REPLY_PAYLOAD = { pairingType: "PROMPT", returnValue: true };
+  let driver: LgWebOsDriver;
+  let pairedDevice: Device;
+
+  function lastRequest(socket: MockWebSocket): { id: string } {
+    return JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+  }
+
+  /** Opens the socket and returns the register message the driver sent on it. */
+  async function openAndReadRegister(socket: MockWebSocket): Promise<{ id: string; payload: Record<string, unknown> }> {
+    socket.simulateOpen();
+    await flushMicrotasks();
+    return JSON.parse(socket.sentMessages[0]);
+  }
+
+  /** Accepts the pairing with `clientKey` and answers the three reads connect() makes straight afterwards. */
+  async function approveAndFinishConnect(socket: MockWebSocket, registerId: string, clientKey: string): Promise<void> {
+    socket.simulateMessage({ type: "registered", id: registerId, payload: { "client-key": clientKey } });
+    const replies = [{ returnValue: true, volume: 15, mute: false }, { returnValue: true, devices: [] }, { returnValue: true, launchPoints: [] }];
+    for (const payload of replies) {
+      await flushMicrotasks();
+      socket.simulateMessage({ type: "response", id: lastRequest(socket).id, payload });
+    }
+    await flushMicrotasks();
+  }
+
+  /** Fails the register on `socket` the way a TV does that shows a prompt nobody answers. */
+  async function leavePromptUnanswered(socket: MockWebSocket): Promise<void> {
+    const register = await openAndReadRegister(socket);
+    socket.simulateMessage({ type: "response", id: register.id, payload: PROMPT_REPLY_PAYLOAD });
+    await jest.advanceTimersByTimeAsync(PAIRING_TIMEOUT_MS);
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    installMockWebSocket();
+    global.fetch = jest.fn();
+    mockLoadConfig.mockReset();
+    driver = new LgWebOsDriver();
+    pairedDevice = { ...device, config: { ipAddress: "192.168.1.70", hwaddr: "AA:BB:CC:DD:EE:FF", clientKey: "stale-key" } };
+  });
+
+  afterEach(async () => {
+    await driver.disconnect(pairedDevice);
+    jest.useRealTimers();
+  });
+
+  test("a saved client-key answered with an unanswered approval prompt flags the device as needing a re-pair", async () => {
+    const attempt = driver.connect(pairedDevice).catch((error: unknown) => error);
+
+    await leavePromptUnanswered(MockWebSocket.latest());
+
+    expect(await attempt).toBeInstanceOf(Error);
+    const state = await driver.getState(pairedDevice);
+    expect(state.connection).toBe("disconnected");
+    expect(state.values.needsRePair).toBe(true);
+  });
+
+  test("a saved client-key with no reply at all does not flag the device (a TV that is off looks exactly like this)", async () => {
+    const attempt = driver.connect(pairedDevice).catch((error: unknown) => error);
+    MockWebSocket.latest().simulateOpen();
+    await jest.advanceTimersByTimeAsync(PAIRING_TIMEOUT_MS);
+
+    await attempt;
+
+    expect((await driver.getState(pairedDevice)).values.needsRePair).toBeUndefined();
+  });
+
+  test("rePair() registers with the identical pairing manifest and no client-key, so the TV sees the same app asking again", async () => {
+    driver.connect(pairedDevice).catch(() => undefined);
+    const normalRegister = await openAndReadRegister(MockWebSocket.latest());
+    expect(normalRegister.payload["client-key"]).toBe("stale-key");
+
+    driver.rePair(pairedDevice).catch(() => undefined);
+    await flushMicrotasks(10);
+    const freshRegister = await openAndReadRegister(MockWebSocket.latest());
+
+    const { "client-key": _savedKey, ...normalWithoutKey } = normalRegister.payload;
+    expect(freshRegister.payload["client-key"]).toBeUndefined();
+    expect(freshRegister.payload).toEqual(normalWithoutKey);
+  });
+
+  test("rePair() abandons a connect that is still waiting with the old key instead of joining it", async () => {
+    driver.connect(pairedDevice).catch(() => undefined);
+    await openAndReadRegister(MockWebSocket.latest());
+    const socketsBefore = MockWebSocket.instances.length;
+
+    driver.rePair(pairedDevice).catch(() => undefined);
+    await flushMicrotasks(10);
+
+    expect(MockWebSocket.instances.length).toBe(socketsBefore + 1);
+  });
+
+  test("an approved re-pair keeps the device's identity and other settings and stores only the new client-key", async () => {
+    const rePairing = driver.rePair(pairedDevice);
+    await flushMicrotasks(10);
+    const socket = MockWebSocket.latest();
+    const register = await openAndReadRegister(socket);
+
+    await approveAndFinishConnect(socket, register.id, "fresh-key");
+    await rePairing;
+
+    expect(pairedDevice.id).toBe("lg-1");
+    expect(pairedDevice.name).toBe("Bedroom LG");
+    expect(pairedDevice.config).toEqual({ ipAddress: "192.168.1.70", hwaddr: "AA:BB:CC:DD:EE:FF", clientKey: "fresh-key" });
+    const state = await driver.getState(pairedDevice);
+    expect(state.connection).toBe("connected");
+    expect(state.values.needsRePair).toBeUndefined();
+  });
+
+  test("a re-pair nobody approves leaves the old client-key in place and says so plainly", async () => {
+    const rePairing = driver.rePair(pairedDevice).catch((error: unknown) => error);
+    await flushMicrotasks(10);
+
+    await leavePromptUnanswered(MockWebSocket.latest());
+
+    const failure = await rePairing;
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toMatch(/Timed out waiting for pairing approval/);
+    expect(pairedDevice.config?.clientKey).toBe("stale-key");
+  });
+
+  test("after a failed re-pair the normal background retry carries on using the old client-key", async () => {
+    const rePairing = driver.rePair(pairedDevice).catch(() => undefined);
+    await flushMicrotasks(10);
+    await leavePromptUnanswered(MockWebSocket.latest());
+    await rePairing;
+    const socketsBefore = MockWebSocket.instances.length;
+
+    await jest.advanceTimersByTimeAsync(FIRST_BACKOFF_MS + 1);
+    expect(MockWebSocket.instances.length).toBe(socketsBefore + 1);
+    const retryRegister = await openAndReadRegister(MockWebSocket.latest());
+
+    expect(retryRegister.payload["client-key"]).toBe("stale-key");
+  });
+
+  test("the driver offers a re-pair, so the app can show the action for it", () => {
+    expect(typeof driver.rePair).toBe("function");
+  });
+});

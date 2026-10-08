@@ -29,6 +29,8 @@ export interface DemoDeviceScript {
   connectDelayMs?: number;
   /** The connection state a reachable device settles in; "connected" when absent (an unavailable Home Assistant entity uses "disconnected"). */
   connection?: ConnectionState;
+  /** ADR-HEARTH-223: connect() fails the way a TV does that refused its saved pairing, until a demo re-pair succeeds. */
+  rejectedPairing?: boolean;
   values: Record<string, unknown>;
 }
 
