@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Device } from "../core/types/Device";
 import { BatchWakeRowResult, canBatchWakeTest } from "./batchWakeTest";
 import { CapabilityButton } from "./CapabilityButton";
@@ -12,6 +12,8 @@ const MIN_TARGET = 44;
 interface BulkAddSummaryCardProps {
   state: BulkFollowupState;
   onStartEdit: (device: Device) => void;
+  /** ADR-HEARTH-224: picks (or, on the selected one, clears) a room for one added device. */
+  onPickRoom: (device: Device, room: string) => void;
   onDraftChange: (text: string) => void;
   onCommitEdit: () => void;
   onTestAll: () => void;
@@ -65,14 +67,14 @@ function DeviceNameField({ device, editing, draft, onStartEdit, onDraftChange, o
  * names editable in place, and one combined wake test across the whole batch instead of sending
  * every device through its own post-add screen (ADR-HEARTH-167's known gap).
  */
-export function BulkAddSummaryCard({ state, onStartEdit, onDraftChange, onCommitEdit, onTestAll, onSkip }: BulkAddSummaryCardProps) {
+export function BulkAddSummaryCard({ state, onStartEdit, onPickRoom, onDraftChange, onCommitEdit, onTestAll, onSkip }: BulkAddSummaryCardProps) {
   const testableCount = state.devices.filter(canBatchWakeTest).length;
   const canTestAll = testableCount > 0 && !state.testing;
 
   return (
     <View style={styles.card} accessibilityLiveRegion="polite">
       <Text style={styles.title}>{devicesHeadline(state.devices.length)}</Text>
-      <Text style={styles.hint}>Tap a name to fix it, or test that they all turn on from off.</Text>
+      <Text style={styles.hint}>Tap a name to fix it, pick each one's room, or test that they all turn on from off.</Text>
       {state.devices.map((device) => (
         <View key={device.id} style={styles.row}>
           <View style={styles.flex}>
@@ -84,6 +86,23 @@ export function BulkAddSummaryCard({ state, onStartEdit, onDraftChange, onCommit
               onDraftChange={onDraftChange}
               onCommitEdit={onCommitEdit}
             />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roomChips} accessibilityLabel={`Room for ${device.name}`}>
+              {state.roomOptions.map((option) => {
+                const selected = (state.rooms[device.id] ?? "").toLowerCase() === option.toLowerCase();
+                return (
+                  <Pressable
+                    key={option}
+                    style={[styles.roomChip, selected && styles.roomChipActive]}
+                    onPress={() => onPickRoom(device, option)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${option}${selected ? ", selected" : ""}`}
+                  >
+                    <Text style={styles.roomChipLabel}>{option}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
             {state.results[device.id]?.message && <Text style={styles.resultMessage}>{state.results[device.id]?.message}</Text>}
           </View>
           <ResultIcon result={state.results[device.id]} />
@@ -106,6 +125,10 @@ const styles = StyleSheet.create({
   nameButton: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minHeight: MIN_TARGET },
   rowTitle: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600", flexShrink: 1 },
   nameInput: { color: theme.textPrimary, fontSize: theme.type.body, fontWeight: "600", minHeight: MIN_TARGET, borderBottomWidth: 1, borderBottomColor: theme.accentEnd },
+  roomChips: { gap: theme.spacing.xs, paddingBottom: theme.spacing.xs },
+  roomChip: { backgroundColor: theme.surfaceRaised, borderRadius: theme.radius.full, borderWidth: 1, borderColor: theme.border, minHeight: 32, justifyContent: "center", paddingHorizontal: theme.spacing.md },
+  roomChipActive: { borderColor: theme.accentEnd, backgroundColor: theme.accentSoft },
+  roomChipLabel: { color: theme.textPrimary, fontSize: theme.type.caption, fontWeight: "600" },
   resultMessage: { color: theme.textSecondary, fontSize: theme.type.label },
   buttonRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.md, justifyContent: "center", marginTop: theme.spacing.sm },
 });

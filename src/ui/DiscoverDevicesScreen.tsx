@@ -139,6 +139,7 @@ export function DiscoverDevicesScreen({ driverRegistry, stateStore, commandEngin
           onDismissRun={addAll.dismiss}
           onStartStep={startStep}
           onStartEdit={followup.startEditing}
+          onPickRoom={followup.pickRoom}
           onDraftChange={followup.changeDraft}
           onCommitEdit={() => void followup.commitEditing()}
           onTestAll={() => void followup.testAll()}
