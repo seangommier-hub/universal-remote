@@ -14,6 +14,10 @@ interface DpadClusterProps {
   scale: number;
   scaledDpadSize: number;
   scaledSmDiameter: number;
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
+   * to this card's own vertical padding/margin, never to a tap target (those are already covered
+   * by `scale`, which the caller has combined with this same factor for the circles above). */
+  fitScale: number;
   disabled: boolean;
   playbackState: unknown;
   seekMultiplier: number | null;
@@ -38,6 +42,7 @@ export function DpadCluster({
   scale,
   scaledDpadSize,
   scaledSmDiameter,
+  fitScale,
   disabled,
   playbackState,
   seekMultiplier,
@@ -66,7 +71,7 @@ export function DpadCluster({
     () => onSeekDirection("right")
   );
   return (
-    <View style={styles.hubCard}>
+    <View style={[styles.hubCard, { paddingVertical: theme.spacing.sm * fitScale }]}>
       {/* ADR-HEARTH-204: a fast same-direction d-pad left/right tap streak — purely an honest
           label for Hearth's own tap cadence, never a claim about what the TV/app itself is
           doing with it. position:"absolute" so it never adds height even while shown. */}
@@ -223,7 +228,7 @@ export function DpadCluster({
           applies to any other driver (e.g. Apple TV, Sonos) that declares "playPause" as its
           own separate capability. */}
       {has(device, "playPause") && (
-        <View style={styles.playPauseRow}>
+        <View style={[styles.playPauseRow, { marginTop: theme.spacing.sm * fitScale }]}>
           <CapabilityButton
             shape="circle"
             scale={scale}

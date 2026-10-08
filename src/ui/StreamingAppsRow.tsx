@@ -2,6 +2,16 @@ import { StyleSheet, View } from "react-native";
 import { StreamingService } from "../core/types/Capability";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { STREAMING_APPS, StreamingAppTile } from "./StreamingAppTile";
+import { theme } from "./theme";
+
+interface StreamingAppsRowProps {
+  onLaunch: (service: StreamingService) => void;
+  disabled: boolean;
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
+   * to this card's own padding, never to a tile's own size (those stay readable/tappable, see
+   * StreamingAppTile.tsx). */
+  fitScale: number;
+}
 
 /**
  * Real-hardware research (2026-09-10): Roku (POST /launch/<channel id>) and LG
@@ -9,9 +19,9 @@ import { STREAMING_APPS, StreamingAppTile } from "./StreamingAppTile";
  * Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
  * because neither has a confirmed equivalent, not because this row forgot them.
  */
-export function StreamingAppsRow({ onLaunch, disabled }: { onLaunch: (service: StreamingService) => void; disabled: boolean }) {
+export function StreamingAppsRow({ onLaunch, disabled, fitScale }: StreamingAppsRowProps) {
   return (
-    <View style={[remoteCardStyles.card, remoteCardStyles.compactCard]}>
+    <View style={[remoteCardStyles.card, remoteCardStyles.compactCard, { padding: theme.spacing.sm * fitScale }]}>
       <View style={styles.streamingRow}>
         {STREAMING_APPS.map((app) => (
           <StreamingAppTile

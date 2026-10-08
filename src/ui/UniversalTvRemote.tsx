@@ -29,6 +29,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { useKeepScreenAwake } from "./useKeepScreenAwake";
+import { useRemoteFitScale } from "./useRemoteFitScale";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
 import { useUniversalSleepTimer } from "./useUniversalSleepTimer";
@@ -93,14 +94,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // the whole app.
   useKeepScreenAwake();
   const isAway = connectivityMode === "away";
-  // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
-  // (the "196 = 196, arrows land tangent to the disc" math in DpadCluster.tsx's
-  // own styles is derived from it) -- this is that same value scaled for the
-  // current device, applied at each JSX call site that needs a real
-  // (non-percentage) pixel size, same reasoning as CapabilityButton's own
-  // scale prop.
-  const scaledDpadSize = DPAD_HEIGHT * scale;
-  const scaledSmDiameter = theme.circleDiameter.sm * scale;
   const [state, setState] = useState<DeviceState>(() => stateStore.get(device.id));
   const [channelInput, setChannelInput] = useState("");
   const [keyboardInput, setKeyboardInput] = useState("");
@@ -133,6 +126,32 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // Samsung/Sony don't).
   const hasKeyboard = has(device, "textEntry");
   const [activeTab, setActiveTab] = useState<"remote" | "keypad" | "keyboard">("remote");
+  // Sean, directly (2026-10-07): "the remote should have a dynamic layout where it is able to be
+  // on one screen no matter the device... it shouldn't need to scroll." useResponsiveScale above
+  // is width-only by design (ADR-HEARTH-040) and never reacts to actual rendered height, so a
+  // capability combination it wasn't hand-tuned against still overflows (ui-verify measured LG's
+  // real worst case: 89px at the iPhone 17's 393x852 frame). This is the height-aware correction:
+  // measures this screen's real available vs. rendered height and shrinks the fit-aware sizes
+  // below (the d-pad hub as one whole unit, plus a few cards' own padding/gaps -- never the
+  // smaller utility/streaming/input buttons' own tap targets, see each call site's own comment)
+  // until it fits, converging to a stop rather than looping forever (fitScale.ts). Keyed by
+  // device+tab so switching to a smaller tab (e.g. Keypad) or a different device starts fresh
+  // instead of staying shrunk for content that never needed it.
+  const fit = useRemoteFitScale(`${device.id}:${activeTab}`);
+  // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
+  // (the "196 = 196, arrows land tangent to the disc" math in DpadCluster.tsx's
+  // own styles is derived from it) -- this is that same value scaled for the
+  // current device AND the fit correction above, applied at each JSX call
+  // site that needs a real (non-percentage) pixel size, same reasoning as
+  // CapabilityButton's own scale prop. Combined into one `hubScale` (rather
+  // than passing `scale` and `fit.fitScale` down separately) so the whole
+  // d-pad/rocker/center-button assembly always shrinks together as one unit
+  // -- DpadCluster's own arrows are tuned to land exactly tangent to the
+  // disc's rim (ADR-HEARTH-037); scaling the container without also scaling
+  // what sits on it the same amount would break that geometry.
+  const hubScale = scale * fit.fitScale;
+  const scaledDpadSize = DPAD_HEIGHT * hubScale;
+  const scaledSmDiameter = theme.circleDiameter.sm * hubScale;
   // Sean's reference (2026-09-10): volume/channel rockers sit directly beside the d-pad as one
   // control cluster, not stacked as separate cards above it. Only devices with a d-pad (LG,
   // Samsung, Roku) get that merged layout; Sony has volume but no d-pad or channel keys at all,
@@ -310,7 +329,18 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     // useSwipeBackGesture) decides whether a touch is a horizontal swipe or a vertical scroll
     // before either the ScrollView or the swipe gesture claims it.
     <View style={styles.container} {...swipeBackHandlers}>
-    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.spacing.lg }]}>
+    <ScrollView
+      onLayout={fit.onLayout}
+      onContentSizeChange={fit.onContentSizeChange}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: insets.top + theme.spacing.lg * fit.fitScale,
+          paddingBottom: theme.spacing.md * fit.fitScale,
+          gap: theme.spacing.sm * fit.fitScale,
+        },
+      ]}
+    >
       <RemoteHeaderRow
         device={device}
         scale={scale}
@@ -356,9 +386,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       {hasDpad && (
         <DpadCluster
           device={device}
-          scale={scale}
+          scale={hubScale}
           scaledDpadSize={scaledDpadSize}
           scaledSmDiameter={scaledSmDiameter}
+          fitScale={fit.fitScale}
           disabled={controlsDisabled}
           playbackState={playbackState}
           seekMultiplier={dpadSeek.multiplier}
@@ -371,7 +402,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       )}
 
       {!hasDpad && (has(device, "volumeUp") || has(device, "volumeDown") || has(device, "channelUp") || has(device, "channelDown")) && (
-        <VolumeChannelCard device={device} scale={scale} scaledDpadSize={scaledDpadSize} disabled={controlsDisabled} onSend={send} />
+        <VolumeChannelCard device={device} scale={hubScale} scaledDpadSize={scaledDpadSize} fitScale={fit.fitScale} disabled={controlsDisabled} onSend={send} />
       )}
 
       {/* Real-hardware research (2026-09-10): Roku (POST /launch/<channel id>) and LG
@@ -379,7 +410,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
           because neither has a confirmed equivalent, not because this row forgot them. */}
       {has(device, "launchApp") && (
-        <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} />
+        <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} fitScale={fit.fitScale} />
       )}
 
       {/* A flex:1 spacer here previously tried to push the utility/Input cards toward the bottom
@@ -399,6 +430,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           selectedInput={input}
           disabled={controlsDisabled}
           onSelect={(inputId) => send("inputSelection", { input: inputId })}
+          fitScale={fit.fitScale}
         />
       )}
 
@@ -414,6 +446,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         <UtilityActionsRow
           device={device}
           scale={scale}
+          fitScale={fit.fitScale}
           columns={utilityColumns}
           disabled={controlsDisabled}
           muted={muted}
@@ -482,5 +515,10 @@ const styles = StyleSheet.create({
   // gap between them is one of a handful of places left to reclaim without shrinking a touch
   // target or undoing spacing just asked for elsewhere (the utility card's own padding).
   // ADR-HEARTH-135: padding lg->md so the whole remote fits an iPhone 17 without scrolling.
-  content: { padding: theme.spacing.md, gap: theme.spacing.sm },
+  // ADR-HEARTH-217: vertical padding and gap moved to the ScrollView's own contentContainerStyle
+  // override above (paddingTop/paddingBottom/gap), scaled live by the fit-correction factor --
+  // only horizontal padding is a fixed value here now, since the overflow this screen fights is
+  // vertical, not horizontal (the width-fit arithmetic cited elsewhere on this screen already
+  // assumes this exact spacing.md horizontal value and must keep it).
+  content: { paddingHorizontal: theme.spacing.md },
 });

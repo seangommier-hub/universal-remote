@@ -11,6 +11,9 @@ interface VolumeChannelCardProps {
   device: Device;
   scale: number;
   scaledDpadSize: number;
+  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
+   * to this card's own padding/gap, never to a tap target. */
+  fitScale: number;
   disabled: boolean;
   onSend: (capability: CapabilityId) => void;
 }
@@ -20,9 +23,9 @@ interface VolumeChannelCardProps {
  * no channel keys) — DpadCluster's merged hub needs a d-pad to anchor to, so this keeps volume
  * reachable on its own rather than disappearing.
  */
-export function VolumeChannelCard({ device, scale, scaledDpadSize, disabled, onSend }: VolumeChannelCardProps) {
+export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, disabled, onSend }: VolumeChannelCardProps) {
   return (
-    <View style={remoteCardStyles.card}>
+    <View style={[remoteCardStyles.card, { paddingVertical: theme.spacing.md * fitScale, gap: theme.spacing.sm * fitScale }]}>
       <Text style={remoteCardStyles.cardLabel}>Volume &amp; Channel</Text>
       <View style={styles.rockerRow}>
         {(has(device, "volumeUp") || has(device, "volumeDown")) && (
