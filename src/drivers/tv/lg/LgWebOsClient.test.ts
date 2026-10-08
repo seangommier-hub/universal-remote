@@ -207,6 +207,42 @@ describe("LgWebOsClient", () => {
     expect(pointerSocket.sentMessages[0]).toBe("type:button\nname:HOME\n\n");
   });
 
+  // ADR-HEARTH-215: sendMove/sendClick share the exact same pointer socket sendButton already
+  // proved out above -- no new connection/auth path, just two more wire-format message types.
+  test("sendMove writes the type:move wire format with a plain (non-drag) move", async () => {
+    const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+    await connectClient(client);
+
+    const movePromise = client.sendMove(12, -4);
+    const mainSocket = MockWebSocket.at(0);
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+    await movePromise;
+
+    expect(pointerSocket.sentMessages[0]).toBe("type:move\ndx:12\ndy:-4\ndown:0\n\n");
+  });
+
+  test("sendClick writes the type:click wire format", async () => {
+    const client = new LgWebOsClient({ ipAddress: "192.168.1.70" });
+    await connectClient(client);
+
+    const clickPromise = client.sendClick();
+    const mainSocket = MockWebSocket.at(0);
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+    await clickPromise;
+
+    expect(pointerSocket.sentMessages[0]).toBe("type:click\n\n");
+  });
+
   test("two rapid sendButton calls share one pointer socket instead of opening a second (real-hardware finding, 2026-09-09)", async () => {
     // Same class of race the driver-level fix addressed, one layer down: fast repeated d-pad
     // taps before the first getPointerInputSocket round trip completes must not each open their

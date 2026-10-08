@@ -319,6 +319,21 @@ export class LgWebOsClient {
     socket.send(`type:button\nname:${name}\n\n`);
   }
 
+  /** Moves the TV's on-screen pointer by a relative (dx, dy) over the same pointer-input socket
+   * `sendButton` uses -- `type:move`, per webOS's own documented pointer-socket protocol
+   * (hobbyquaker/lgtv2, this file's own existing reference). `down:0` is a plain move, never a
+   * drag -- nothing in this driver sends drags. */
+  async sendMove(dx: number, dy: number): Promise<void> {
+    const socket = await this.getPointerSocket();
+    socket.send(`type:move\ndx:${dx}\ndy:${dy}\ndown:0\n\n`);
+  }
+
+  /** Clicks at the pointer's current on-screen position -- `type:click`, the same pointer-socket protocol as sendMove/sendButton. */
+  async sendClick(): Promise<void> {
+    const socket = await this.getPointerSocket();
+    socket.send(`type:click\n\n`);
+  }
+
   /**
    * Opens a live SSAP subscription (`type: "subscribe"`, per hobbyquaker/lgtv2 — see this class's
    * file header for why that's this driver's trusted reference) — `onUpdate` fires once for each

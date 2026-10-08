@@ -64,6 +64,8 @@ const VERBS: Record<CapabilityId, string> = {
   disarm: "disarmed",
   browseMedia: "browsed media on",
   playMedia: "played media on",
+  pointerMove: "moved the pointer on",
+  pointerClick: "clicked on",
 };
 
 /** Buttons pressed dozens of times while navigating; a successful press is not worth a line (failures still are). */
@@ -75,6 +77,12 @@ const NAVIGATION_NOISE: ReadonlySet<CapabilityId> = new Set<CapabilityId>([
   "menu",
   "settings",
   "selectPlayPause",
+  // ADR-HEARTH-215: pointerMove fires dozens of times a second during a single touchpad drag --
+  // the same class of noise as directionalNavigation's own d-pad taps. pointerClick is grouped
+  // with it to match "select"'s own treatment above (a real, discrete action, but still navigation
+  // rather than something worth a household log line).
+  "pointerMove",
+  "pointerClick",
 ]);
 
 const FALLBACK_VERB = "sent a command to";

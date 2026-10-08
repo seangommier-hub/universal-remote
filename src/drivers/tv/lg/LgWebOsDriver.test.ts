@@ -401,6 +401,47 @@ describe("LgWebOsDriver", () => {
     expect(pointerSocket.sentMessages[0]).toBe("type:button\nname:UP\n\n");
   });
 
+  // ADR-HEARTH-215: real pointer control, over the exact same pointer socket directionalNavigation already uses.
+  test("pointerMove opens the pointer socket and sends the dx/dy args", async () => {
+    await connectDriver(driver);
+    const mainSocket = MockWebSocket.at(0);
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "pointerMove", args: { dx: 5, dy: -3 } });
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+
+    await resultPromise;
+    expect(pointerSocket.sentMessages[0]).toBe("type:move\ndx:5\ndy:-3\ndown:0\n\n");
+  });
+
+  test("pointerMove requires numeric dx and dy", async () => {
+    await connectDriver(driver);
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "pointerMove", args: { dx: "5", dy: -3 } })).rejects.toThrow(
+      /numeric 'dx' and 'dy'/
+    );
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "pointerMove" })).rejects.toThrow(/numeric 'dx' and 'dy'/);
+  });
+
+  test("pointerClick opens the pointer socket and sends a click", async () => {
+    await connectDriver(driver);
+    const mainSocket = MockWebSocket.at(0);
+
+    const resultPromise = driver.executeCommand(device, { deviceId: device.id, capability: "pointerClick" });
+    const getSocketRequest = JSON.parse(mainSocket.sentMessages[mainSocket.sentMessages.length - 1]);
+    mainSocket.simulateMessage({ type: "response", id: getSocketRequest.id, payload: { returnValue: true, socketPath: "wss://192.168.1.70:3001/pointer" } });
+    await Promise.resolve();
+
+    const pointerSocket = MockWebSocket.at(1);
+    pointerSocket.simulateOpen();
+
+    await resultPromise;
+    expect(pointerSocket.sentMessages[0]).toBe("type:click\n\n");
+  });
+
   test("setChannel sends each digit as a separate button press over the pointer socket, in order", async () => {
     await connectDriver(driver);
     const mainSocket = MockWebSocket.at(0);

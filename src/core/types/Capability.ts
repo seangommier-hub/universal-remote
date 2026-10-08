@@ -141,6 +141,22 @@ export type CapabilityId =
   //    Num0-9/etc.) -- no literal-character or string-insertion code exists in either primary
   //    source this project's IRCC-IP codes were verified against.
   | "textEntry"
+  // Real ask (2026-10-06, Sean, directly): "the mouse is not working nor keyboard" -- trying to
+  // use Hearth to interact with Family Command Center's own dashboard, now shown in the LG's
+  // built-in browser (adr/0274/0275, open_command_center.js). Root-caused: Hearth never had real
+  // pointer/mouse control at all -- LgWebOsClient.ts's pointer socket only ever sent `type:button`
+  // (discrete named key presses, which move FOCUS between elements, not a free cursor), and
+  // textEntry's `insertText` only works once a field already HAS focus -- which nothing could give
+  // it on arbitrary web content without a real click. directionalNavigation's d-pad-style focus
+  // movement is fine for TV apps deliberately built remote-friendly; a generic dashboard page isn't
+  // one of those. webOS's own pointer-socket protocol (same socket, same connection, already
+  // proven -- hobbyquaker/lgtv2, this driver's own existing reference) documents `type:move`
+  // (relative dx/dy) and `type:click` alongside the `type:button` this driver already used; only
+  // LG declares these (same per-brand verification standard as every capability above -- Samsung's
+  // protocol is key-press-emulation only per the textEntry comment above, Roku/Sony have no
+  // pointer-socket equivalent documented in either's own primary source).
+  | "pointerMove"
+  | "pointerClick"
   // Squirrel feeder integration (2026-09-20, ADR-HEARTH-104): a single fire-and-forget manual
   // dispense request, sourced from that project's own real ESP32 HTTP API — POST /dispense (see
   // squirrel-feeder/src/network.cpp's handleDispense) either queues a dispense or returns HTTP

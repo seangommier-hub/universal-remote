@@ -72,6 +72,12 @@ const LG_CAPABILITIES: CapabilityId[] = [
   // textEntry entry for the full citation. Notably, PAIRING_MANIFEST (LgWebOsClient.ts) already
   // requests the "CONTROL_INPUT_TEXT" permission and always has, unused until now.
   "textEntry",
+  // Real ask (2026-10-06, Sean, directly): "the mouse is not working nor keyboard" -- see
+  // Capability.ts's pointerMove/pointerClick entry for the full root cause. PAIRING_MANIFEST
+  // already requests "CONTROL_MOUSE_AND_KEYBOARD" and always has, unused until now -- same
+  // situation as CONTROL_INPUT_TEXT above before textEntry existed. No re-pairing needed.
+  "pointerMove",
+  "pointerClick",
 ];
 
 // See Capability.ts's playPause entry. "playing"/"paused" map directly off the TV's own
@@ -638,6 +644,22 @@ export class LgWebOsDriver implements DeviceDriver {
         this.patchValues(device.id, { lastAction: "textEntry" });
         return;
       }
+      case "pointerMove": {
+        const dx = command.args?.dx;
+        const dy = command.args?.dy;
+        if (typeof dx !== "number" || typeof dy !== "number") {
+          throw new Error("pointerMove requires numeric 'dx' and 'dy' args");
+        }
+        await client.sendMove(dx, dy);
+        // Deliberately no patchValues/lastAction here -- a touchpad drag fires this many times a
+        // second (ADR-HEARTH-215's own touchpad gesture hook), and a cursor move is not an action
+        // worth remembering the way a button press or app launch is.
+        return;
+      }
+      case "pointerClick":
+        await client.sendClick();
+        this.patchValues(device.id, { lastAction: "pointerClick" });
+        return;
       case "setChannel": {
         const keyedDigits = command.args?.digits;
         if (typeof keyedDigits === "string") {
