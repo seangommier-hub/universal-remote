@@ -41,6 +41,8 @@ import type { useActivities } from "./useActivities";
 import { isShared } from "../runtime/sharedDevices";
 import { demoStartingScreen } from "../demo/demoScreenRoute";
 import { theme } from "./theme";
+import { useDevicesTabBadge } from "./useDevicesTabBadge";
+import { useNewDevices } from "./useNewDevices";
 
 const LOG_SCOPE = "DevicesTabScreen";
 
@@ -124,6 +126,10 @@ export function DevicesTabScreen({
   // once on mount and re-checked after fcc-settings saves, so the button's destination (and label)
   // reflect whether this is still a first-time setup or an already-configured household.
   const [fccConfigured, setFccConfigured] = useState(false);
+
+  // ADR-HEARTH-222: a passive "new devices found" count, shown as a badge on this tab and a banner on the list.
+  const newDevices = useNewDevices({ devices, enabled: !restricted, canScan: fccConfigured, labelsRefreshKey: screen.name, discoverOpen: screen.name === "discover" });
+  useDevicesTabBadge(newDevices.count);
 
   useEffect(() => {
     let cancelled = false;
@@ -419,6 +425,8 @@ export function DevicesTabScreen({
           onOpenBrandScreen={(brand, ipAddress, serviceUrl) => setScreen({ name: "add", brand, initialIpAddress: ipAddress, initialServiceUrl: serviceUrl })}
           onQuickAdd={handleAdded}
           onDiscover={() => setScreen({ name: "discover" })}
+          newDeviceCount={newDevices.count}
+          onDismissNewDevices={newDevices.dismiss}
           onConnectFamilyCommandCenter={openFccSetup}
           fccConfigured={fccConfigured}
           onJoinWithCode={() => setScreen({ name: "fcc-join" })}
