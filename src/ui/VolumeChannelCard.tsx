@@ -29,7 +29,7 @@ export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, dis
       <Text style={remoteCardStyles.cardLabel}>Volume &amp; Channel</Text>
       <View style={styles.rockerRow}>
         {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
+          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "volumeUp") && (
               <CapabilityButton
                 shape="circle"
@@ -56,7 +56,7 @@ export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, dis
           </View>
         )}
         {(has(device, "channelUp") || has(device, "channelDown")) && (
-          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
+          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "channelUp") && (
               <CapabilityButton
                 shape="circle"

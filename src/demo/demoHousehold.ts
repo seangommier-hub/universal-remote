@@ -36,7 +36,7 @@ const LG_INPUTS = [
   { id: "HDMI_1", label: "Apple TV" },
   { id: "HDMI_2", label: "PS5" },
   { id: "HDMI_3", label: "Cable Box" },
-  { id: "HDMI_4", label: "Switch" },
+  { id: "HDMI_4", label: "Switch", connected: false },
 ];
 
 // ADR-HEARTH-167: devices a person adds from the demo Discover screen with "Add all ready"; each connects after a short pause so per-row progress is visible.

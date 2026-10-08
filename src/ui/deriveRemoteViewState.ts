@@ -2,6 +2,7 @@ import { ConnectivityMode, isPublicRouteCurrentlyFailing } from "../core/network
 import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { DeviceState } from "../core/types/DeviceState";
+import { activeInputs } from "./activeInputs";
 import { describeDeviceStatus } from "./describeDeviceStatus";
 import { has } from "./hasCapability";
 
@@ -113,9 +114,12 @@ export function deriveRemoteViewState(device: Device, state: DeviceState, connec
   // Roku/Sony's fixed hdmi1/hdmi2/hdmi3 buttons are. Absent for every other driver, which falls
   // back to InputSelectionCard's own static list.
   const dynamicInputs = Array.isArray(state.values.inputs)
-    ? (state.values.inputs as unknown[]).filter(
-        (entry): entry is { id: string; label: string } =>
-          typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>).id === "string"
+    ? activeInputs(
+        (state.values.inputs as unknown[]).filter(
+          (entry): entry is { id: string; label: string; connected?: boolean } =>
+            typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>).id === "string"
+        ),
+        typeof state.values.input === "string" ? state.values.input : undefined
       )
     : undefined;
   const isConnected = state.connection === "connected";
