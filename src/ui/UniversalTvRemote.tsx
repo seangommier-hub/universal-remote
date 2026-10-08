@@ -95,7 +95,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // called from" (Sean, directly) -- a manual, always-available check independent of whatever
   // Hearth's own debounced outage detection currently believes (OfflineAlertBanner.tsx's own
   // "Retry" only appears once that detection has already decided there's a problem).
-  const commandCenter = useCallCommandCenterButton();
+  const commandCenter = useCallCommandCenterButton(device);
   // ADR-HEARTH-183: keep the screen from auto-locking only while a remote is actually open —
   // scoped by this component's own mount/unmount (see useKeepScreenAwake's own doc comment), never
   // the whole app.
