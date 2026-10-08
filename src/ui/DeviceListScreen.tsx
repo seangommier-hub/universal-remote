@@ -249,7 +249,7 @@ export function DeviceListScreen({
           scrollEnabled disabled for exactly this reason (nesting a scrolling VirtualizedList
           inside a ScrollView is a real, documented RN bug class, not just a style choice). */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <OfflineAlertBanner devices={devices} stateStore={stateStore} driverRegistry={driverRegistry} commandEngine={commandEngine} fccConfigured={fccConfigured} onReconnect={onReconnect} />
+      <OfflineAlertBanner devices={devices} stateStore={stateStore} driverRegistry={driverRegistry} commandEngine={commandEngine} fccConfigured={fccConfigured} onReconnect={onReconnect} onOpenDevice={onSelect} />
       <TokenUpgradeBanner fccConfigured={fccConfigured} onJoinWithCode={onJoinWithCode} />
       {updateBanner && <UpdateBanner status={updateBanner.status} onApply={onApplyUpdate} onDismiss={onDismissUpdateBanner} />}
       <NewDevicesBanner count={newDeviceCount} onReview={onDiscover} onDismiss={onDismissNewDevices} />

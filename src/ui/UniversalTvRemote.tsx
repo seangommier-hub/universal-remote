@@ -18,6 +18,7 @@ import { KeypadCard } from "./KeypadCard";
 import { MediaBrowseModal } from "./MediaBrowseModal";
 import { appendToEcho, backspaceEcho } from "./onScreenKeyboard";
 import { ReconnectCard } from "./ReconnectCard";
+import { RePairCard } from "./RePairCard";
 import { RemoteScaleProvider } from "./RemoteScaleContext";
 import { maxScaleForWidth, REMOTE_HORIZONTAL_PADDING_PX, remoteMaxContentWidth } from "./remoteScale";
 import { RemoteHeaderRow } from "./RemoteHeaderRow";
@@ -32,6 +33,7 @@ import { useConnectivityMode } from "./useConnectivityMode";
 import { useDpadSeekMultiplier } from "./useDpadSeekMultiplier";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { useKeepScreenAwake } from "./useKeepScreenAwake";
+import { useRePair } from "./useRePair";
 import { useRemoteFitScale } from "./useRemoteFitScale";
 import { useResponsiveScale } from "./useResponsiveScale";
 import { useSwipeBackGesture } from "./useSwipeBackGesture";
@@ -47,6 +49,8 @@ interface UniversalTvRemoteProps {
    * list before its background reconnect (App.tsx) finishes, and that reconnect can fail
    * silently with no other way to retry short of restarting the whole app. */
   onReconnect: () => Promise<void>;
+  /** ADR-HEARTH-223: forgets the saved pairing and pairs again from scratch, saving the result. Omitted when the device's driver cannot re-pair (or the person may not), which hides the re-pair card entirely. */
+  onRePair?: () => Promise<void>;
   /** Renames a device — real-device feedback (2026-09-10): "the name should be able to be
    * edited." Previously only set once, at pairing time, with no way to change it after. */
   onRename: (device: Device, newName: string) => void;
@@ -70,7 +74,7 @@ const MS_PER_SECOND = 1000;
  * (Home/Menu/Mute/Back/...), KeypadCard/KeyboardCard (the Keypad/Keyboard tabs) and
  * SleepTimerModal — each a small, single-purpose file under src/ui/.
  */
-export function UniversalTvRemote({ device, commandEngine, stateStore, onReconnect, onRename, onBack }: UniversalTvRemoteProps) {
+export function UniversalTvRemote({ device, commandEngine, stateStore, onReconnect, onRePair, onRename, onBack }: UniversalTvRemoteProps) {
   // See DiscoverDevicesScreen.tsx's identical comment — a hardcoded paddingTop guessed for an
   // iPhone notch never accounted for Android's own, differently-sized status bar.
   const insets = useSafeAreaInsets();
@@ -104,6 +108,10 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   const [nameInput, setNameInput] = useState(device.name);
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
+  // ADR-HEARTH-223: a TV that clearly refused Hearth's saved pairing gets a user-started "Re-pair this TV" card in place of the reconnect card.
+  const rePair = useRePair({ device, state, onRePair });
+  // While the re-pair card is asking for attention the TV is not taking commands, so the app-launch and input rows (the two most height-hungry, least useful ones right now) step aside to keep the remote on one screen (ADR-HEARTH-217/223).
+  const rePairCardCrowdsControls = rePair.view === "offer" || rePair.view === "waiting" || rePair.view === "failed";
   // ADR-HEARTH-182: media_player browse_media, offered as one more utility-row button next to Source/Settings.
   const [browsing, setBrowsing] = useState(false);
   // ADR-HEARTH-215: real pointer control (drag-to-move, tap-to-click), offered next to Touchpad's button in the utility row.
@@ -387,7 +395,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
 
       {commandError ? <CommandErrorBanner message={commandError} /> : null}
 
-      {!isConnected && <ReconnectCard reconnecting={reconnecting} reconnectError={reconnectError} onTryNow={handleReconnectPress} />}
+      {rePair.view !== "hidden" && <RePairCard controls={rePair} />}
+      {rePair.view === "hidden" && !isConnected && <ReconnectCard reconnecting={reconnecting} reconnectError={reconnectError} onTryNow={handleReconnectPress} />}
 
       {(hasKeypad || hasKeyboard) && (
         <RemoteTabBar hasKeypad={hasKeypad} hasKeyboard={hasKeyboard} activeTab={activeTab} channelInput={channelInput} onSelectTab={setActiveTab} />
@@ -425,7 +434,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           (ssap://system.launcher/launch) both have real, verified app-launch mechanisms — see
           Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
           because neither has a confirmed equivalent, not because this row forgot them. */}
-      {has(device, "launchApp") && (
+      {has(device, "launchApp") && !rePairCardCrowdsControls && (
         <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} />
       )}
 
@@ -440,7 +449,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           content (e.g. a fixed-position footer outside the ScrollView) rather than retrying the
           same approach. */}
 
-      {has(device, "inputSelection") && (
+      {has(device, "inputSelection") && !rePairCardCrowdsControls && (
         <InputSelectionCard
           options={dynamicInputs}
           selectedInput={input}

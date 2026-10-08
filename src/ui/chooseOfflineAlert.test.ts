@@ -29,6 +29,26 @@ describe("chooseOfflineAlert", () => {
     expect(alert).toMatchObject({ kind: "device", deviceId: "tv", message: "Den TV hasn't answered for 5 min" });
   });
 
+  test("a silent device whose saved pairing was refused asks for a re-pair instead of just reporting silence (ADR-HEARTH-223)", () => {
+    const alert = chooseOfflineAlert({ ...healthy, outages: [{ deviceId: "tv", silentMs: 5 * MINUTE }], rePairDeviceIds: new Set(["tv"]) });
+    expect(alert).toMatchObject({ kind: "device", deviceId: "tv", needsRePair: true, message: "Den TV needs to be re-paired — it no longer accepts Hearth's saved pairing" });
+  });
+
+  test("a flagged device that was never connected this session (so has no outage record) still gets the re-pair alert", () => {
+    const alert = chooseOfflineAlert({ ...healthy, outages: [], rePairDeviceIds: new Set(["tv"]) });
+    expect(alert).toMatchObject({ kind: "device", deviceId: "tv", needsRePair: true });
+  });
+
+  test("a flagged device that is not in the household is ignored, and a dismissed re-pair alert stays hidden", () => {
+    expect(chooseOfflineAlert({ ...healthy, rePairDeviceIds: new Set(["gone"]) })).toBeNull();
+    expect(chooseOfflineAlert({ ...healthy, rePairDeviceIds: new Set(["tv"]), dismissed: new Set(["device:tv"]) })).toBeNull();
+  });
+
+  test("a silent device that is not flagged keeps the plain silence message", () => {
+    const alert = chooseOfflineAlert({ ...healthy, outages: [{ deviceId: "tv", silentMs: 5 * MINUTE }], rePairDeviceIds: new Set(["roku"]) });
+    expect(alert).toMatchObject({ deviceId: "tv", needsRePair: false, message: "Den TV hasn't answered for 5 min" });
+  });
+
   test("only one banner at a time: the relay wins over a device", () => {
     const alert = chooseOfflineAlert({ ...healthy, fccOutageMs: 5 * MINUTE, outages: [{ deviceId: "tv", silentMs: 9 * MINUTE }] });
     expect(alert?.kind).toBe("fcc");

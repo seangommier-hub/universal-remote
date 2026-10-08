@@ -26,7 +26,11 @@ export interface DeviceStatusInput {
   fccReachable?: boolean;
   /** Seconds since this device last reported in; undefined when never seen. */
   secondsSinceLastSeen?: number;
+  /** True when the device's driver has flagged its saved pairing as refused (ADR-HEARTH-223). */
+  needsRePair?: boolean;
 }
+
+export const NEEDS_RE_PAIR_STATUS = "Needs re-pairing — open it to fix";
 
 function formatAge(seconds: number): string {
   if (seconds < SECONDS_PER_MINUTE) return "just now";
@@ -59,6 +63,7 @@ function describeNotConnected(input: DeviceStatusInput): string {
   if (input.wakeBurstActive) return "Waking up (this can take a minute)";
   const away = describeAway(input);
   if (away) return away;
+  if (input.needsRePair) return NEEDS_RE_PAIR_STATUS;
   if (input.lastError && UNREACHABLE_PATTERN.test(input.lastError)) {
     return "Can't reach it — plugged in and on Wi-Fi? Retrying";
   }

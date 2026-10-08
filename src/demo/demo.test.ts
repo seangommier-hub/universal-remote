@@ -76,6 +76,28 @@ describe("demo driver", () => {
     await expect(driver.connect(roku)).rejects.toThrow("offline");
     expect((await driver.getState(roku)).connection).toBe("disconnected");
   });
+
+  // ADR-HEARTH-223
+  it("test_rejected_pairing_script_flags_the_device_and_a_demo_re_pair_clears_it", async () => {
+    const [lg] = demoDevices();
+    const rePairable = { ...real, rePair: async () => undefined } as unknown as DeviceDriver;
+    const driver = createDemoDriver(rePairable, { [lg.id]: { reachable: true, rejectedPairing: true, values: { power: "on" } } });
+
+    await expect(driver.connect(lg)).rejects.toThrow(/isn't recognizing a previous pairing/);
+    const flagged = await driver.getState(lg);
+    expect(flagged.connection).toBe("disconnected");
+    expect(flagged.values.needsRePair).toBe(true);
+
+    await driver.rePair!(lg);
+    const repaired = await driver.getState(lg);
+    expect(repaired.connection).toBe("connected");
+    expect(repaired.values.needsRePair).toBeUndefined();
+    await expect(driver.connect(lg)).resolves.toBeUndefined();
+  });
+
+  it("test_a_driver_without_a_real_re_pair_gets_no_demo_re_pair", () => {
+    expect(createDemoDriver(real).rePair).toBeUndefined();
+  });
 });
 
 describe("demo screen route", () => {

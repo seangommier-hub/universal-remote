@@ -15,6 +15,8 @@ interface OfflineAlertBannerProps {
   commandEngine: CommandEngine;
   fccConfigured: boolean;
   onReconnect: (device: Device) => Promise<void>;
+  /** Opens a device's own screen; the "Re-pair" action uses it so the person can watch the TV while approving. */
+  onOpenDevice: (device: Device) => void;
 }
 
 function canWake(device: Device, driverRegistry: DriverRegistry): boolean {
@@ -22,7 +24,7 @@ function canWake(device: Device, driverRegistry: DriverRegistry): boolean {
 }
 
 /** Calm, dismissible one-line banner for a silent failure: the relay not answering, or a device that has stopped answering (ADR-HEARTH-172). Renders nothing while healthy. */
-export function OfflineAlertBanner({ devices, stateStore, driverRegistry, commandEngine, fccConfigured, onReconnect }: OfflineAlertBannerProps) {
+export function OfflineAlertBanner({ devices, stateStore, driverRegistry, commandEngine, fccConfigured, onReconnect, onOpenDevice }: OfflineAlertBannerProps) {
   const { alert, dismiss, recheckFcc } = useOfflineAlert({ devices, stateStore, fccConfigured });
   // ADR-HEARTH-180: this banner can appear, change message (relay unreachable -> a specific
   // device gone silent) or disappear with nobody looking at the screen — accessibilityRole="alert"
@@ -35,14 +37,17 @@ export function OfflineAlertBanner({ devices, stateStore, driverRegistry, comman
   if (!alert) return null;
   const device = alert.kind === "device" ? devices.find((candidate) => candidate.id === alert.deviceId) : undefined;
   const showWake = device !== undefined && canWake(device, driverRegistry);
+  // ADR-HEARTH-223: a device whose saved pairing was refused gets one "Re-pair" action (which opens its remote, where the TV can be watched) instead of Wake/Retry.
+  const rePairAlert = alert.kind === "device" && alert.needsRePair;
 
   return (
     <View style={styles.banner} accessibilityRole="alert" accessibilityLiveRegion="polite">
       <Ionicons name={alert.kind === "fcc" ? "cloud-offline-outline" : "time-outline"} size={16} color={theme.textTertiary} />
       <Text style={styles.text}>{alert.message}</Text>
       {alert.kind === "fcc" && <ActionButton label="Retry" onPress={recheckFcc} />}
-      {device && showWake && <ActionButton label="Wake" onPress={() => void commandEngine.execute({ deviceId: device.id, capability: "powerOn" })} />}
-      {device && <ActionButton label="Retry" onPress={() => void onReconnect(device)} />}
+      {device && alert.kind === "device" && alert.needsRePair && <ActionButton label="Re-pair" onPress={() => onOpenDevice(device)} />}
+      {device && showWake && !rePairAlert && <ActionButton label="Wake" onPress={() => void commandEngine.execute({ deviceId: device.id, capability: "powerOn" })} />}
+      {device && !rePairAlert && <ActionButton label="Retry" onPress={() => void onReconnect(device)} />}
       <Pressable onPress={dismiss} hitSlop={8} accessibilityRole="button" accessibilityLabel="Dismiss">
         <Ionicons name="close" size={16} color={theme.textTertiary} />
       </Pressable>

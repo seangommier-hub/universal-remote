@@ -12,12 +12,16 @@ import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { startConnectionHeartbeat } from "../../shared/connectionHeartbeat";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
+import { connectWithFreshPairing } from "../../shared/connectWithFreshPairing";
+import { flagRejectedPairing } from "../../shared/savedPairingRejected";
 
 const LOG_SCOPE = "LgWebOsDriver";
 // A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
 const LIVENESS_PROBE_TIMEOUT_MS = 3000;
 
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
+/** The config field holding the TV's pairing credential (ADR-HEARTH-223 clears and re-learns only this one). */
+const LG_CLIENT_KEY_FIELD = "clientKey";
 
 // "powerOff" is real SSAP (ssap://system/turnOff), sent over the live socket like every other
 // command. "powerOn" (ADR-HEARTH-102, 2026-09-19) is NOT SSAP at all — SSAP has no documented way
@@ -114,7 +118,7 @@ function requireConfig(device: Device): LgWebOsConfig {
   if (typeof ipAddress !== "string") {
     throw new Error(`Device ${device.id} is missing LG config (config.ipAddress) — pair it first`);
   }
-  const clientKey = device.config?.clientKey;
+  const clientKey = device.config?.[LG_CLIENT_KEY_FIELD];
   return { ipAddress, clientKey: typeof clientKey === "string" ? clientKey : undefined };
 }
 
@@ -241,13 +245,26 @@ export class LgWebOsDriver implements DeviceDriver {
       // disconnect() that landed while this attempt was failing must not be undone by a retry loop.
       if (this.isCurrentGeneration(device.id, attemptGeneration)) {
         const current = this.states.get(device.id);
-        this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
+        // ADR-HEARTH-223: a TV that answered the saved client-key with a fresh approval prompt is flagged so the app can offer a re-pair.
+        this.setState(device.id, { connection: "disconnected", values: flagRejectedPairing(current?.values ?? {}, err), lastUpdated: Date.now() });
         this.scheduleReconnect(device);
       }
       throw err;
     } finally {
       if (this.inFlightConnects.get(device.id) === attempt) this.inFlightConnects.delete(device.id);
     }
+  }
+
+  /**
+   * ADR-HEARTH-223: forgets this TV's saved client-key and registers again from scratch with the
+   * same pairing manifest, which makes the TV show its approval prompt. Only ever called from an
+   * explicit user tap (never from any retry loop). Anything already connecting with the old key is
+   * abandoned first; on failure the old key is put back and the normal background retry carries on.
+   */
+  async rePair(device: Device): Promise<void> {
+    await this.disconnect(device);
+    this.inFlightConnects.delete(device.id);
+    await connectWithFreshPairing(device, LG_CLIENT_KEY_FIELD, () => this.connect(device));
   }
 
   /**

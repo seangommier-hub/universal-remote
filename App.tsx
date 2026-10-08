@@ -278,6 +278,17 @@ function HearthApp() {
     saveDeviceQuietly(device); // see reconnectAllDevices' identical comment — may carry a freshly-learned pairing key
   }
 
+  // ADR-HEARTH-223: a user-started re-pair of one device. The driver forgets only that device's saved
+  // pairing credential and registers again; the same Device object (id, name, room, shared flag) keeps
+  // its place, and the newly issued credential is saved in its own right here rather than waiting for
+  // the next connected-transition save, so it survives even if this screen was left meanwhile.
+  async function handleRePair(device: Device): Promise<void> {
+    const driver = runtime.driverRegistry.get(device.driverId);
+    if (!driver?.rePair) throw new Error(`${device.name} cannot be re-paired from here`);
+    await driver.rePair(device);
+    handleDeviceUpdatedInPlace(device);
+  }
+
   // ADR-HEARTH-085: the same physical device can reach this function twice — re-discovered after
   // an IP change before its own driver's reconnect logic caught up, or added once via Discover and
   // again manually as a (possibly different) brand — and nothing before this compared identities
@@ -443,6 +454,7 @@ function HearthApp() {
                   onDismissUpdateBanner={() => setUpdateBanner(null)}
                   onDeviceAdded={handleDeviceAdded}
                   onReconnect={handleReconnect}
+                  onRePair={handleRePair}
                   onRenameDevice={handleRenameDevice}
                   onAddressUpdated={handleAddressUpdated}
                   onDeviceUpdatedInPlace={handleDeviceUpdatedInPlace}

@@ -1,4 +1,4 @@
-import { describeDeviceStatus, DeviceStatusInput, MAX_ERROR_CHARS, STALE_CONNECTED_SECONDS } from "./describeDeviceStatus";
+import { describeDeviceStatus, DeviceStatusInput, MAX_ERROR_CHARS, NEEDS_RE_PAIR_STATUS, STALE_CONNECTED_SECONDS } from "./describeDeviceStatus";
 
 const base: DeviceStatusInput = { connection: "disconnected", wakeBurstActive: false, connectivityMode: "home" };
 
@@ -52,6 +52,21 @@ describe("describeDeviceStatus", () => {
     expect(describeDeviceStatus({ ...base, secondsSinceLastSeen: 240 })).toContain("last seen 4 min ago");
     expect(describeDeviceStatus({ ...base, secondsSinceLastSeen: 7200 })).toContain("last seen 2 h ago");
     expect(describeDeviceStatus({ ...base, secondsSinceLastSeen: 200000 })).toContain("last seen 2 d ago");
+  });
+
+  describe("a device whose saved pairing was refused (ADR-HEARTH-223)", () => {
+    test("says it needs re-pairing and where to do that, instead of quoting a raw error", () => {
+      expect(describeDeviceStatus({ ...base, needsRePair: true, lastError: "Timed out" })).toBe(NEEDS_RE_PAIR_STATUS);
+    });
+
+    test("a wake burst or being away still comes first, since a re-pair needs the TV on and in sight", () => {
+      expect(describeDeviceStatus({ ...base, needsRePair: true, wakeBurstActive: true })).toBe("Waking up (this can take a minute)");
+      expect(describeDeviceStatus({ ...base, needsRePair: true, connectivityMode: "away" })).toMatch(/relay only/);
+    });
+
+    test("a connected device never mentions it", () => {
+      expect(describeDeviceStatus({ ...base, connection: "connected", needsRePair: true })).toBe("Connected");
+    });
   });
 
   test("every not-connected line says Hearth is retrying", () => {

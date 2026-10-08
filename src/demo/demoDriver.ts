@@ -6,7 +6,10 @@ import { MediaBrowseNode } from "../core/types/MediaBrowse";
 import { SnapshotImage } from "../core/types/Snapshot";
 import { applyEntityCommand, demoBrowseMedia } from "./demoEntityDevices";
 import { demoSnapshotFor } from "./demoFccCameras";
-import { DEMO_DEVICE_SCRIPTS, DemoDeviceScript } from "./demoHousehold";
+import { DEMO_DEVICE_SCRIPTS, DEMO_LG_ID, DemoDeviceScript } from "./demoHousehold";
+import { DEMO_RE_PAIR_DELAY_MS, DEMO_RE_PAIR_NEVER_ANSWERS_MS, demoRePairOutcome } from "./demoRePair";
+import { markNeedsRePair } from "../core/state/needsRePair";
+import { SavedPairingRejectedError } from "../drivers/shared/savedPairingRejected";
 
 const VOLUME_STEP = 2;
 const MAX_VOLUME = 100;
@@ -42,10 +45,23 @@ export function createDemoDriver(real: DeviceDriver, scripts: Record<string, Dem
   const states = new Map<string, DeviceState>();
   const listeners = new Map<string, Set<StateChangeListener>>();
 
-  const scriptFor = (device: Device): DemoDeviceScript => scripts[device.id] ?? DEFAULT_SCRIPT;
+  // ADR-HEARTH-223: the demo LG TV refuses its saved pairing when the URL asks for it (?repair=), until a demo re-pair succeeds.
+  const rePaired = new Set<string>();
+  const scriptFor = (device: Device): DemoDeviceScript => {
+    const script = scripts[device.id] ?? DEFAULT_SCRIPT;
+    return device.id === DEMO_LG_ID && demoRePairOutcome() !== null ? { ...script, rejectedPairing: true } : script;
+  };
   const publish = (deviceId: string, state: DeviceState): void => {
     states.set(deviceId, state);
     listeners.get(deviceId)?.forEach((listener) => listener(deviceId, state));
+  };
+  const demoRePair = async (device: Device): Promise<void> => {
+    const outcome = demoRePairOutcome() ?? "succeeds";
+    publish(device.id, { connection: "disconnected", values: markNeedsRePair({}), lastUpdated: Date.now() });
+    await new Promise((resolve) => setTimeout(resolve, outcome === "waiting" ? DEMO_RE_PAIR_NEVER_ANSWERS_MS : DEMO_RE_PAIR_DELAY_MS));
+    if (outcome !== "succeeds") throw new Error("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again");
+    rePaired.add(device.id);
+    publish(device.id, { connection: "connected", values: { ...scriptFor(device).values }, lastUpdated: Date.now() });
   };
 
   return {
@@ -60,10 +76,17 @@ export function createDemoDriver(real: DeviceDriver, scripts: Record<string, Dem
     ...(real.fetchSnapshot ? { fetchSnapshot: async (device: Device): Promise<SnapshotImage> => demoSnapshotFor(device) } : {}),
     ...(real.browseMedia ? { browseMedia: async (_device: Device, mediaContentId?: string): Promise<MediaBrowseNode> => demoBrowseMedia(mediaContentId) } : {}),
 
+    // ADR-HEARTH-223: only a driver that really offers a re-pair gets the demo twin of it.
+    ...(real.rePair ? { rePair: (device: Device): Promise<void> => demoRePair(device) } : {}),
+
     async connect(device: Device): Promise<void> {
       const script = scriptFor(device);
       // Always yield at least a macrotask, like a real socket: publishing synchronously would be overwritten by the bridge's initial getState() seed.
       await new Promise((resolve) => setTimeout(resolve, script.connectDelayMs ?? 0));
+      if (script.rejectedPairing && !rePaired.has(device.id)) {
+        publish(device.id, { connection: "disconnected", values: markNeedsRePair({}), lastUpdated: Date.now() });
+        throw new SavedPairingRejectedError("This TV isn't recognizing a previous pairing anymore — accept the on-screen prompt to re-approve it");
+      }
       if (!script.reachable) {
         publish(device.id, { connection: "disconnected", values: {}, lastUpdated: Date.now() });
         throw new Error("Demo device is offline");

@@ -76,6 +76,8 @@ interface DevicesTabScreenProps {
   onDismissUpdateBanner: () => void;
   onDeviceAdded: (device: Device) => Device;
   onReconnect: (device: Device) => Promise<void>;
+  /** ADR-HEARTH-223: forgets a device's saved pairing and pairs it again, keeping the same device (and saving the new pairing). */
+  onRePair: (device: Device) => Promise<void>;
   onRenameDevice: (device: Device, newName: string, source?: NameSourceKind) => Promise<Device>;
   onAddressUpdated: (updated: Device) => void;
   onDeviceUpdatedInPlace: (updated: Device) => void;
@@ -101,6 +103,7 @@ export function DevicesTabScreen({
   onDismissUpdateBanner,
   onDeviceAdded,
   onReconnect,
+  onRePair,
   onRenameDevice,
   onAddressUpdated,
   onDeviceUpdatedInPlace,
@@ -171,6 +174,11 @@ export function DevicesTabScreen({
       openJoin(invite);
     });
   }, []);
+
+  // ADR-HEARTH-223: a re-pair is offered only for a driver that implements one, and never on a restricted (kid or guest) phone.
+  function canRePair(device: Device): boolean {
+    return !restricted && typeof runtime.driverRegistry.get(device.driverId)?.rePair === "function";
+  }
 
   // Screen navigation after an add/rename/edit/save is this tab's own concern (ADR-HEARTH-104) —
   // App.tsx's handlers now only do registry/persistence work and hand back the updated device.
@@ -285,6 +293,7 @@ export function DevicesTabScreen({
           commandEngine={runtime.commandEngine}
           stateStore={runtime.stateStore}
           onReconnect={() => onReconnect(screen.device)}
+          onRePair={canRePair(screen.device) ? () => onRePair(screen.device) : undefined}
           onRename={handleRename}
           onBack={() => setScreen({ name: "list" })}
         />

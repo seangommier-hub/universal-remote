@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { stateNeedsRePair } from "../core/state/needsRePair";
 import { StateStore } from "../core/state/StateStore";
 import { DeviceState } from "../core/types/DeviceState";
 import { describeDeviceStatus } from "./describeDeviceStatus";
@@ -21,6 +22,7 @@ export function DeviceConnectionStatus({ stateStore, deviceId }: { stateStore: S
   const label = describeDeviceStatus({
     connection: state.connection,
     wakeBurstActive: state.values.waking === true,
+    needsRePair: stateNeedsRePair(state),
     connectivityMode,
     fccReachable: connectivityMode === "unknown" ? undefined : true,
     secondsSinceLastSeen: Math.max(0, Math.round((Date.now() - state.lastUpdated) / MS_PER_SECOND)),
