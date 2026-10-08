@@ -369,6 +369,12 @@ export class RokuEcpDriver implements DeviceDriver {
         return;
       }
       case "textEntry": {
+        // ADR-HEARTH-220: the on-screen keyboard's Delete key -- ECP's own documented Backspace key.
+        if (command.args?.backspace === true) {
+          await client.keypress("Backspace");
+          this.patchValues(device.id, { lastAction: "textEntry" });
+          return;
+        }
         const text = command.args?.text;
         if (typeof text !== "string" || text.length === 0) {
           throw new RokuValidationError("textEntry requires a non-empty string 'text' arg");

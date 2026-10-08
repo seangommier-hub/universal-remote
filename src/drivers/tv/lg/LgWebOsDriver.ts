@@ -624,6 +624,13 @@ export class LgWebOsDriver implements DeviceDriver {
         this.patchValues(device.id, { lastAction: "menu" });
         return;
       case "textEntry": {
+        // ADR-HEARTH-220: the on-screen keyboard's Delete key. LG's IME service documents
+        // deleteCharacters alongside insertText (same Connect SDK source).
+        if (command.args?.backspace === true) {
+          await client.call("ssap://com.webos.service.ime/deleteCharacters", { count: 1 });
+          this.patchValues(device.id, { lastAction: "textEntry" });
+          return;
+        }
         const text = command.args?.text;
         if (typeof text !== "string" || text.length === 0) {
           throw new Error("textEntry requires a non-empty string 'text' arg");

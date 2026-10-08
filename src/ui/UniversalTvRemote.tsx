@@ -16,6 +16,7 @@ import { InputSelectionCard } from "./InputSelectionCard";
 import { KeyboardCard } from "./KeyboardCard";
 import { KeypadCard } from "./KeypadCard";
 import { MediaBrowseModal } from "./MediaBrowseModal";
+import { appendToEcho, backspaceEcho } from "./onScreenKeyboard";
 import { ReconnectCard } from "./ReconnectCard";
 import { RemoteScaleProvider } from "./RemoteScaleContext";
 import { maxScaleForWidth, REMOTE_HORIZONTAL_PADDING_PX, remoteMaxContentWidth } from "./remoteScale";
@@ -283,10 +284,17 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     setChannelInput("");
   }
 
-  function submitKeyboardInput() {
-    if (keyboardInput.length === 0) return;
-    send("textEntry", { text: keyboardInput });
-    setKeyboardInput("");
+  // ADR-HEARTH-220: the Keyboard tab is Hearth's own on-screen keyboard -- every key is sent to the
+  // TV the instant it's tapped (the same way pressKeypadDigit sends digits), not collected and sent
+  // as one string. keyboardInput is only the local echo line.
+  function pressKeyboardKey(char: string) {
+    setKeyboardInput((current) => appendToEcho(current, char));
+    send("textEntry", { text: char });
+  }
+
+  function pressKeyboardBackspace() {
+    setKeyboardInput(backspaceEcho);
+    send("textEntry", { backspace: true });
   }
 
   // See deriveRemoteViewState.ts for the full reasoning behind each of these (ADR-HEARTH-205
@@ -483,7 +491,17 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       )}
 
       {hasKeyboard && activeTab === "keyboard" && (
-        <KeyboardCard value={keyboardInput} disabled={controlsDisabled} onChangeValue={setKeyboardInput} onSubmit={submitKeyboardInput} />
+        <KeyboardCard
+          echo={keyboardInput}
+          disabled={controlsDisabled}
+          canSubmit={has(device, "selectPlayPause") || has(device, "select")}
+          onKey={pressKeyboardKey}
+          onBackspace={pressKeyboardBackspace}
+          onEnter={() => {
+            setKeyboardInput("");
+            pressKeypadEnter();
+          }}
+        />
       )}
       </View>
     </ScrollView>

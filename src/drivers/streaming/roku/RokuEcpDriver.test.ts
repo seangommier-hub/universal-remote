@@ -539,6 +539,17 @@ describe("RokuEcpDriver", () => {
     ]);
   }, 10000);
 
+  // ADR-HEARTH-220: the on-screen keyboard's Delete key sends ECP's own Backspace key.
+  test("textEntry with backspace sends one Backspace keypress", async () => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability: "textEntry", args: { backspace: true } });
+
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
+    expect(keypressUrls).toEqual(["http://192.168.1.80:8060/keypress/Backspace"]);
+  });
+
   test("textEntry rejects an empty string without any network call", async () => {
     await connectRoku(driver);
 
