@@ -1,6 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
+
+const BANNER_ICON_SIZE = 16;
 
 /**
  * Real bug found live (2026-09-22): this used to be gated on isConnected too, which meant
@@ -9,10 +12,17 @@ import { theme } from "./theme";
  * Family Command Center unreachable) looked identical to a silently-ignored button press.
  */
 export function CommandErrorBanner({ message }: { message: string }) {
+  const { size, font } = useRemoteScaled();
+  const bannerSizing = {
+    gap: size(theme.spacing.sm),
+    paddingVertical: size(theme.spacing.sm),
+    paddingHorizontal: size(theme.spacing.md),
+    borderRadius: size(theme.radius.md),
+  };
   return (
-    <View style={styles.commandErrorBanner} accessibilityLiveRegion="assertive" accessible accessibilityLabel={message}>
-      <Ionicons name="alert-circle-outline" size={16} color={theme.statusError} />
-      <Text style={styles.commandErrorText}>{message}</Text>
+    <View style={[styles.commandErrorBanner, bannerSizing]} accessibilityLiveRegion="assertive" accessible accessibilityLabel={message}>
+      <Ionicons name="alert-circle-outline" size={size(BANNER_ICON_SIZE)} color={theme.statusError} />
+      <Text style={[styles.commandErrorText, { fontSize: font(theme.type.label) }]}>{message}</Text>
     </View>
   );
 }

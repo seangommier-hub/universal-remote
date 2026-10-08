@@ -4,6 +4,7 @@ import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { ROCKER_WIDTH } from "./dpadLayout";
 import { has } from "./hasCapability";
+import { ROCKER_LABEL_MAX_FONT_MULTIPLIER, scaleFont, shouldShowRockerLabel } from "./remoteScale";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { theme } from "./theme";
 
@@ -11,9 +12,6 @@ interface VolumeChannelCardProps {
   device: Device;
   scale: number;
   scaledDpadSize: number;
-  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
-   * to this card's own padding/gap, never to a tap target. */
-  fitScale: number;
   disabled: boolean;
   onSend: (capability: CapabilityId) => void;
 }
@@ -23,11 +21,13 @@ interface VolumeChannelCardProps {
  * no channel keys) — DpadCluster's merged hub needs a d-pad to anchor to, so this keeps volume
  * reachable on its own rather than disappearing.
  */
-export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, disabled, onSend }: VolumeChannelCardProps) {
+export function VolumeChannelCard({ device, scale, scaledDpadSize, disabled, onSend }: VolumeChannelCardProps) {
+  const showRockerLabel = shouldShowRockerLabel(scale);
+  const rockerLabelSizing = { fontSize: scaleFont(theme.type.caption, scale), letterSpacing: 0.5 * scale };
   return (
-    <View style={[remoteCardStyles.card, { paddingVertical: theme.spacing.md * fitScale, gap: theme.spacing.sm * fitScale }]}>
+    <View style={[remoteCardStyles.card, { paddingVertical: theme.spacing.md * scale, gap: theme.spacing.sm * scale, borderRadius: theme.radius.lg * scale }]}>
       <Text style={remoteCardStyles.cardLabel}>Volume &amp; Channel</Text>
-      <View style={styles.rockerRow}>
+      <View style={[styles.rockerRow, { gap: theme.spacing.xl * scale }]}>
         {(has(device, "volumeUp") || has(device, "volumeDown")) && (
           <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "volumeUp") && (
@@ -41,7 +41,7 @@ export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, dis
                 containerStyle={styles.dpadArrow}
               />
             )}
-            <Text style={remoteCardStyles.rockerColumnLabel}>Vol</Text>
+            {showRockerLabel && <Text style={[remoteCardStyles.rockerColumnLabel, rockerLabelSizing]} maxFontSizeMultiplier={ROCKER_LABEL_MAX_FONT_MULTIPLIER}>Vol</Text>}
             {has(device, "volumeDown") && (
               <CapabilityButton
                 shape="circle"
@@ -68,7 +68,7 @@ export function VolumeChannelCard({ device, scale, scaledDpadSize, fitScale, dis
                 containerStyle={styles.dpadArrow}
               />
             )}
-            <Text style={remoteCardStyles.rockerColumnLabel}>Ch</Text>
+            {showRockerLabel && <Text style={[remoteCardStyles.rockerColumnLabel, rockerLabelSizing]} maxFontSizeMultiplier={ROCKER_LABEL_MAX_FONT_MULTIPLIER}>Ch</Text>}
             {has(device, "channelDown") && (
               <CapabilityButton
                 shape="circle"

@@ -1,7 +1,10 @@
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { CapabilityButton } from "./CapabilityButton";
 import { remoteCardStyles } from "./remoteCardStyles";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
+
+const KEYBOARD_HINT_LINE_HEIGHT = 18;
 
 interface KeyboardCardProps {
   value: string;
@@ -12,17 +15,27 @@ interface KeyboardCardProps {
 
 /** The remote screen's "Keyboard" tab — types on the phone's own keyboard and sends textEntry to the TV. */
 export function KeyboardCard({ value, disabled, onChangeValue, onSubmit }: KeyboardCardProps) {
+  const { size, font } = useRemoteScaled();
   return (
-    <View style={remoteCardStyles.card}>
-      <Text style={remoteCardStyles.cardLabel}>Type on the TV</Text>
-      <View style={styles.keyboardHintCard}>
-        <Text style={styles.keyboardHint}>
+    <View style={[remoteCardStyles.card, { padding: size(theme.spacing.md), gap: size(theme.spacing.sm), borderRadius: size(theme.radius.lg) }]}>
+      <Text style={[remoteCardStyles.cardLabel, { fontSize: font(theme.type.label) }]}>Type on the TV</Text>
+      <View style={[styles.keyboardHintCard, { padding: size(theme.spacing.md), marginBottom: size(theme.spacing.sm), borderRadius: size(theme.radius.md) }]}>
+        <Text style={[styles.keyboardHint, { fontSize: font(theme.type.label), lineHeight: font(KEYBOARD_HINT_LINE_HEIGHT) }]}>
           Type using your phone's own keyboard, then tap Send to type it on the TV — no more navigating letter by letter with
           the d-pad. Use the Remote tab's Select button to move to the next field or submit.
         </Text>
       </View>
       <TextInput
-        style={styles.keyboardInput}
+        style={[
+          styles.keyboardInput,
+          {
+            fontSize: font(theme.type.body),
+            paddingVertical: size(theme.spacing.md),
+            paddingHorizontal: size(theme.spacing.lg),
+            marginBottom: size(theme.spacing.md),
+            borderRadius: size(theme.radius.md),
+          },
+        ]}
         value={value}
         onChangeText={onChangeValue}
         placeholder="Type a username, password, or search term…"

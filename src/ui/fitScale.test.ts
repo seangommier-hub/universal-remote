@@ -1,9 +1,23 @@
-import { FIT_SAFETY_MARGIN_PX, FIT_SCALE_FLOOR, FIT_TOLERANCE_PX, nextFitScale } from "./fitScale";
+import { FIT_GROW_THRESHOLD_PX, FIT_SAFETY_MARGIN_PX, FIT_SCALE_FLOOR, FIT_SCALE_GROW_CEILING, FIT_TOLERANCE_PX, maxFitScaleFor, nextFitScale } from "./fitScale";
+
+describe("maxFitScaleFor", () => {
+  test("is capped by the grow ceiling when there is plenty of combined headroom", () => {
+    expect(maxFitScaleFor(1, 5)).toBe(FIT_SCALE_GROW_CEILING);
+  });
+
+  test("is capped by the combined (width x fit) scale when that is the tighter bound", () => {
+    expect(maxFitScaleFor(1.2, 1.5)).toBeCloseTo(1.25, 5);
+  });
+
+  test("never drops below 1: a window already past its combined cap just does not grow", () => {
+    expect(maxFitScaleFor(1.35, 1.0)).toBe(1);
+  });
+});
 
 describe("nextFitScale", () => {
-  test("content already fits (with margin to spare) leaves fitScale unchanged", () => {
-    expect(nextFitScale(1, 800, 700)).toBe(1);
-    expect(nextFitScale(0.9, 800, 700)).toBe(0.9);
+  test("content that fits with only a little spare (inside the dead band) leaves fitScale unchanged", () => {
+    expect(nextFitScale(1, 800, 770)).toBe(1);
+    expect(nextFitScale(0.9, 800, 770)).toBe(0.9);
   });
 
   test("overflow exactly at the margin-adjusted tolerance is treated as a fit", () => {
@@ -50,9 +64,40 @@ describe("nextFitScale", () => {
     expect(nextFitScale(FIT_SCALE_FLOOR, 10, 10000)).toBe(FIT_SCALE_FLOOR);
   });
 
-  test("never exceeds the ceiling even if given an out-of-range current value", () => {
-    expect(nextFitScale(1.5, 800, 700)).toBe(1.5); // already fits -- returned as-is, unclamped (callers never pass >1 in practice)
-    expect(nextFitScale(1.5, 100, 1000)).toBeLessThanOrEqual(1);
+  test("a value already past the grow ceiling is left alone when it fits, and shrinks when it doesn't", () => {
+    expect(nextFitScale(1.5, 800, 700)).toBe(1.5);
+    expect(nextFitScale(1.5, 100, 1000)).toBe(FIT_SCALE_FLOOR);
+  });
+
+  // ADR-HEARTH-219: bigger phones (Pro Max) grow the remote into spare height.
+  test("real spare height grows fitScale, never past the cap", () => {
+    expect(nextFitScale(1, 932, 600)).toBeGreaterThan(1);
+    expect(nextFitScale(1, 2000, 600)).toBe(FIT_SCALE_GROW_CEILING);
+    expect(nextFitScale(1, 2000, 600, 1.2)).toBe(1.2);
+  });
+
+  test("a small amount of spare (inside the dead band) does not grow", () => {
+    const target = 800 - FIT_SAFETY_MARGIN_PX;
+    expect(nextFitScale(1, 800, target - FIT_GROW_THRESHOLD_PX)).toBe(1);
+  });
+
+  test("growth approaches the fit from below and never overshoots into overflow", () => {
+    // content = fixed + scalable * fit, like the real screen
+    let fit = 1;
+    const available = 932;
+    for (let i = 0; i < 20; i++) {
+      const content = 450 + 300 * fit;
+      fit = nextFitScale(fit, available, content);
+      expect(450 + 300 * fit).toBeLessThanOrEqual(available - FIT_SAFETY_MARGIN_PX);
+    }
+    expect(fit).toBeGreaterThan(1.2);
+  });
+
+  test("grow then shrink never chase each other: once settled, the same measurement is stable", () => {
+    let fit = 1;
+    const available = 932;
+    for (let i = 0; i < 30; i++) fit = nextFitScale(fit, available, 450 + 300 * fit);
+    expect(nextFitScale(fit, available, 450 + 300 * fit)).toBe(fit);
   });
 
   test("an unmeasured (zero/negative) dimension is a no-op, not a crash or a snap to the floor", () => {

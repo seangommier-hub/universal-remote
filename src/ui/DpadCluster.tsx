@@ -4,6 +4,7 @@ import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { DPAD_HEIGHT, ROCKER_WIDTH } from "./dpadLayout";
 import { has } from "./hasCapability";
+import { ROCKER_LABEL_MAX_FONT_MULTIPLIER, scaleFont, shouldShowRockerLabel } from "./remoteScale";
 import { remoteCardStyles } from "./remoteCardStyles";
 import { theme } from "./theme";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
@@ -14,10 +15,6 @@ interface DpadClusterProps {
   scale: number;
   scaledDpadSize: number;
   scaledSmDiameter: number;
-  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied here only
-   * to this card's own vertical padding/margin, never to a tap target (those are already covered
-   * by `scale`, which the caller has combined with this same factor for the circles above). */
-  fitScale: number;
   disabled: boolean;
   playbackState: unknown;
   seekMultiplier: number | null;
@@ -42,7 +39,6 @@ export function DpadCluster({
   scale,
   scaledDpadSize,
   scaledSmDiameter,
-  fitScale,
   disabled,
   playbackState,
   seekMultiplier,
@@ -70,19 +66,21 @@ export function DpadCluster({
     () => onSend("directionalNavigation", { direction: "right" }),
     () => onSeekDirection("right")
   );
+  const showRockerLabel = shouldShowRockerLabel(scale);
+  const rockerLabelSizing = { fontSize: scaleFont(theme.type.caption, scale), letterSpacing: 0.5 * scale };
   return (
-    <View style={[styles.hubCard, { paddingVertical: theme.spacing.sm * fitScale }]}>
+    <View style={[styles.hubCard, { paddingVertical: theme.spacing.sm * scale, paddingHorizontal: theme.spacing.sm * scale, borderRadius: theme.radius.xl * scale }]}>
       {/* ADR-HEARTH-204: a fast same-direction d-pad left/right tap streak — purely an honest
           label for Hearth's own tap cadence, never a claim about what the TV/app itself is
           doing with it. position:"absolute" so it never adds height even while shown. */}
       {seekMultiplier !== null && (
-        <View style={styles.seekMultiplierOverlay} pointerEvents="none">
+        <View style={[styles.seekMultiplierOverlay, { top: theme.spacing.xs * scale }]} pointerEvents="none">
           <View style={styles.seekMultiplierBadge}>
             <Text style={styles.seekMultiplierLabel}>{`Seeking ${seekMultiplier}x`}</Text>
           </View>
         </View>
       )}
-      <View style={styles.hubRow}>
+      <View style={[styles.hubRow, { gap: theme.spacing.sm * scale }]}>
         {(has(device, "volumeUp") || has(device, "volumeDown")) && (
           <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "volumeUp") && (
@@ -96,7 +94,7 @@ export function DpadCluster({
                 containerStyle={styles.dpadArrow}
               />
             )}
-            <Text style={remoteCardStyles.rockerColumnLabel}>Vol</Text>
+            {showRockerLabel && <Text style={[remoteCardStyles.rockerColumnLabel, rockerLabelSizing]} maxFontSizeMultiplier={ROCKER_LABEL_MAX_FONT_MULTIPLIER}>Vol</Text>}
             {has(device, "volumeDown") && (
               <CapabilityButton
                 shape="circle"
@@ -202,7 +200,7 @@ export function DpadCluster({
                 containerStyle={styles.dpadArrow}
               />
             )}
-            <Text style={remoteCardStyles.rockerColumnLabel}>Ch</Text>
+            {showRockerLabel && <Text style={[remoteCardStyles.rockerColumnLabel, rockerLabelSizing]} maxFontSizeMultiplier={ROCKER_LABEL_MAX_FONT_MULTIPLIER}>Ch</Text>}
             {has(device, "channelDown") && (
               <CapabilityButton
                 shape="circle"
@@ -228,7 +226,7 @@ export function DpadCluster({
           applies to any other driver (e.g. Apple TV, Sonos) that declares "playPause" as its
           own separate capability. */}
       {has(device, "playPause") && (
-        <View style={[styles.playPauseRow, { marginTop: theme.spacing.sm * fitScale }]}>
+        <View style={[styles.playPauseRow, { marginTop: theme.spacing.sm * scale }]}>
           <CapabilityButton
             shape="circle"
             scale={scale}

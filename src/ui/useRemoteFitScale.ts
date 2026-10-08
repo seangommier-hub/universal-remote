@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent } from "react-native";
-import { FIT_SCALE_CEILING, nextFitScale } from "./fitScale";
+import { FIT_SCALE_CEILING, maxFitScaleFor, nextFitScale } from "./fitScale";
 
 // Thin React wiring around fitScale.ts (the real, framework-free math — see its own header
 // comment for the full story). This hook owns the measure -> correct -> re-measure loop so
@@ -13,7 +13,13 @@ import { FIT_SCALE_CEILING, nextFitScale } from "./fitScale";
 // (fitScale.ts's own comment), so closing the last few px of a real correction legitimately takes
 // more than a couple of steps; 20 is still a hard, small bound -- each step is one layout pass, no
 // animation or timer involved, so even the full count resolves well within a single frame budget.
-const MAX_CORRECTION_STEPS = 20;
+const MAX_CORRECTION_STEPS = 30;
+
+// ADR-HEARTH-219: the remote also GROWS into spare height (Pro Max vs. Pro), but the width-derived
+// scale (useResponsiveScale, up to 1.35) already enlarges it on wide screens -- this caps the
+// COMBINED size so a tablet-sized window never gets cartoonishly large controls. The caller may
+// pass a lower cap (the largest scale the window's width can show without clipping the hub).
+export const MAX_COMBINED_SCALE = 1.6;
 
 // A resize smaller than this (px) is treated as noise, not a real viewport change -- avoids
 // re-running the whole correction sequence over sub-pixel layout rounding.
@@ -44,7 +50,8 @@ export interface RemoteFitScale {
  * simpler and more obviously correct than trying to grow a shrunk scale back up without ever
  * overshooting into fresh overflow.
  */
-export function useRemoteFitScale(resetKey: string): RemoteFitScale {
+export function useRemoteFitScale(resetKey: string, widthScale: number = 1, maxCombinedScale: number = MAX_COMBINED_SCALE): RemoteFitScale {
+  const maxFitScale = maxFitScaleFor(widthScale, Math.min(maxCombinedScale, MAX_COMBINED_SCALE));
   const [fitScale, setFitScale] = useState(FIT_SCALE_CEILING);
   const availableHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -57,12 +64,12 @@ export function useRemoteFitScale(resetKey: string): RemoteFitScale {
     if (availableHeight <= 0 || contentHeight <= 0) return;
     if (stepsRef.current >= MAX_CORRECTION_STEPS) return;
     setFitScale((current) => {
-      const next = nextFitScale(current, availableHeight, contentHeight);
+      const next = nextFitScale(current, availableHeight, contentHeight, maxFitScale);
       if (Math.abs(next - current) < 0.001) return current; // already converged -- no-op, no re-render
       stepsRef.current += 1;
       return next;
     });
-  }, []);
+  }, [maxFitScale]);
 
   // A different device, or a different tab on the same device, is different content -- re-run
   // the correction from scratch rather than carrying over a shrink that applied to something else.

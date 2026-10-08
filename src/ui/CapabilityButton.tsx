@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { ComponentProps } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { useRemoteScaled } from "./RemoteScaleContext";
+import { scaleFont } from "./remoteScale";
 import { theme } from "./theme";
 
 // Real-device ask (2026-09-16): "add slight haptic feedback... to make the user get the feel
@@ -79,6 +81,7 @@ export function CapabilityButton({
   numberOfLines,
   selected,
 }: CapabilityButtonProps) {
+  const remote = useRemoteScaled();
   const isCircle = shape === "circle";
   const isLarge = isCircle && size === "lg";
   const isXs = isCircle && size === "xs";
@@ -94,6 +97,21 @@ export function CapabilityButton({
           return { width: diameter, height: diameter, borderRadius: diameter / 2 };
         })()
       : undefined;
+  // ADR-HEARTH-219: a pill follows the remote screen's total scale (via context, 1 everywhere
+  // else, so every other screen's pills render exactly as before); a circle's text follows the
+  // explicit `scale` its caller already passes for its diameter.
+  const pillScaleStyle =
+    !isCircle && remote.scale !== 1
+      ? {
+          paddingVertical: remote.size(theme.spacing.md),
+          paddingHorizontal: remote.size(theme.spacing.lg),
+          minWidth: remote.size(PILL_MIN_WIDTH),
+          borderRadius: remote.size(theme.radius.md),
+        }
+      : undefined;
+  const baseLabelSize = isCircle ? (isLarge ? theme.type.title : theme.type.subtitle) : theme.type.body;
+  const labelSizeStyle =
+    isCircle && scale !== 1 ? { fontSize: scaleFont(baseLabelSize, scale) } : !isCircle && remote.scale !== 1 ? { fontSize: remote.font(baseLabelSize) } : undefined;
 
   return (
     <Pressable
@@ -123,6 +141,7 @@ export function CapabilityButton({
         pressed && styles.pressed,
         disabled && styles.disabled,
         scaledCircleStyle,
+        pillScaleStyle,
         containerStyle,
       ]}
     >
@@ -130,9 +149,9 @@ export function CapabilityButton({
         {icon && (
           <Ionicons
             name={icon}
-            size={(isLarge ? 28 : isXs ? 16 : isCircle ? 22 : 18) * (isCircle ? scale : 1)}
+            size={(isLarge ? 28 : isXs ? 16 : isCircle ? 22 : 18) * (isCircle ? scale : remote.scale)}
             color={iconColor}
-            style={!isCircle && label ? styles.iconWithLabel : undefined}
+            style={!isCircle && label ? [styles.iconWithLabel, { marginRight: remote.size(theme.spacing.sm) }] : undefined}
           />
         )}
         {(!icon || !isCircle) && (
@@ -144,6 +163,7 @@ export function CapabilityButton({
               variant === "accent" && styles.accentLabel,
               variant === "ghost" && styles.ghostLabel,
               disabled && styles.disabledLabel,
+              labelSizeStyle,
             ]}
             numberOfLines={numberOfLines}
             adjustsFontSizeToFit={numberOfLines !== undefined}
@@ -158,6 +178,7 @@ export function CapabilityButton({
 }
 
 const LONG_PRESS_DELAY_MS = 400;
+const PILL_MIN_WIDTH = 64;
 
 const styles = StyleSheet.create({
   button: {

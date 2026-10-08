@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { CapabilityButton } from "./CapabilityButton";
 import { describeReconnectFailure } from "./describeReconnectFailure";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
 
 interface ReconnectCardProps {
@@ -22,14 +23,16 @@ interface ReconnectCardProps {
  * whether this specific manual tap succeeded.
  */
 export function ReconnectCard({ reconnecting, reconnectError, onTryNow }: ReconnectCardProps) {
+  const { size, font } = useRemoteScaled();
+  const labelFont = { fontSize: font(theme.type.label) };
   return (
-    <View style={styles.reconnectCard}>
-      <View style={styles.reconnectTextGroup}>
-        <Text style={styles.reconnectTitle}>Reconnecting…</Text>
+    <View style={[styles.reconnectCard, { gap: size(theme.spacing.md), padding: size(theme.spacing.lg), borderRadius: size(theme.radius.lg) }]}>
+      <View style={[styles.reconnectTextGroup, { gap: size(theme.spacing.xs) }]}>
+        <Text style={[styles.reconnectTitle, { fontSize: font(theme.type.body) }]}>Reconnecting…</Text>
         {reconnectError ? (
-          <Text style={styles.reconnectError}>{describeReconnectFailure(reconnectError)}</Text>
+          <Text style={[styles.reconnectError, labelFont]}>{describeReconnectFailure(reconnectError)}</Text>
         ) : (
-          <Text style={styles.reconnectBody}>Controls are off for now — retrying automatically in the background. Tap to try right now.</Text>
+          <Text style={[styles.reconnectBody, labelFont]}>Controls are off for now — retrying automatically in the background. Tap to try right now.</Text>
         )}
       </View>
       {/* Real-device finding (2026-09-10), same bug as the Input buttons: CapabilityButton
