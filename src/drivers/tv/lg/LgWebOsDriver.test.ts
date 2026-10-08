@@ -149,6 +149,47 @@ describe("LgWebOsDriver", () => {
     ]);
   });
 
+  // ADR-HEARTH-218: the remote only lists inputs the TV says are connected, so the driver must keep that flag.
+  test("keeps each input's own connected flag from the real input list", async () => {
+    const connectPromise = driver.connect(device);
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    const registerSent = JSON.parse(socket.sentMessages[0]);
+    socket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key" } });
+
+    await flushMicrotasks();
+    const volumeRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 15, mute: false } });
+
+    await flushMicrotasks();
+    const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({
+      type: "response",
+      id: inputListRequest.id,
+      payload: {
+        returnValue: true,
+        devices: [
+          { id: "HDMI_1", label: "HDMI 1", connected: true },
+          { id: "HDMI_2", label: "HDMI 2", connected: false },
+          { id: "HDMI_3", label: "HDMI 3" },
+        ],
+      },
+    });
+
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
+
+    await connectPromise;
+    const state = await driver.getState(device);
+    expect(state.values.inputs).toEqual([
+      { id: "HDMI_1", label: "HDMI 1", connected: true },
+      { id: "HDMI_2", label: "HDMI 2", connected: false },
+      { id: "HDMI_3", label: "HDMI 3" },
+    ]);
+  });
+
   test("textEntry calls ssap://com.webos.service.ime/insertText with the whole string in one request (ADR-HEARTH-072)", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();

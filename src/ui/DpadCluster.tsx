@@ -84,7 +84,7 @@ export function DpadCluster({
       )}
       <View style={styles.hubRow}>
         {(has(device, "volumeUp") || has(device, "volumeDown")) && (
-          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
+          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "volumeUp") && (
               <CapabilityButton
                 shape="circle"
@@ -110,7 +110,7 @@ export function DpadCluster({
             )}
           </View>
         )}
-        <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2 }]} {...dpadSwipeHandlers}>
+        <View style={[styles.dpad, { width: scaledDpadSize, height: scaledDpadSize, borderRadius: scaledDpadSize / 2, gap: theme.spacing.md * scale }]} {...dpadSwipeHandlers}>
           <CapabilityButton
             shape="circle"
             scale={scale}
@@ -122,7 +122,7 @@ export function DpadCluster({
             disabled={disabled}
             containerStyle={styles.dpadArrow}
           />
-          <View style={styles.dpadMiddleRow}>
+          <View style={[styles.dpadMiddleRow, { gap: theme.spacing.md * scale }]}>
             <CapabilityButton
               shape="circle"
               scale={scale}
@@ -190,7 +190,7 @@ export function DpadCluster({
           />
         </View>
         {(has(device, "channelUp") || has(device, "channelDown")) && (
-          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2 }]}>
+          <View style={[remoteCardStyles.rockerColumn, { height: scaledDpadSize, width: ROCKER_WIDTH * scale, borderRadius: (ROCKER_WIDTH * scale) / 2, paddingVertical: theme.spacing.sm * scale }]}>
             {has(device, "channelUp") && (
               <CapabilityButton
                 shape="circle"

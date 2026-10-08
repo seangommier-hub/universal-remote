@@ -776,9 +776,11 @@ export class LgWebOsDriver implements DeviceDriver {
           const id = typeof record.id === "string" ? record.id : typeof record.appId === "string" ? record.appId : undefined;
           if (!id) return null;
           const label = typeof record.label === "string" ? record.label : id;
-          return { id, label };
+          // `connected` is the TV's own report of whether a device is plugged into that port --
+          // kept so the remote screen can show only active inputs (ADR-HEARTH-218).
+          return typeof record.connected === "boolean" ? { id, label, connected: record.connected } : { id, label };
         })
-        .filter((entry): entry is { id: string; label: string } => entry !== null)
+        .filter((entry): entry is { id: string; label: string; connected?: boolean } => entry !== null)
         // Sean, directly and repeatedly (2026-09-10, again 2026-09-12): his TV reports "Sling TV" as
         // one of its real inputs but he doesn't use it and wants it gone. Originally filtered only
         // inside UniversalTvRemote.tsx's own render — a real gap found live tonight once a second
