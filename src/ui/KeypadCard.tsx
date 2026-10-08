@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { CapabilityButton } from "./CapabilityButton";
 import { remoteCardStyles } from "./remoteCardStyles";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
 
 const KEYPAD_ROWS = [
@@ -22,20 +23,22 @@ interface KeypadCardProps {
 
 /** The remote screen's "Keypad" tab — a numeric grid plus Clear/0/Enter, mirroring a physical remote's number pad. */
 export function KeypadCard({ scale, channelInput, disabled, canSubmit, onPressDigit, onClear, onEnter }: KeypadCardProps) {
+  const { size, font } = useRemoteScaled();
+  const rowGap = { gap: size(theme.spacing.md) };
   return (
-    <View style={remoteCardStyles.card}>
+    <View style={[remoteCardStyles.card, { padding: size(theme.spacing.md), gap: size(theme.spacing.sm), borderRadius: size(theme.radius.lg) }]}>
       <View style={styles.keypadHeader}>
-        <Text style={remoteCardStyles.cardLabel}>Number Keys</Text>
-        <Text style={styles.keypadDisplay}>{channelInput.length > 0 ? channelInput : "—"}</Text>
+        <Text style={[remoteCardStyles.cardLabel, { fontSize: font(theme.type.label) }]}>Number Keys</Text>
+        <Text style={[styles.keypadDisplay, { fontSize: font(theme.type.title) }]}>{channelInput.length > 0 ? channelInput : "—"}</Text>
       </View>
       {KEYPAD_ROWS.map((digitRow) => (
-        <View key={digitRow.join("")} style={styles.row}>
+        <View key={digitRow.join("")} style={[styles.row, rowGap]}>
           {digitRow.map((digit) => (
             <CapabilityButton key={digit} shape="circle" scale={scale} label={digit} onPress={() => onPressDigit(digit)} disabled={disabled} />
           ))}
         </View>
       ))}
-      <View style={styles.row}>
+      <View style={[styles.row, rowGap]}>
         <CapabilityButton
           shape="circle"
           scale={scale}

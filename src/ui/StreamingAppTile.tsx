@@ -1,7 +1,13 @@
 import { Pressable, StyleSheet, Text } from "react-native";
 import { StreamingService } from "../core/types/Capability";
 import { fireHapticClick } from "./CapabilityButton";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
+
+// ADR-HEARTH-219: base tile height at scale 1 -- 22% of the 375pt baseline row (73.7px) / the old 1.6
+// aspect ratio. An explicit, scaled height replaces aspectRatio so the tile follows the remote's
+// total scale instead of whatever width a given phone happens to give it (very tall at iPhone SE).
+const TILE_BASE_HEIGHT = 46;
 
 // Real brand identity colors (public, not the trademarked logo artwork itself) — sourced 2026-09-10
 // from each service's actual wordmark/background. No bundled logo image assets exist in this app,
@@ -51,12 +57,13 @@ export function StreamingAppTile({
   onPress: () => void;
   disabled: boolean;
 }) {
+  const { size, font } = useRemoteScaled();
   return (
     <Pressable
       onPress={onPress}
       onPressIn={disabled ? undefined : fireHapticClick}
       disabled={disabled}
-      style={[styles.streamingTile, { backgroundColor: bg }, disabled && styles.disabled]}
+      style={[styles.streamingTile, { backgroundColor: bg, height: size(TILE_BASE_HEIGHT), borderRadius: size(theme.radius.md) }, disabled && styles.disabled]}
       accessibilityRole="button"
       accessibilityLabel={`Open ${label.trim()}`}
     >
@@ -68,7 +75,7 @@ export function StreamingAppTile({
           wrapping, so centering is guaranteed the same way for all four tiles now that they all
           go through this one rendering path. */}
       <Text
-        style={[styles.streamingTileWordmark, { color: fg, fontSize: theme.type.label * fontScale }]}
+        style={[styles.streamingTileWordmark, { color: fg, fontSize: font(theme.type.label) * fontScale }]}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
@@ -82,7 +89,6 @@ export function StreamingAppTile({
 const styles = StyleSheet.create({
   streamingTile: {
     width: "22%",
-    aspectRatio: 1.6,
     borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",

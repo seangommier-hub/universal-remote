@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent } from "react-native";
-import { FIT_SCALE_CEILING, FIT_SCALE_GROW_CEILING, nextFitScale } from "./fitScale";
+import { FIT_SCALE_CEILING, maxFitScaleFor, nextFitScale } from "./fitScale";
 
 // Thin React wiring around fitScale.ts (the real, framework-free math — see its own header
 // comment for the full story). This hook owns the measure -> correct -> re-measure loop so
@@ -17,8 +17,9 @@ const MAX_CORRECTION_STEPS = 30;
 
 // ADR-HEARTH-219: the remote also GROWS into spare height (Pro Max vs. Pro), but the width-derived
 // scale (useResponsiveScale, up to 1.35) already enlarges it on wide screens -- this caps the
-// COMBINED size so a tablet-sized window never gets cartoonishly large controls.
-const MAX_COMBINED_SCALE = 1.6;
+// COMBINED size so a tablet-sized window never gets cartoonishly large controls. The caller may
+// pass a lower cap (the largest scale the window's width can show without clipping the hub).
+export const MAX_COMBINED_SCALE = 1.6;
 
 // A resize smaller than this (px) is treated as noise, not a real viewport change -- avoids
 // re-running the whole correction sequence over sub-pixel layout rounding.
@@ -49,8 +50,8 @@ export interface RemoteFitScale {
  * simpler and more obviously correct than trying to grow a shrunk scale back up without ever
  * overshooting into fresh overflow.
  */
-export function useRemoteFitScale(resetKey: string, widthScale: number = 1): RemoteFitScale {
-  const maxFitScale = Math.max(FIT_SCALE_CEILING, Math.min(FIT_SCALE_GROW_CEILING, MAX_COMBINED_SCALE / widthScale));
+export function useRemoteFitScale(resetKey: string, widthScale: number = 1, maxCombinedScale: number = MAX_COMBINED_SCALE): RemoteFitScale {
+  const maxFitScale = maxFitScaleFor(widthScale, Math.min(maxCombinedScale, MAX_COMBINED_SCALE));
   const [fitScale, setFitScale] = useState(FIT_SCALE_CEILING);
   const availableHeightRef = useRef(0);
   const contentHeightRef = useRef(0);

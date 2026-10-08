@@ -34,14 +34,14 @@ const MAX_SCALE = 1.35;
  * A device-width-derived scale factor for this screen's fixed-pixel touch
  * targets (circle diameters, the d-pad disc, rocker-column heights) --
  * multiply theme.circleDiameter values and DPAD_HEIGHT-derived sizes by
- * this instead of using the raw constant directly. Deliberately does NOT scale font
- * sizes or spacing/padding: type size is an OS-level Dynamic Type/accessibility
- * concern (`allowFontScaling`, on by default), a separate axis from "which
- * physical screen this is," and mixing the two would risk fonts becoming
- * too large on top of a user's own accessibility text-size setting; spacing
- * stays visually consistent across size classes on purpose, matching how
- * Apple's own HIG treats layout margins vs. touch-target sizing as separate
- * concerns.
+ * this instead of using the raw constant directly.
+ *
+ * ADR-HEARTH-219 REVERSES this hook's original "never scales fonts or spacing" rule for the
+ * remote screen (Sean, directly: "everything should be able to scale based on the device"): this
+ * value is now the width half of the remote's one TOTAL scale (UniversalTvRemote.tsx multiplies it
+ * by the height-fit scale), which scales sizes, paddings, gaps and -- clamped to a legibility band,
+ * see remoteScale.ts -- text. The OS font-size setting (`allowFontScaling`) is untouched: it still
+ * multiplies on top of whatever size this produces.
  */
 export function useResponsiveScale(): number {
   const { width } = useWindowDimensions();

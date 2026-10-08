@@ -79,3 +79,12 @@ export function nextFitScale(currentFitScale: number, availableHeight: number, c
   const growthEstimate = currentFitScale * (target / contentHeight);
   return Math.min(maxFitScale, Math.max(currentFitScale, growthEstimate));
 }
+
+/**
+ * The most the fit scale may GROW past the width-derived scale: bounded by FIT_SCALE_GROW_CEILING
+ * and by the combined (width x fit) scale cap, but never below 1 -- a window already at or past its
+ * combined cap simply doesn't grow, rather than being forced to shrink.
+ */
+export function maxFitScaleFor(widthScale: number, maxCombinedScale: number): number {
+  return Math.max(FIT_SCALE_CEILING, Math.min(FIT_SCALE_GROW_CEILING, maxCombinedScale / widthScale));
+}

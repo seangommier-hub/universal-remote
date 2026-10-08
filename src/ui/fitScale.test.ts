@@ -1,4 +1,18 @@
-import { FIT_GROW_THRESHOLD_PX, FIT_SAFETY_MARGIN_PX, FIT_SCALE_FLOOR, FIT_SCALE_GROW_CEILING, FIT_TOLERANCE_PX, nextFitScale } from "./fitScale";
+import { FIT_GROW_THRESHOLD_PX, FIT_SAFETY_MARGIN_PX, FIT_SCALE_FLOOR, FIT_SCALE_GROW_CEILING, FIT_TOLERANCE_PX, maxFitScaleFor, nextFitScale } from "./fitScale";
+
+describe("maxFitScaleFor", () => {
+  test("is capped by the grow ceiling when there is plenty of combined headroom", () => {
+    expect(maxFitScaleFor(1, 5)).toBe(FIT_SCALE_GROW_CEILING);
+  });
+
+  test("is capped by the combined (width x fit) scale when that is the tighter bound", () => {
+    expect(maxFitScaleFor(1.2, 1.5)).toBeCloseTo(1.25, 5);
+  });
+
+  test("never drops below 1: a window already past its combined cap just does not grow", () => {
+    expect(maxFitScaleFor(1.35, 1.0)).toBe(1);
+  });
+});
 
 describe("nextFitScale", () => {
   test("content that fits with only a little spare (inside the dead band) leaves fitScale unchanged", () => {

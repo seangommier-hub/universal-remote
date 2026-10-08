@@ -4,10 +4,13 @@ import { CapabilityId } from "../core/types/Capability";
 import { Device } from "../core/types/Device";
 import { CapabilityButton } from "./CapabilityButton";
 import { has } from "./hasCapability";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
 
 // ADR-HEARTH-208: a 22px glyph + 8px slop each side was a 38px target, under the 44pt minimum.
 const BACK_HIT_SLOP = 12;
+const BACK_ICON_SIZE = 22;
+const EDIT_ICON_SIZE = 14;
 
 interface RemoteHeaderRowProps {
   device: Device;
@@ -49,16 +52,18 @@ export function RemoteHeaderRow({
   const hasPower = has(device, "power");
   const hasPowerOn = has(device, "powerOn");
   const hasPowerOff = has(device, "powerOff");
+  const { size, font } = useRemoteScaled();
+  const nameFont = { fontSize: font(theme.type.subtitle) };
   return (
-    <View style={styles.headerRow}>
+    <View style={[styles.headerRow, { gap: size(theme.spacing.sm) }]}>
       <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to devices" hitSlop={BACK_HIT_SLOP}>
-        <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
+        <Ionicons name="chevron-back" size={size(BACK_ICON_SIZE)} color={theme.textPrimary} />
       </Pressable>
-      <Text style={styles.headerDivider}>|</Text>
+      <Text style={[styles.headerDivider, { fontSize: font(theme.type.title) }]}>|</Text>
       <View style={styles.headerText}>
         {editingName ? (
           <TextInput
-            style={styles.deviceNameInput}
+            style={[styles.deviceNameInput, nameFont]}
             value={nameInput}
             onChangeText={onChangeNameInput}
             autoFocus
@@ -70,13 +75,13 @@ export function RemoteHeaderRow({
           />
         ) : (
           <Pressable style={styles.deviceNameRow} onPress={onStartEdit} accessibilityRole="button" accessibilityLabel={`Rename ${device.name}`}>
-            <Text style={styles.deviceName} numberOfLines={1}>
+            <Text style={[styles.deviceName, nameFont]} numberOfLines={1}>
               {device.name}
             </Text>
-            <Ionicons name="pencil-outline" size={14} color={theme.textTertiary} />
+            <Ionicons name="pencil-outline" size={size(EDIT_ICON_SIZE)} color={theme.textTertiary} />
           </Pressable>
         )}
-        <Text style={styles.deviceMeta} numberOfLines={1}>
+        <Text style={[styles.deviceMeta, { fontSize: font(theme.type.body), marginTop: size(theme.spacing.xs) }]} numberOfLines={1}>
           {device.manufacturer} {device.model}
           {isAway ? " · Remote" : ""}
         </Text>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, ScrollView, StyleSheet, View } from "react-native";
+import { AccessibilityInfo, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommandEngine } from "../core/engine/CommandEngine";
 import { StateStore } from "../core/state/StateStore";
@@ -17,6 +17,8 @@ import { KeyboardCard } from "./KeyboardCard";
 import { KeypadCard } from "./KeypadCard";
 import { MediaBrowseModal } from "./MediaBrowseModal";
 import { ReconnectCard } from "./ReconnectCard";
+import { RemoteScaleProvider } from "./RemoteScaleContext";
+import { maxScaleForWidth, REMOTE_HORIZONTAL_PADDING_PX, remoteMaxContentWidth } from "./remoteScale";
 import { RemoteHeaderRow } from "./RemoteHeaderRow";
 import { RemoteStatusRow } from "./RemoteStatusRow";
 import { RemoteTabBar } from "./RemoteTabBar";
@@ -131,13 +133,18 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // is width-only by design (ADR-HEARTH-040) and never reacts to actual rendered height, so a
   // capability combination it wasn't hand-tuned against still overflows (ui-verify measured LG's
   // real worst case: 89px at the iPhone 17's 393x852 frame). This is the height-aware correction:
-  // measures this screen's real available vs. rendered height and shrinks the fit-aware sizes
-  // below (the d-pad hub as one whole unit, plus a few cards' own padding/gaps -- never the
-  // smaller utility/streaming/input buttons' own tap targets, see each call site's own comment)
-  // until it fits, converging to a stop rather than looping forever (fitScale.ts). Keyed by
+  // measures this screen's real available vs. rendered height and shrinks (or, on a tall phone,
+  // grows) the whole remote's one total scale until it fits -- ADR-HEARTH-219 extended this from
+  // the hub and a few paddings to every size and text on the screen -- converging to a stop
+  // rather than looping forever (fitScale.ts). Keyed by
   // device+tab so switching to a smaller tab (e.g. Keypad) or a different device starts fresh
   // instead of staying shrunk for content that never needed it.
-  const fit = useRemoteFitScale(`${device.id}:${activeTab}`, scale);
+  const { width: windowWidth } = useWindowDimensions();
+  const fit = useRemoteFitScale(`${device.id}:${activeTab}`, scale, maxScaleForWidth(windowWidth));
+  // ADR-HEARTH-219: ONE total scale (width x height-fit) multiplies every size on this screen --
+  // tap targets, tile heights, paddings, gaps, icons -- and, clamped, its text, so the whole remote
+  // grows or shrinks together (iPhone Pro vs. Pro Max vs. SE) instead of only the d-pad hub.
+  const totalScale = scale * fit.fitScale;
   // DPAD_HEIGHT itself stays the fixed, already-verified base measurement
   // (the "196 = 196, arrows land tangent to the disc" math in DpadCluster.tsx's
   // own styles is derived from it) -- this is that same value scaled for the
@@ -149,7 +156,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
   // -- DpadCluster's own arrows are tuned to land exactly tangent to the
   // disc's rim (ADR-HEARTH-037); scaling the container without also scaling
   // what sits on it the same amount would break that geometry.
-  const hubScale = scale * fit.fitScale;
+  const hubScale = totalScale;
   const scaledDpadSize = DPAD_HEIGHT * hubScale;
   const scaledSmDiameter = theme.circleDiameter.sm * hubScale;
   // Sean's reference (2026-09-10): volume/channel rockers sit directly beside the d-pad as one
@@ -329,21 +336,23 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
     // useSwipeBackGesture) decides whether a touch is a horizontal swipe or a vertical scroll
     // before either the ScrollView or the swipe gesture claims it.
     <View style={styles.container} {...swipeBackHandlers}>
+    <RemoteScaleProvider scale={totalScale}>
     <ScrollView
       onLayout={fit.onLayout}
       onContentSizeChange={fit.onContentSizeChange}
       contentContainerStyle={[
         styles.content,
         {
-          paddingTop: insets.top + theme.spacing.lg * fit.fitScale,
-          paddingBottom: theme.spacing.md * fit.fitScale,
-          gap: theme.spacing.sm * fit.fitScale,
+          paddingTop: insets.top + theme.spacing.lg * totalScale,
+          paddingBottom: theme.spacing.md * totalScale,
+          paddingHorizontal: REMOTE_HORIZONTAL_PADDING_PX * totalScale,
         },
       ]}
     >
+      <View style={[styles.column, { maxWidth: remoteMaxContentWidth(totalScale), gap: theme.spacing.sm * totalScale }]}>
       <RemoteHeaderRow
         device={device}
-        scale={scale}
+        scale={totalScale}
         isAway={isAway}
         editingName={editingName}
         nameInput={nameInput}
@@ -389,7 +398,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           scale={hubScale}
           scaledDpadSize={scaledDpadSize}
           scaledSmDiameter={scaledSmDiameter}
-          fitScale={fit.fitScale}
           disabled={controlsDisabled}
           playbackState={playbackState}
           seekMultiplier={dpadSeek.multiplier}
@@ -402,7 +410,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       )}
 
       {!hasDpad && (has(device, "volumeUp") || has(device, "volumeDown") || has(device, "channelUp") || has(device, "channelDown")) && (
-        <VolumeChannelCard device={device} scale={hubScale} scaledDpadSize={scaledDpadSize} fitScale={fit.fitScale} disabled={controlsDisabled} onSend={send} />
+        <VolumeChannelCard device={device} scale={hubScale} scaledDpadSize={scaledDpadSize} disabled={controlsDisabled} onSend={send} />
       )}
 
       {/* Real-hardware research (2026-09-10): Roku (POST /launch/<channel id>) and LG
@@ -410,7 +418,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
           because neither has a confirmed equivalent, not because this row forgot them. */}
       {has(device, "launchApp") && (
-        <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} fitScale={fit.fitScale} />
+        <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} />
       )}
 
       {/* A flex:1 spacer here previously tried to push the utility/Input cards toward the bottom
@@ -430,7 +438,6 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
           selectedInput={input}
           disabled={controlsDisabled}
           onSelect={(inputId) => send("inputSelection", { input: inputId })}
-          fitScale={fit.fitScale}
         />
       )}
 
@@ -445,8 +452,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
         has(device, "browseMedia")) && (
         <UtilityActionsRow
           device={device}
-          scale={scale}
-          fitScale={fit.fitScale}
+          scale={totalScale}
           columns={utilityColumns}
           disabled={controlsDisabled}
           muted={muted}
@@ -466,7 +472,7 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
 
       {hasKeypad && activeTab === "keypad" && (
         <KeypadCard
-          scale={scale}
+          scale={totalScale}
           channelInput={channelInput}
           disabled={controlsDisabled}
           canSubmit={has(device, "selectPlayPause") || has(device, "select")}
@@ -479,7 +485,9 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
       {hasKeyboard && activeTab === "keyboard" && (
         <KeyboardCard value={keyboardInput} disabled={controlsDisabled} onChangeValue={setKeyboardInput} onSubmit={submitKeyboardInput} />
       )}
+      </View>
     </ScrollView>
+    </RemoteScaleProvider>
 
       <SleepTimerModal
         visible={sleepTimer.showSleepPicker}
@@ -520,5 +528,8 @@ const styles = StyleSheet.create({
   // only horizontal padding is a fixed value here now, since the overflow this screen fights is
   // vertical, not horizontal (the width-fit arithmetic cited elsewhere on this screen already
   // assumes this exact spacing.md horizontal value and must keep it).
-  content: { paddingHorizontal: theme.spacing.md },
+  // ADR-HEARTH-219: padding, gap and the column's max width are all scaled inline (totalScale).
+  // alignItems centers the column on a window wider than the remote's design width (tablet).
+  content: { alignItems: "center" },
+  column: { width: "100%" },
 });

@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import { CapabilityButton } from "./CapabilityButton";
 import { remoteCardStyles } from "./remoteCardStyles";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
 
 interface InputOption {
@@ -14,11 +15,6 @@ interface InputSelectionCardProps {
   selectedInput: string | undefined;
   disabled: boolean;
   onSelect: (inputId: string) => void;
-  /** ADR-HEARTH-217: the live overflow-correction factor (useRemoteFitScale) -- applied to this
-   * card's own padding/grid gap, and as a last resort to each pill tile's own vertical padding
-   * (never its text) once the hub and every card's padding have already hit fitScale.ts's floor
-   * and the screen still doesn't fit. */
-  fitScale: number;
 }
 
 const STATIC_INPUT_OPTIONS: InputOption[] = ["hdmi1", "hdmi2", "hdmi3"].map((id) => ({ id, label: id.toUpperCase() }));
@@ -27,9 +23,10 @@ const STATIC_INPUT_OPTIONS: InputOption[] = ["hdmi1", "hdmi2", "hdmi3"].map((id)
  * Real-device ask (2026-09-10): "the inputs should be above the card above" — rendered ahead of
  * the utility row (Mute/Back/Home/Menu/...) by its caller, rather than after it.
  */
-export function InputSelectionCard({ options, selectedInput, disabled, onSelect, fitScale }: InputSelectionCardProps) {
+export function InputSelectionCard({ options, selectedInput, disabled, onSelect }: InputSelectionCardProps) {
+  const { size } = useRemoteScaled();
   return (
-    <View style={[remoteCardStyles.card, remoteCardStyles.compactCard, { padding: theme.spacing.sm * fitScale }]}>
+    <View style={[remoteCardStyles.card, remoteCardStyles.compactCard, { padding: size(theme.spacing.sm), borderRadius: size(theme.radius.lg) }]}>
       {/* Real-device ask (2026-09-10): "change the arrangement of the inputs to be fewer
           rows" — the old plain flexWrap (no column count) let the number of buttons per row
           vary with each label's own width, so a TV reporting several inputs with longer names
@@ -39,7 +36,7 @@ export function InputSelectionCard({ options, selectedInput, disabled, onSelect,
           (CapabilityButton's own prop) keeps a longer label from wrapping to a second line and
           giving just that one tile a different height than its row-mates — same fix already
           applied to the utility row for the same reason. */}
-      <View style={[styles.inputGrid, { gap: theme.spacing.sm * fitScale }]}>
+      <View style={[styles.inputGrid, { gap: size(theme.spacing.sm) }]}>
         {(options ?? STATIC_INPUT_OPTIONS).map((option) => (
           <CapabilityButton
             key={option.id}
@@ -49,7 +46,7 @@ export function InputSelectionCard({ options, selectedInput, disabled, onSelect,
             onPress={() => onSelect(option.id)}
             disabled={disabled}
             numberOfLines={1}
-            containerStyle={[styles.inputTile, { paddingVertical: theme.spacing.md * fitScale }]}
+            containerStyle={styles.inputTile}
           />
         ))}
       </View>

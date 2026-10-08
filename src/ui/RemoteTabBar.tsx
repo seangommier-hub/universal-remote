@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRemoteScaled } from "./RemoteScaleContext";
 import { theme } from "./theme";
 
 export type RemoteTab = "remote" | "keypad" | "keyboard";
@@ -24,39 +25,43 @@ interface RemoteTabBarProps {
  * no way to tell which one is currently showing.
  */
 export function RemoteTabBar({ hasKeypad, hasKeyboard, activeTab, channelInput, onSelectTab }: RemoteTabBarProps) {
+  const { size, font } = useRemoteScaled();
+  const barSizing = { borderRadius: size(theme.radius.md), padding: size(theme.spacing.xs), gap: size(theme.spacing.xs) };
+  const tabSizing = { paddingVertical: size(theme.spacing.sm), borderRadius: size(theme.radius.sm) };
+  const tabText = { fontSize: font(theme.type.label) };
   return (
-    <View style={styles.tabBar} accessibilityRole="tablist">
+    <View style={[styles.tabBar, barSizing]} accessibilityRole="tablist">
       <Pressable
-        style={[styles.tab, activeTab === "remote" && styles.tabActive]}
+        style={[styles.tab, tabSizing, activeTab === "remote" && styles.tabActive]}
         onPress={() => onSelectTab("remote")}
         accessibilityRole="tab"
         accessibilityLabel="Remote"
         accessibilityState={{ selected: activeTab === "remote" }}
       >
-        <Text style={[styles.tabLabel, activeTab === "remote" && styles.tabLabelActive]}>Remote</Text>
+        <Text style={[styles.tabLabel, tabText, activeTab === "remote" && styles.tabLabelActive]}>Remote</Text>
       </Pressable>
       {hasKeypad && (
         <Pressable
-          style={[styles.tab, activeTab === "keypad" && styles.tabActive]}
+          style={[styles.tab, tabSizing, activeTab === "keypad" && styles.tabActive]}
           onPress={() => onSelectTab("keypad")}
           accessibilityRole="tab"
           accessibilityLabel={channelInput.length > 0 ? `Keypad, entered ${channelInput}` : "Keypad"}
           accessibilityState={{ selected: activeTab === "keypad" }}
         >
-          <Text style={[styles.tabLabel, activeTab === "keypad" && styles.tabLabelActive]}>
+          <Text style={[styles.tabLabel, tabText, activeTab === "keypad" && styles.tabLabelActive]}>
             Keypad{channelInput.length > 0 ? ` (${channelInput})` : ""}
           </Text>
         </Pressable>
       )}
       {hasKeyboard && (
         <Pressable
-          style={[styles.tab, activeTab === "keyboard" && styles.tabActive]}
+          style={[styles.tab, tabSizing, activeTab === "keyboard" && styles.tabActive]}
           onPress={() => onSelectTab("keyboard")}
           accessibilityRole="tab"
           accessibilityLabel="Keyboard"
           accessibilityState={{ selected: activeTab === "keyboard" }}
         >
-          <Text style={[styles.tabLabel, activeTab === "keyboard" && styles.tabLabelActive]}>Keyboard</Text>
+          <Text style={[styles.tabLabel, tabText, activeTab === "keyboard" && styles.tabLabelActive]}>Keyboard</Text>
         </Pressable>
       )}
     </View>
