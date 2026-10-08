@@ -37,9 +37,9 @@ const COMMAND_CENTER_DISPLAY: Record<CallCommandCenterStatus, { icon: "call-outl
   // is a noun (the destination), matching every other button in this row (Home, Menu, Mute,
   // Settings), not a verb phrase.
   idle: { icon: "call-outline", label: "Command Center" },
-  checking: { icon: "call-outline", label: "Calling…" },
-  reached: { icon: "checkmark-circle", label: "Reached" },
-  unreachable: { icon: "close-circle", label: "No Answer" },
+  checking: { icon: "call-outline", label: "Opening…" },
+  reached: { icon: "checkmark-circle", label: "Opened" },
+  unreachable: { icon: "close-circle", label: "Couldn't Open" },
 };
 
 // Sean's reference (2026-09-10): mute/back/home/menu read as one row of icon-over-caption
