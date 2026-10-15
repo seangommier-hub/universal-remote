@@ -11,6 +11,7 @@ import { findMovedAddress, backfillHwaddr } from "../../shared/selfHeal";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
+import { tryAutoWakeOnLan } from "../../shared/autoWakeOnReconnect";
 
 const LOG_SCOPE = "SamsungTizenDriver";
 // See LgWebOsDriver.ts's identical constants — same "invisible reconnect, not a permanently
@@ -182,7 +183,15 @@ export class SamsungTizenDriver implements DeviceDriver {
       if (this.isCurrentGeneration(device.id, attemptGeneration)) {
         const current = this.states.get(device.id);
         this.setState(device.id, { connection: "disconnected", values: current?.values ?? {}, lastUpdated: Date.now() });
-        this.scheduleReconnect(device);
+        // ADR-HEARTH-227: see LgWebOsDriver.ts's/SonyBraviaDriver.ts's identical fix — a TV in
+        // low-power network standby answers nothing at all until woken; try that automatically
+        // before falling back to the normal slow-backoff loop. Guarded on not already bursting so
+        // the burst's own internal retries (same catch block) can't keep restarting it.
+        if (!this.wakeBursts.isActive(device.id) && (await tryAutoWakeOnLan(device))) {
+          this.startWakeBurst(device);
+        } else {
+          this.scheduleReconnect(device);
+        }
       }
       throw err;
     } finally {

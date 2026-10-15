@@ -12,6 +12,7 @@ import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { withBackoffJitter } from "../../shared/backoffJitter";
 import { CommandValidationError } from "../../shared/commandFailure";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
+import { tryAutoWakeOnLan } from "../../shared/autoWakeOnReconnect";
 
 const LOG_SCOPE = "SonyBraviaDriver";
 // Sean, directly (2026-09-09): "anything that ever gets connect[ed]... the same way wifi works
@@ -402,7 +403,16 @@ export class SonyBraviaDriver implements DeviceDriver {
       if (generation !== (this.generations.get(device.id) ?? 0)) throw err; // disconnected in the meantime — its own disconnect() already set the right state
       const state: DeviceState = { connection: "disconnected", values: this.states.get(device.id)?.values ?? {}, lastUpdated: Date.now() };
       this.setState(device.id, state);
-      this.scheduleReconnect(device); // any failure to reach it — startup or mid-use — starts the auto-retry loop
+      // ADR-HEARTH-227: a TV in low-power network standby answers nothing at all until woken --
+      // try that automatically before falling back to the normal slow-backoff loop, same as the
+      // explicit Power On button does. Guarded on not already bursting for the same reason
+      // LgWebOsDriver's identical check is: the burst's own internal retries land in this same
+      // catch, and re-triggering mid-burst would keep restarting it from attempt 1.
+      if (!this.wakeBursts.isActive(device.id) && (await tryAutoWakeOnLan(device))) {
+        this.startWakeBurst(device);
+      } else {
+        this.scheduleReconnect(device); // any failure to reach it — startup or mid-use — starts the auto-retry loop
+      }
       throw err;
     }
   }

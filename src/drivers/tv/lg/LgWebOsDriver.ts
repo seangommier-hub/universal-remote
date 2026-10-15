@@ -14,6 +14,7 @@ import { withBackoffJitter } from "../../shared/backoffJitter";
 import { WakeBurstController, withWaking } from "../../shared/wakeBurst";
 import { connectWithFreshPairing } from "../../shared/connectWithFreshPairing";
 import { flagRejectedPairing } from "../../shared/savedPairingRejected";
+import { tryAutoWakeOnLan } from "../../shared/autoWakeOnReconnect";
 
 const LOG_SCOPE = "LgWebOsDriver";
 // A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
@@ -247,7 +248,16 @@ export class LgWebOsDriver implements DeviceDriver {
         const current = this.states.get(device.id);
         // ADR-HEARTH-223: a TV that answered the saved client-key with a fresh approval prompt is flagged so the app can offer a re-pair.
         this.setState(device.id, { connection: "disconnected", values: flagRejectedPairing(current?.values ?? {}, err), lastUpdated: Date.now() });
-        this.scheduleReconnect(device);
+        // ADR-HEARTH-227: a TV in low-power network standby answers nothing at all until woken --
+        // try that automatically before falling back to the normal slow-backoff loop, same as the
+        // explicit Power On button does. Guarded on not already bursting: the burst's own internal
+        // connect() retries land in this same catch, and re-triggering mid-burst would keep
+        // restarting it from attempt 1, never reaching its own exhaustion fallback.
+        if (!this.wakeBursts.isActive(device.id) && (await tryAutoWakeOnLan(device))) {
+          this.startWakeBurst(device);
+        } else {
+          this.scheduleReconnect(device);
+        }
       }
       throw err;
     } finally {
