@@ -101,6 +101,22 @@ describe("SamsungTizenDriver", () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" })).rejects.toThrow(/not connected/);
   });
 
+  test("executeCommand joins an already in-flight connect() instead of failing (ADR-HEARTH-228: a button tapped right after waking a TV)", async () => {
+    const connectPromise = driver.connect(device);
+    // A command lands before connect() has set this.clients — the exact race a button tapped
+    // right after Power On hits, since the UI's own disabled-gate only clears a beat after this.
+    const commandPromise = driver.executeCommand(device, { deviceId: device.id, capability: "volumeUp" });
+
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    socket.simulateMessage({ event: "ms.channel.connect", data: {} });
+    await connectPromise;
+
+    const result = await commandPromise;
+    expect(result.success).toBe(true);
+  });
+
   // ADR-HEARTH-102: KEY_POWER can only reach the TV over the same WebSocket every other command
   // uses — no client means no socket, which for this protocol means the TV is genuinely off, not
   // just slow to answer. "power" is the one capability that has to work in exactly that state.
