@@ -3,6 +3,7 @@ import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } fro
 import { resetConnectivityForTests, shouldSkipDirectAttempt } from "./fccConnectivity";
 import { fccFetch } from "./fccRequest";
 import { FetchTimeoutError, fetchWithTimeout } from "./fetchWithTimeout";
+import { isKeychainUnavailable } from "./isKeychainUnavailable";
 
 // See ADR-HEARTH-011. A device may sit on a network segment the phone isn't currently joined
 // to (e.g. an isolated Guest/IoT/kids-AP network) — direct connection then fails not because
@@ -153,8 +154,24 @@ async function callRelayThroughFcc(config: FamilyCommandCenterConfig, request: R
   };
 }
 
+// ADR-HEARTH-231: a real client log (2026-10-15) caught this exact call rejecting with a raw
+// KeyChainException while the phone was locked -- it then surfaced as THIS request's own "relay"
+// failure (counted as a real connect failure by the driver that called us, e.g. Roku/Kasa/etc.'s
+// own reconnect loop), when the only actual problem was a momentarily-unreadable Keychain that
+// resolves itself the instant the phone unlocks. Treating it the same as "not configured" (the
+// existing, already-handled branch just below) means this one moment reads as "can't relay right
+// now," not a fabricated connection failure.
+async function loadConfigTolerantOfLockedKeychain(): Promise<FamilyCommandCenterConfig | null> {
+  try {
+    return await loadFamilyCommandCenterConfig();
+  } catch (error) {
+    if (isKeychainUnavailable(error)) return null;
+    throw error;
+  }
+}
+
 async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadConfigTolerantOfLockedKeychain();
   if (!config) {
     throw new FccNotConfiguredError(
       `Could not reach ${request.ip} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`
