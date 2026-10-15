@@ -320,6 +320,44 @@ describe("LgWebOsDriver", () => {
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "powerOff" })).rejects.toThrow(/not connected/);
   });
 
+  test("executeCommand joins an already in-flight connect() instead of failing (ADR-HEARTH-228: a button tapped right after waking a TV)", async () => {
+    const connectPromise = driver.connect(device);
+    // A command lands before connect() has set this.clients — the exact race a d-pad tap right
+    // after Power On hits, since the UI's own disabled-gate only clears a beat after this.
+    const commandPromise = driver.executeCommand(device, { deviceId: device.id, capability: "powerOff" });
+
+    const socket = MockWebSocket.latest();
+    socket.simulateOpen();
+    await flushMicrotasks();
+    const registerSent = JSON.parse(socket.sentMessages[0]);
+    socket.simulateMessage({ type: "registered", id: registerSent.id, payload: { "client-key": "test-key" } });
+    await flushMicrotasks();
+    const volumeRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: volumeRequest.id, payload: { returnValue: true, volume: 15, mute: false } });
+    await flushMicrotasks();
+    const inputListRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: inputListRequest.id, payload: { returnValue: true, devices: [] } });
+    await flushMicrotasks();
+    const appsRequest = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    socket.simulateMessage({ type: "response", id: appsRequest.id, payload: { returnValue: true, launchPoints: [] } });
+    await connectPromise;
+
+    // Now that connect() has set this.clients, the command's own join resolves and it can send.
+    await flushMicrotasks();
+    const turnOffSent = JSON.parse(socket.sentMessages[socket.sentMessages.length - 1]);
+    expect(turnOffSent.uri).toBe("ssap://system/turnOff");
+    socket.simulateMessage({ type: "response", id: turnOffSent.id, payload: { returnValue: true } });
+
+    const result = await commandPromise;
+    expect(result.success).toBe(true);
+  });
+
+  test("executeCommand still fails clearly when no connect() is in flight at all, even after one already finished", async () => {
+    await connectDriver(driver);
+    await driver.disconnect(device);
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "powerOff" })).rejects.toThrow(/not connected/);
+  });
+
   test("powerOff sends ssap://system/turnOff and optimistically marks power off", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();

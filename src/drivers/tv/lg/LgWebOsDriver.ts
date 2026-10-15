@@ -507,6 +507,18 @@ export class LgWebOsDriver implements DeviceDriver {
       return this.executeWakeOnLan(device);
     }
 
+    // ADR-HEARTH-228: a command (e.g. tapping a d-pad button right after Power On) can land in the
+    // narrow window after connect() has started but before it has set this.clients -- most visibly
+    // right after a wake, since the UI's own controlsDisabled gate only clears once state.connection
+    // flips to "connected", a beat after the client is actually set. Rather than fail a command that
+    // would have succeeded a moment later, join whatever connect() is already in flight for this
+    // device and retry once. A device with no in-flight connect at all (genuinely never connected,
+    // or a connect that already finished and failed) still fails immediately, unchanged.
+    const inFlightConnect = this.inFlightConnects.get(device.id);
+    if (!this.clients.has(device.id) && inFlightConnect) {
+      await inFlightConnect.catch(() => undefined); // its own catch already handled/logged the failure
+    }
+
     const client = this.clients.get(device.id);
     if (!client) {
       throw new Error(`Device ${device.id} is not connected — call connect() before sending commands`);

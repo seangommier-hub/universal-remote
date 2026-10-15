@@ -345,6 +345,15 @@ export class SamsungTizenDriver implements DeviceDriver {
   }
 
   async executeCommand(device: Device, command: Command): Promise<CommandResult> {
+    // ADR-HEARTH-228: see LgWebOsDriver.ts's identical fix — a command can land in the narrow
+    // window after connect() has started but before it has set this.clients, most visibly right
+    // after a wake. Joins whatever connect() is already in flight and retries once rather than
+    // failing a command that would have succeeded a moment later.
+    const inFlightConnect = this.inFlightConnects.get(device.id);
+    if (!this.clients.has(device.id) && inFlightConnect) {
+      await inFlightConnect.catch(() => undefined); // its own catch already handled/logged the failure
+    }
+
     const client = this.clients.get(device.id);
     if (!client) {
       // Real gap this closes (ADR-HEARTH-102): no client means the TV's WebSocket never accepted
