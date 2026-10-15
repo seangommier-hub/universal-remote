@@ -311,7 +311,12 @@ export class LgWebOsDriver implements DeviceDriver {
       return { client, clientKey };
     } catch (err) {
       const hwaddr = device.config?.hwaddr;
-      logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`);
+      // Real gap found live, 2026-10-15: this never logged the actual error, so a real-hardware
+      // failure left no way to tell a plain timeout apart from the TV explicitly asking for a
+      // fresh on-screen pairing approval (pairingType: PROMPT) apart from the symptom alone.
+      logger.warn(LOG_SCOPE, `${device.name} failed to connect at ${config.ipAddress} — checking Family Command Center for its current address`, {
+        message: err instanceof Error ? err.message : String(err),
+      });
       // Real-hardware finding (2026-09-10), live during a "reconnect still isn't working" report:
       // a device discovered before this driver started saving `hwaddr` (ADR-HEARTH-017) has no MAC
       // on file and can never be re-located by findCurrentIpByMac, no matter how broadly this catch
