@@ -19,6 +19,12 @@ import { tryAutoWakeOnLan } from "../../shared/autoWakeOnReconnect";
 const LOG_SCOPE = "LgWebOsDriver";
 // A returning app should know quickly whether a TV connection survived; longer than this and a reconnect is cheaper.
 const LIVENESS_PROBE_TIMEOUT_MS = 3000;
+// ADR-HEARTH-229: real-hardware finding, 2026-10-15 — a TV waking from deep standby can answer the
+// pairing handshake before ssap://audio/getVolume (the heartbeat's own liveness probe) is ready,
+// tearing the brand-new connection down as "dead" seconds after it was made. 30s is a generous but
+// bounded allowance for a TV to finish booting; a connection that's still genuinely unresponsive
+// once this elapses is torn down exactly as before this grace period existed.
+const HEARTBEAT_POST_CONNECT_GRACE_MS = 30000;
 
 export const LG_WEBOS_DRIVER_ID = "lg-webos-wss3001";
 /** The config field holding the TV's pairing credential (ADR-HEARTH-223 clears and re-learns only this one). */
@@ -389,7 +395,9 @@ export class LgWebOsDriver implements DeviceDriver {
           logger.warn(LOG_SCOPE, `${device.name} stopped answering — reconnecting`);
           client.close();
           handleDisconnect();
-        }
+        },
+        undefined,
+        HEARTBEAT_POST_CONNECT_GRACE_MS
       )
     );
     // Successfully pairing over this socket means the TV is on right now.
