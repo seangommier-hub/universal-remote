@@ -7,6 +7,22 @@ import {
   shouldPreferPublicRoute,
   shouldSkipDirectAttempt,
 } from "./fccConnectivity";
+import { isKeychainUnavailable } from "./isKeychainUnavailable";
+
+// ADR-HEARTH-231: a real client log (2026-10-15, the Downstairs Living Room LG TV) caught this
+// exact lookup rejecting with a raw KeyChainException while the phone was locked -- it then
+// surfaced as THIS socket's own connect failure, which the driver's reconnect loop logged and
+// counted as a genuine failure (burning backoff for a reason retrying could never fix). Treating
+// it the same as "not configured" (the existing, already-handled branch just below) means this
+// one moment reads as "can't relay right now," not a fabricated connection failure.
+async function loadConfigTolerantOfLockedKeychain(): Promise<FamilyCommandCenterConfig | null> {
+  try {
+    return await loadFamilyCommandCenterConfig();
+  } catch (error) {
+    if (isKeychainUnavailable(error)) return null;
+    throw error;
+  }
+}
 
 // See ADR-HEARTH-011. Mirrors httpRelayFallback.ts's fallback pattern for WebSocket-based
 // drivers (Samsung, LG): try a direct connection to the device first, and only relay through
@@ -144,7 +160,7 @@ export async function openSocketWithRelayFallback(targetUrl: string): Promise<We
     directFailedAt.delete(key);
     return direct;
   } catch {
-    const config = await loadFamilyCommandCenterConfig();
+    const config = await loadConfigTolerantOfLockedKeychain();
     if (!config) {
       throw new Error(`Could not reach ${targetUrl} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`);
     }
