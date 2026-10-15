@@ -169,6 +169,33 @@ describe("SonyBraviaDriver", () => {
     expect(mockSendWakeOnLan).not.toHaveBeenCalled();
   });
 
+  describe("Sony's own 'Display Is Turned off' error (ADR-HEARTH-230)", () => {
+    const displayOffResponse = () => jsonResponse({ error: [40005, "Display Is Turned off"], id: 1 });
+
+    test("sends Wake-on-LAN even though the REST API genuinely answered — Sony is telling us the screen is off", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(displayOffResponse());
+      const offDevice: Device = { ...device, config: { ...device.config, hwaddr: "11:22:33:44:55:66" } };
+
+      await expect(driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "power" })).rejects.toThrow(/Display Is Turned off/);
+      expect(mockSendWakeOnLan).toHaveBeenCalledWith("11:22:33:44:55:66");
+    });
+
+    test("wakes on this error for any capability, not just power", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(displayOffResponse());
+      const offDevice: Device = { ...device, config: { ...device.config, hwaddr: "11:22:33:44:55:66" } };
+
+      await expect(driver.executeCommand(offDevice, { deviceId: offDevice.id, capability: "volumeUp" })).rejects.toThrow(/Display Is Turned off/);
+      expect(mockSendWakeOnLan).toHaveBeenCalledWith("11:22:33:44:55:66");
+    });
+
+    test("a different Sony API error code (e.g. a real rejected PSK) does not trigger a wake", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse({ error: [401, "Illegal State"], id: 1 }));
+
+      await expect(driver.executeCommand(device, { deviceId: device.id, capability: "power" })).rejects.toThrow(/Illegal State/);
+      expect(mockSendWakeOnLan).not.toHaveBeenCalled();
+    });
+  });
+
   // Real gap found live (2026-09-21, ADR-HEARTH-119): Sony was the first TV driver built (Phase
   // 1) and never got the MAC-based self-healing LG/Samsung/Roku already have — a Sony TV that
   // moves to a different network kept retrying the same dead IP forever.

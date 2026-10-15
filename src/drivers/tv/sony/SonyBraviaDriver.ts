@@ -84,6 +84,19 @@ function isReachabilityFailure(err: unknown): boolean {
   return true;
 }
 
+// ADR-HEARTH-230: Sony's own documented BRAVIA REST API error code for "the REST API answered,
+// but the screen itself is off" (confirmed live, 2026-10-15: "Sony BRAVIA API error 40005: Display
+// Is Turned off"). Deliberately narrower than isReachabilityFailure's blanket exclusion above —
+// every OTHER SonyBraviaApiError genuinely does mean "on and rejecting" (wrong PSK, bad parameter),
+// where auto-waking would be wrong. This one specific code is Sony volunteering the TV's real power
+// state directly, the single most reliable signal this driver ever gets — no need to guess via a
+// generic timeout/unreachable check the way LG's opaque connection failures require.
+const SONY_DISPLAY_OFF_ERROR_CODE = 40005;
+
+function isDisplayOffError(err: unknown): boolean {
+  return err instanceof SonyBraviaApiError && err.code === SONY_DISPLAY_OFF_ERROR_CODE;
+}
+
 /**
  * Driver for Sony BRAVIA TVs with "IP Control" enabled, against the official REST API
  * (https://pro-bravia.sony.net/remote-display-control/rest-api/). Every device using this
@@ -236,7 +249,17 @@ export class SonyBraviaDriver implements DeviceDriver {
     try {
       outcome = await applyCommand(client, device, command);
     } catch (err) {
-      if (err instanceof CommandValidationError || !isReachabilityFailure(err)) throw err;
+      if (err instanceof CommandValidationError) throw err;
+      // ADR-HEARTH-230: Sony told us directly the screen is off -- wake it, same as the
+      // genuine-unreachability path below does for "power", but for every capability, since this
+      // specific error means the same fix applies no matter what was actually being attempted.
+      if (isDisplayOffError(err)) {
+        logger.warn(LOG_SCOPE, `${device.name}'s display is off — sending Wake-on-LAN`);
+        await tryAutoWakeOnLan(device);
+        this.startWakeBurst(device);
+        throw err; // the original command still didn't go through -- say so, don't fake success
+      }
+      if (!isReachabilityFailure(err)) throw err;
       // Connection contract (ADR-HEARTH-171): a command that fails because nothing answered marks
       // the driver disconnected and starts the reconnect loop, whatever the capability.
       this.markUnreachableAfterCommandFailure(device, generation);
