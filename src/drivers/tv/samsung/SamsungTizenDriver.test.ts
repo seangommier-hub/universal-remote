@@ -1,7 +1,7 @@
 import { SamsungTizenDriver, SAMSUNG_TIZEN_DRIVER_ID } from "./SamsungTizenDriver";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 
 // ADR-HEARTH-144: reconnect delays carry random jitter; drop it so the exact-delay assertions below stay exact.
@@ -10,7 +10,7 @@ jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: nu
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
 jest.mock("../../../core/network/wakeOnLan");
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 const device: Device = {

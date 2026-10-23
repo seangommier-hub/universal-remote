@@ -19,14 +19,17 @@
 // — LG/Samsung/Sony TVs today, potentially others later. Real Wake-on-LAN itself is one standard
 // protocol regardless of brand, so this lives here rather than being duplicated per driver.
 
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import { fccFetch } from "./fccRequest";
 
 /** Sends a real Wake-on-LAN magic packet for the given MAC address via Family Command Center. No
  * acknowledgment exists in this protocol — "the packet was sent" is the most honest claim
  * available, same treatment every other wake mechanism in this project gets. */
 export async function sendWakeOnLan(macAddress: string): Promise<void> {
-  const config = await loadFamilyCommandCenterConfig();
+  // ADR-HEARTH-232: the Keychain-safe loader — see wsRelayFallback.ts's identical comment. A
+  // locked phone must surface as "add it in Settings" below (retried next attempt), not a raw
+  // native KeyChainException that AutoWakeOnReconnect only half-explains in its own log.
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
   }

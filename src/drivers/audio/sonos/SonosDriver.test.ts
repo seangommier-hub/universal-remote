@@ -1,12 +1,12 @@
 import { SonosDriver } from "./SonosDriver";
 import { Device } from "../../../core/types/Device";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 function soapResponse(bodyFields: Record<string, string | number> = {}, ok = true, status = 200) {
   const inner = Object.entries(bodyFields)

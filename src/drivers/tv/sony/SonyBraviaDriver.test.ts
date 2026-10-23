@@ -2,16 +2,16 @@ import { SonyBraviaDriver } from "./SonyBraviaDriver";
 import { Device } from "../../../core/types/Device";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { WAKE_BURST_INTERVAL_MS, WAKE_BURST_WINDOW_MS } from "../../shared/wakeBurst";
 
 jest.mock("../../../core/network/wakeOnLan");
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body } as Response;

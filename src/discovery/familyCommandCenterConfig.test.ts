@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import {
   FamilyCommandCenterVerificationError,
   loadFamilyCommandCenterConfig,
+  loadFamilyCommandCenterConfigSafely,
   saveOwnRole,
   verifyAndSaveFamilyCommandCenterConfig,
   verifyAndSavePublicUrl,
@@ -95,6 +96,32 @@ describe("loadFamilyCommandCenterConfig / verifyAndSavePublicUrl", () => {
     (SecureStore.getItemAsync as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
 
     await expect(loadFamilyCommandCenterConfig()).rejects.toThrow(/User interaction is not allowed/);
+  });
+
+  // ADR-HEARTH-232: the opposite contract, for the callers that need it (wsRelayFallback.ts,
+  // httpRelayFallback.ts, wakeOnLan.ts, familyCommandCenterDeviceLookup.ts) — a Keychain hiccup
+  // must not become an unhandled rejection in the middle of a reconnect/relay attempt.
+  describe("loadFamilyCommandCenterConfigSafely", () => {
+    test("resolves null (does not reject) when SecureStore throws a Keychain-unavailable error", async () => {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+      (SecureStore.getItemAsync as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+
+      await expect(loadFamilyCommandCenterConfigSafely()).resolves.toBeNull();
+    });
+
+    test("resolves null (does not reject) when the read fails for an unrelated reason", async () => {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+      (SecureStore.getItemAsync as jest.Mock).mockRejectedValue(new Error("boom"));
+
+      await expect(loadFamilyCommandCenterConfigSafely()).resolves.toBeNull();
+    });
+
+    test("resolves the real config when nothing fails", async () => {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => Promise.resolve(key === "hearth.fcc.baseUrl" ? "http://192.168.1.172:3210" : null));
+      (SecureStore.getItemAsync as jest.Mock).mockResolvedValue("test-token");
+
+      await expect(loadFamilyCommandCenterConfigSafely()).resolves.toEqual(expect.objectContaining({ baseUrl: "http://192.168.1.172:3210", token: "test-token" }));
+    });
   });
 
   test("loadFamilyCommandCenterConfig returns publicBaseUrl as undefined when none was ever saved", async () => {

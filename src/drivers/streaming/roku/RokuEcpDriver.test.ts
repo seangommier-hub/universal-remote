@@ -1,12 +1,12 @@
 import { RokuEcpDriver, ROKU_ECP_DRIVER_ID } from "./RokuEcpDriver";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 function deviceInfoResponse(powerMode: string, modelName = "Roku Ultra") {
   return {
@@ -116,7 +116,7 @@ describe("RokuEcpDriver", () => {
 
     test("re-locates the device by MAC through Family Command Center and connects at its new address", async () => {
       // RokuEcpClient itself goes through requestWithRelayFallback, so the failed first attempt
-      // also tries a relay leg -- returning null here for that first loadFamilyCommandCenterConfig
+      // also tries a relay leg -- returning null here for that first loadFamilyCommandCenterConfigSafely
       // call short-circuits it to "not configured" without spending a fetch mock on it, then the
       // second call (from findCurrentIpByMac's own lookup) gets a real config.
       mockLoadConfig.mockResolvedValueOnce(null).mockResolvedValueOnce({ baseUrl: "http://192.168.1.172:3210", token: "fcc-token" });

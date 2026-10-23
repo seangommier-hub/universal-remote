@@ -1,12 +1,12 @@
 import { DenonDriver } from "./DenonDriver";
 import { Device } from "../../../core/types/Device";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 function statusXml(fields: { power?: string; volumeDb?: number; muted?: boolean } = {}) {
   const { power = "ON", volumeDb = -50, muted = false } = fields;

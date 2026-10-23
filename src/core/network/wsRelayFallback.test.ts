@@ -1,19 +1,19 @@
 import { openSocketWithRelayFallback } from "./wsRelayFallback";
 import { isPublicRouteCurrentlyFailing, resetConnectivityForTests } from "./fccConnectivity";
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../testUtils/mockWebSocket";
 
 // Same explicit-factory reasoning as httpRelayFallback.test.ts: automocking still requires the
 // real module once, which imports AsyncStorage/SecureStore -- native modules that don't exist in
 // this Jest environment.
 jest.mock("../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 describe("openSocketWithRelayFallback", () => {
   beforeEach(() => {
     installMockWebSocket();
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
   });
 
   afterEach(() => {
@@ -64,7 +64,7 @@ describe("openSocketWithRelayFallback", () => {
   // when off network." Away from the home WiFi, both direct and the LAN relay fail outright.
   describe("public URL fallback (away from home)", () => {
     beforeEach(() => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({
         baseUrl: "http://192.168.1.172:3210",
         token: "secret-token",
         publicBaseUrl: "https://hearth-relay.carddna.app",
@@ -104,7 +104,7 @@ describe("openSocketWithRelayFallback", () => {
     });
 
     test("no publicBaseUrl configured -- a failed LAN relay surfaces its own error normally, exactly as before this feature existed", async () => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
       const openPromise = openSocketWithRelayFallback("wss://192.168.1.70:3001");
       MockWebSocket.at(0).simulateError();
       await flushMicrotasks();
@@ -118,7 +118,7 @@ describe("openSocketWithRelayFallback", () => {
       jest.useFakeTimers();
       const openPromise = openSocketWithRelayFallback("wss://192.168.1.70:3001");
       MockWebSocket.at(0).simulateError(); // direct fails fast
-      await flushMicrotasks(); // let the catch handler's await loadFamilyCommandCenterConfig() resolve and open the LAN relay socket
+      await flushMicrotasks(); // let the catch handler's await loadFamilyCommandCenterConfigSafely() resolve and open the LAN relay socket
 
       // LAN relay (index 1) never calls onopen/onerror -- let its own connect timeout fire.
       await jest.advanceTimersByTimeAsync(8000);
@@ -133,7 +133,7 @@ describe("openSocketWithRelayFallback", () => {
   });
 
   test("throws a clear error when direct fails and Family Command Center isn't configured at all", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
     const openPromise = openSocketWithRelayFallback("wss://10.20.30.40:3001");
     MockWebSocket.at(0).simulateError();
     await flushMicrotasks();
