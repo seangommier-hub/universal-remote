@@ -140,4 +140,26 @@ describe("openSocketWithRelayFallback", () => {
 
     await expect(openPromise).rejects.toThrow(/isn't configured for relay fallback/);
   });
+
+  // ADR-HEARTH-231: a real client log (2026-10-15, the Downstairs Living Room LG TV) caught this
+  // exact lookup rejecting with a raw KeyChainException (phone locked/backgrounded, ADR-HEARTH-196)
+  // -- it then surfaced as this socket's own connect failure, which LgWebOsDriver's reconnect loop
+  // logged and counted as a genuine failure. It must read the same as "not configured" instead.
+  test("reads the same as 'not configured' (not a raw KeyChainException) when the phone is locked", async () => {
+    (loadFamilyCommandCenterConfig as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+    const openPromise = openSocketWithRelayFallback("wss://10.20.30.40:3001");
+    MockWebSocket.at(0).simulateError();
+    await flushMicrotasks();
+
+    await expect(openPromise).rejects.toThrow(/isn't configured for relay fallback/);
+  });
+
+  test("still throws the real error for a config-read failure that isn't the Keychain", async () => {
+    (loadFamilyCommandCenterConfig as jest.Mock).mockRejectedValue(new Error("boom"));
+    const openPromise = openSocketWithRelayFallback("wss://10.20.30.40:3001");
+    MockWebSocket.at(0).simulateError();
+    await flushMicrotasks();
+
+    await expect(openPromise).rejects.toThrow("boom");
+  });
 });

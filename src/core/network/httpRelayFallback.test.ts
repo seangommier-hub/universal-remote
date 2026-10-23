@@ -96,6 +96,27 @@ describe("requestWithRelayFallback", () => {
     );
   });
 
+  // ADR-HEARTH-231: a real client log (2026-10-15) caught loadFamilyCommandCenterConfig() rejecting
+  // with a raw KeyChainException (phone locked/backgrounded, ADR-HEARTH-196) while a driver's relay
+  // fallback ran -- that used to propagate as THIS request's own failure, which the calling driver
+  // then logged and counted as a genuine connection failure. It must read the same as "not
+  // configured right now" instead.
+  test("reads the same as 'not configured' (not a raw KeyChainException) when the phone is locked", async () => {
+    (loadFamilyCommandCenterConfig as jest.Mock).mockRejectedValue(new Error("KeyChainException: User interaction is not allowed."));
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+    await expect(requestWithRelayFallback({ ip: "10.20.30.40", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow(
+      /isn't configured for relay fallback/
+    );
+  });
+
+  test("still throws the real error for a config-read failure that isn't the Keychain", async () => {
+    (loadFamilyCommandCenterConfig as jest.Mock).mockRejectedValue(new Error("boom"));
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+    await expect(requestWithRelayFallback({ ip: "10.20.30.40", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow("boom");
+  });
+
   // Real ask (2026-09-21, ADR-HEARTH-123): "this should be something that can still be used even
   // when off network." Away from the home WiFi, the LAN baseUrl can't be reached at all -- these
   // confirm the public-tunnel fallback only fires for that case, never for a real rejection.
