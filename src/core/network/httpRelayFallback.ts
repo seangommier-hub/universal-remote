@@ -1,4 +1,4 @@
-import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import { FccNotConfiguredError, FccTokenRejectedError, FccUnreachableError } from "./fccErrors";
 import { resetConnectivityForTests, shouldSkipDirectAttempt } from "./fccConnectivity";
 import { fccFetch } from "./fccRequest";
@@ -154,7 +154,8 @@ async function callRelayThroughFcc(config: FamilyCommandCenterConfig, request: R
 }
 
 async function callRelay(request: RelayableRequest): Promise<RelayableResponse> {
-  const config = await loadFamilyCommandCenterConfig();
+  // ADR-HEARTH-232: the Keychain-safe loader — see wsRelayFallback.ts's identical comment.
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new FccNotConfiguredError(
       `Could not reach ${request.ip} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`

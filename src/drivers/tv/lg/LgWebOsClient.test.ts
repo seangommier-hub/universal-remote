@@ -1,10 +1,10 @@
 import { LgWebOsClient } from "./LgWebOsClient";
 import { SavedPairingRejectedError } from "../../shared/savedPairingRejected";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 async function connectClient(client: LgWebOsClient): Promise<void> {
   const connectPromise = client.connect();

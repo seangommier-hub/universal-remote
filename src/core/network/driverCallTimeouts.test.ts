@@ -6,11 +6,16 @@ import { BroadlinkClient } from "../../drivers/irHub/broadlink/BroadlinkClient";
 import { ChromecastClient } from "../../drivers/streaming/chromecast/ChromecastClient";
 import { AndroidTvClient } from "../../drivers/tv/androidtv/AndroidTvClient";
 import { AppleTvClient } from "../../drivers/tv/appletv/AppleTvClient";
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfig, loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import { Device } from "../types/Device";
 
+// Most clients exercised below (Ps5Client, XboxDriver, BroadlinkClient, ChromecastClient,
+// AndroidTvClient, AppleTvClient) call the raw loadFamilyCommandCenterConfig() directly (via
+// fccJsonRequest.ts or their own inline relay logic); only sendWakeOnLan uses the Keychain-safe
+// one. Both need a mock here.
 jest.mock("../../discovery/familyCommandCenterConfig", () => ({
   loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const BROADLINK_LEARN_TIMEOUT_MS = 60000;
@@ -38,6 +43,7 @@ describe("Family Command Center calls never hang", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     global.fetch = jest.fn(() => new Promise<Response>(() => {}));
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
     (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
   });
 

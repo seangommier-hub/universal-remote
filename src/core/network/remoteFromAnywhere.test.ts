@@ -4,11 +4,16 @@ import { openSocketWithRelayFallback, resetDirectFailureMemoryForTests } from ".
 import { getConnectivityMode } from "./fccConnectivity";
 import { getSysInfo } from "../../drivers/outlet/kasa/KasaClient";
 import { AppleTvClient } from "../../drivers/tv/appletv/AppleTvClient";
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfig, loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../testUtils/mockWebSocket";
 
+// KasaClient/AppleTvClient (exercised below) call the raw loadFamilyCommandCenterConfig()
+// directly, for their own, separately-implemented relay fallback -- distinct from
+// wsRelayFallback.ts/httpRelayFallback.ts/wakeOnLan.ts's shared Keychain-safe one. Both need a
+// mock here.
 jest.mock("../../discovery/familyCommandCenterConfig", () => ({
   loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const LAN = "http://192.168.1.172:3210";
@@ -31,6 +36,7 @@ beforeEach(() => {
   resetRelayNecessityCacheForTests();
   resetDirectFailureMemoryForTests();
   global.fetch = jest.fn();
+  (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(AWAY_CONFIG);
   (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(AWAY_CONFIG);
 });
 

@@ -1,10 +1,10 @@
 import { HueLightDriver, HUE_LIGHT_DRIVER_ID } from "./HueLightDriver";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { resetRelayNecessityCacheForTests } from "../../../core/network/httpRelayFallback";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;

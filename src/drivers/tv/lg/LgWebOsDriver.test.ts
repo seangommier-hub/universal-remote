@@ -1,7 +1,7 @@
 import { LgWebOsDriver, LG_WEBOS_DRIVER_ID } from "./LgWebOsDriver";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { sendWakeOnLan } from "../../../core/network/wakeOnLan";
 import { WAKE_BURST_INTERVAL_MS, WAKE_BURST_WINDOW_MS } from "../../shared/wakeBurst";
 import { HEARTBEAT_INTERVAL_MS } from "../../shared/connectionHeartbeat";
@@ -12,7 +12,7 @@ jest.mock("../../shared/backoffJitter", () => ({ withBackoffJitter: (delayMs: nu
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
 jest.mock("../../../core/network/wakeOnLan");
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 const mockSendWakeOnLan = sendWakeOnLan as jest.MockedFunction<typeof sendWakeOnLan>;
 
 const device: Device = {

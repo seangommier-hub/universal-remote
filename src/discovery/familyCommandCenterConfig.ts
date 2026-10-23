@@ -1,6 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { fetchWithTimeout } from "../core/network/fetchWithTimeout";
+import { isKeychainUnavailable } from "../core/network/isKeychainUnavailable";
+import { logger } from "../core/logging/logger";
+
+const LOG_SCOPE = "familyCommandCenterConfig";
 
 // Connection settings for the Family Command Center discovery integration
 // (ADR-HEARTH-010). Split the same way persistence.ts splits device config:
@@ -59,6 +63,34 @@ export async function loadFamilyCommandCenterConfig(): Promise<FamilyCommandCent
     tokenKind: tokenKind === "personal" ? "personal" : tokenKind === "legacy" ? "legacy" : undefined,
     role: role === "owner" || role === "adult" || role === "guest" ? role : undefined,
   };
+}
+
+/** Same as `loadFamilyCommandCenterConfig()`, but never rejects: a Keychain/SecureStore failure
+ * (phone locked or app backgrounded, ADR-HEARTH-203) resolves `null` the same as a genuinely
+ * unconfigured app (every caller already handles that case, and a transient Keychain hiccup
+ * resolves itself on its own — no retry logic needed here); anything else also resolves `null`,
+ * logged at `warn` instead of `debug` so a real problem is still visible.
+ *
+ * ADR-HEARTH-203 fixed this for `familyCommandCenterDeviceLookup.ts`'s self-heal lookups only, via
+ * a copy of this same wrapper kept private to that file. `wsRelayFallback.ts`,
+ * `httpRelayFallback.ts` and `wakeOnLan.ts` kept calling the raw, unguarded
+ * `loadFamilyCommandCenterConfig()` directly — the exact same real KeyChainException (confirmed
+ * live again, ADR-HEARTH-232) still reached those callers unhandled, failing every relay-fallback
+ * connection attempt and every Wake-on-LAN send made while the phone was locked, not just
+ * self-heal's. Promoted here, shared by all four call sites, so the next new caller gets this for
+ * free instead of needing its own audit to discover the gap again.
+ */
+export async function loadFamilyCommandCenterConfigSafely(): Promise<FamilyCommandCenterConfig | null> {
+  try {
+    return await loadFamilyCommandCenterConfig();
+  } catch (error) {
+    if (isKeychainUnavailable(error)) {
+      logger.debug(LOG_SCOPE, "skipped — Keychain unavailable right now (phone locked or app backgrounded); will retry next attempt");
+    } else {
+      logger.warn(LOG_SCOPE, "could not read the saved Family Command Center config", { error: String(error) });
+    }
+    return null;
+  }
 }
 
 export async function saveFamilyCommandCenterConfig(config: FamilyCommandCenterConfig): Promise<void> {

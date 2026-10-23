@@ -1,11 +1,11 @@
 import { requestWithRelayFallback, resetRelayNecessityCacheForTests } from "./httpRelayFallback";
-import { loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 
 // Same explicit-factory reasoning as FamilyCommandCenterDiscoveryProvider.test.ts: automocking
 // still requires the real module once, which imports AsyncStorage/SecureStore -- native modules
 // that don't exist in this Jest environment.
 jest.mock("../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
@@ -15,7 +15,7 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 describe("requestWithRelayFallback", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
     resetRelayNecessityCacheForTests(); // several tests below reuse the same ip -- don't let one test's "direct failed" memory skip another's direct attempt
   });
 
@@ -88,7 +88,7 @@ describe("requestWithRelayFallback", () => {
   );
 
   test("throws a clear error when the direct request fails and Family Command Center isn't configured for relay", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
     (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
 
     await expect(requestWithRelayFallback({ ip: "10.20.30.40", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow(
@@ -101,7 +101,7 @@ describe("requestWithRelayFallback", () => {
   // confirm the public-tunnel fallback only fires for that case, never for a real rejection.
   describe("public URL fallback (away from home)", () => {
     beforeEach(() => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({
         baseUrl: "http://192.168.1.172:3210",
         token: "secret-token",
         publicBaseUrl: "https://hearth-relay.carddna.app",
@@ -133,7 +133,7 @@ describe("requestWithRelayFallback", () => {
     });
 
     test("no publicBaseUrl configured -- the LAN-unreachable error still surfaces normally, exactly as before this feature existed", async () => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "secret-token" });
       (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("Network request failed")).mockRejectedValueOnce(new Error("Network request failed"));
 
       await expect(requestWithRelayFallback({ ip: "192.168.1.50", port: 8060, path: "/query/device-info", method: "GET" })).rejects.toThrow();

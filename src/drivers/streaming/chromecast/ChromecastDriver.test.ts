@@ -1,9 +1,11 @@
 import { ChromecastDriver } from "./ChromecastDriver";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfig, loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
+// ChromecastClient (underlying this driver) calls the raw loadFamilyCommandCenterConfig() directly.
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
   loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 function jsonResponse(body: unknown) {
@@ -27,6 +29,7 @@ describe("ChromecastDriver", () => {
   beforeEach(() => {
     driver = new ChromecastDriver();
     global.fetch = jest.fn();
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
     (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
   });
 

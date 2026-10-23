@@ -1,4 +1,4 @@
-import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfig } from "../../discovery/familyCommandCenterConfig";
+import { FamilyCommandCenterConfig, loadFamilyCommandCenterConfigSafely } from "../../discovery/familyCommandCenterConfig";
 import {
   recordLanFailure,
   recordPublicFailure,
@@ -144,7 +144,10 @@ export async function openSocketWithRelayFallback(targetUrl: string): Promise<We
     directFailedAt.delete(key);
     return direct;
   } catch {
-    const config = await loadFamilyCommandCenterConfig();
+    // ADR-HEARTH-232: must be the Keychain-safe loader — a locked/backgrounded phone otherwise
+    // throws a raw KeyChainException here instead of falling into the "not configured" branch
+    // below, failing every relay-fallback connection attempt made while the phone is locked.
+    const config = await loadFamilyCommandCenterConfigSafely();
     if (!config) {
       throw new Error(`Could not reach ${targetUrl} directly, and Family Command Center isn't configured for relay fallback (add it in Settings)`);
     }
