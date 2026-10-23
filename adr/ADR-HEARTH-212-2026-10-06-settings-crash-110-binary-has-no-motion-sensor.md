@@ -1,7 +1,7 @@
 # ADR-HEARTH-212: Settings crash on Sean's phone. The 1.1.0 binary has no motion sensor module
 
 Date: 2026-10-06
-Status: Accepted. Shipped as a JS update; the confirmation is Sean's phone opening Settings.
+Status: Accepted and confirmed. Sean, 2026-10-22: "no it worked today" -- Settings opens on his phone.
 Follows: ADR-HEARTH-196, ADR-HEARTH-207
 
 ## Context
