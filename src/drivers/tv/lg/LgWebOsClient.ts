@@ -240,7 +240,25 @@ export class LgWebOsClient {
       // asking for a fresh approval. Seen after a saved client-key was sent, that is the TV positively
       // refusing the saved pairing -- as opposed to saying nothing at all (TV off, asleep, unreachable).
       let promptShown = false;
-      const timeout = setTimeout(() => {
+      // Real-hardware finding (2026-10-22, Sean directly: app goes "unresponsive" reconnecting to a
+      // TV with a flaky Wi-Fi link): LG_PAIRING_TIMEOUT_MS (30s) exists for a human to walk over and
+      // tap approve on a genuine first-time/reset pairing -- but it fired unconditionally, even for
+      // the ordinary case of reconnecting with an already-saved key, where a healthy TV answers in
+      // well under a second (same "8s is generous headroom" reasoning CALL_TIMEOUT_MS's own comment
+      // already uses). Against a TV whose network comes up just enough to open the socket but not
+      // answer register, that meant 30s of silence with no feedback before any error -- reading as a
+      // frozen app, not a slow one. Two-stage instead: start short, and only pay the full 30s once
+      // the TV has actually asked for a human (promptShown), which is the one case that genuinely
+      // needs it.
+      let timeout = setTimeout(escalateOrFail, CALL_TIMEOUT_MS);
+      function escalateOrFail(): void {
+        if (!promptShown) {
+          failRegister();
+          return;
+        }
+        timeout = setTimeout(failRegister, LG_PAIRING_TIMEOUT_MS - CALL_TIMEOUT_MS);
+      }
+      const failRegister = () => {
         this.pending.delete(registerId);
         socket.close();
         // Real-hardware finding (2026-09-10): a saved client-key timing out here doesn't mean
@@ -254,7 +272,7 @@ export class LgWebOsClient {
           ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
           : "Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again";
         reject(this.config.clientKey && promptShown ? new SavedPairingRejectedError(message) : new Error(message));
-      }, LG_PAIRING_TIMEOUT_MS);
+      };
 
       this.pending.set(registerId, {
         isRegister: true,
