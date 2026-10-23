@@ -368,6 +368,23 @@ describe("LgWebOsClient", () => {
 
       await expect(connectPromise).rejects.toThrow(/isn't recognizing a previous pairing anymore/);
     });
+
+    // Real-hardware finding (2026-10-22): against a TV with a flaky network link that opens the
+    // socket but never answers register at all (no prompt, no error, no response), the full 30s
+    // used to elapse before any feedback -- reading as a frozen app, not a slow one. Register now
+    // fails fast (CALL_TIMEOUT_MS, 8s) unless the TV has actually shown an approval prompt, in which
+    // case the other tests in this file (above, and "a refused saved client-key" below) confirm the
+    // full 30s budget is still honored.
+    test("silence with no approval prompt at all fails fast at CALL_TIMEOUT_MS (8s), not the full 30s pairing budget", async () => {
+      const client = new LgWebOsClient({ ipAddress: "192.168.1.70" }); // no clientKey
+      const connectPromise = client.connect();
+      MockWebSocket.latest().simulateOpen();
+      await flushMicrotasks();
+
+      jest.advanceTimersByTime(8000);
+
+      await expect(connectPromise).rejects.toThrow("Timed out waiting for pairing approval on the TV — accept the on-screen prompt and try again");
+    });
   });
 
   // ADR-HEARTH-223: only a TV that answers the saved client-key with a fresh approval prompt has
