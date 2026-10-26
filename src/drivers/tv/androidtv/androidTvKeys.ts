@@ -17,13 +17,18 @@ export const SIMPLE_CAPABILITY_KEYS: Partial<Record<CapabilityId, string>> = {
   home: "HOME",
   back: "BACK",
   playPause: "MEDIA_PLAY_PAUSE",
+  // ADR-HEARTH-234: already on the Pi bridge's key allowlist (FCC androidtv-command-policy.ts /
+  // androidtv_bridge.py ALLOWED_KEYS), so these need no Pi change.
+  menu: "MENU",
+  channelUp: "CHANNEL_UP",
+  channelDown: "CHANNEL_DOWN",
 };
 
 export const POWER_KEY = "POWER";
 
 // Verified against androidtvremote2's own key list: it has volume up/down/mute keys and no absolute
-// volume, no channel-number entry and no input switch that works on a streamer, so setVolume,
-// setChannel and inputSelection are deliberately NOT declared. Text entry relies on the TV's own
+// volume, no channel-number entry on this bridge and no input switch that works on a streamer, so
+// setVolume, setChannel and inputSelection are deliberately NOT declared. Text entry relies on the TV's own
 // on-screen keyboard being focused (the library warns it may not work while a virtual keyboard shows).
 export const ANDROID_TV_CAPABILITIES: CapabilityId[] = [
   "power",
@@ -37,4 +42,9 @@ export const ANDROID_TV_CAPABILITIES: CapabilityId[] = [
   "playPause",
   "launchApp",
   "textEntry",
+  // ADR-HEARTH-234 (Sean, 2026-10-26: "just add as many as possible per remote"). Channel keys act
+  // on the TV's tuner/live-TV app; on a streamer with no tuner the press is ignored by the device.
+  "menu",
+  "channelUp",
+  "channelDown",
 ];

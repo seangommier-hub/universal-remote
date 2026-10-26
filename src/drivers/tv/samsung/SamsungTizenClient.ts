@@ -122,6 +122,21 @@ export class SamsungTizenClient {
     );
   }
 
+  /** Launches an installed app by its Samsung app id over the same remote-control socket (ADR-HEARTH-234). */
+  launchApp(appId: string): void {
+    if (!this.socket || this.socket.readyState !== this.socket.OPEN) {
+      throw new Error("Samsung WebSocket is not connected — call connect() first");
+    }
+    // Same envelope as samsungtvws's run_app()/ChannelEmitCommand.launch_app (remote.py):
+    // DEEP_LINK is that library's default action_type for store apps.
+    this.socket.send(
+      JSON.stringify({
+        method: "ms.channel.emit",
+        params: { event: "ed.apps.launch", to: "host", data: { appId, action_type: "DEEP_LINK", metaTag: "" } },
+      })
+    );
+  }
+
   close(): void {
     this.closingDeliberately = true;
     this.socket?.close();

@@ -37,6 +37,26 @@ export const SONY_IRCC_CODES = {
   confirm: "AAAAAQAAAAEAAABlAw==",
   home: "AAAAAQAAAAEAAABgAw==",
   return: "AAAAAgAAAJcAAAAjAw==",
+  // ADR-HEARTH-234 (2026-10-26): each value below matches byte-for-byte in BOTH sources cited above
+  // (the KD55XH9296BU getRemoteControllerInfo dump and AlecJDavidson's iirc_codes.py), refetched
+  // that day. "Options" was left out on purpose: it is only in the device dump, not the second source.
+  channelUp: "AAAAAQAAAAEAAAAQAw==",
+  channelDown: "AAAAAQAAAAEAAAARAw==",
+  play: "AAAAAgAAAJcAAAAaAw==",
+  pause: "AAAAAgAAAJcAAAAZAw==",
+  rewind: "AAAAAgAAAJcAAAAbAw==",
+  forward: "AAAAAgAAAJcAAAAcAw==",
+  input: "AAAAAQAAAAEAAAAlAw==",
+  num0: "AAAAAQAAAAEAAAAJAw==",
+  num1: "AAAAAQAAAAEAAAAAAw==",
+  num2: "AAAAAQAAAAEAAAABAw==",
+  num3: "AAAAAQAAAAEAAAACAw==",
+  num4: "AAAAAQAAAAEAAAADAw==",
+  num5: "AAAAAQAAAAEAAAAEAw==",
+  num6: "AAAAAQAAAAEAAAAFAw==",
+  num7: "AAAAAQAAAAEAAAAGAw==",
+  num8: "AAAAAQAAAAEAAAAHAw==",
+  num9: "AAAAAQAAAAEAAAAIAw==",
 } as const;
 
 export interface SonyIrccConfig {

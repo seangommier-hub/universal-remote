@@ -432,8 +432,8 @@ export function UniversalTvRemote({ device, commandEngine, stateStore, onReconne
 
       {/* Real-hardware research (2026-09-10): Roku (POST /launch/<channel id>) and LG
           (ssap://system.launcher/launch) both have real, verified app-launch mechanisms — see
-          Capability.ts and each driver's own id mapping. Samsung/Sony don't declare "launchApp"
-          because neither has a confirmed equivalent, not because this row forgot them. */}
+          Capability.ts and each driver's own id mapping. Samsung and Sony joined them on
+          2026-10-26 (ADR-HEARTH-234); the row shows for any device that declares "launchApp". */}
       {has(device, "launchApp") && !rePairCardCrowdsControls && (
         <StreamingAppsRow onLaunch={(service) => send("launchApp", { service })} disabled={controlsDisabled} />
       )}

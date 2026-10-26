@@ -20,8 +20,8 @@ const RECONNECT_MAX_DELAY_MS = 30000;
 
 // No "power"/"powerOn" — Roku's documented key list has only "PowerOff", no power-on key (waking
 // a fully-off device isn't exposed by ECP). No "setVolume" — volume keys are relative
-// (VolumeUp/VolumeDown) only, no absolute-value command. No "menu" — Roku's key list has no
-// confirmed menu/options key mapping. inputSelection IS included, unlike the TV drivers: ECP
+// (VolumeUp/VolumeDown) only, no absolute-value command. "menu" sends ECP's documented "Info" key
+// (the remote's * options button, ADR-HEARTH-234). inputSelection IS included, unlike the TV drivers: ECP
 // documents explicit InputTuner/InputHDMI1-4/InputAV1 keys, so this one is real, not a gap.
 // See ADR-HEARTH-007.
 const ROKU_CAPABILITIES: CapabilityId[] = [
@@ -48,6 +48,13 @@ const ROKU_CAPABILITIES: CapabilityId[] = [
   // ECP docs) sends one literal printable character to whichever on-screen field currently has
   // focus — see Capability.ts's textEntry entry for the full citation.
   "textEntry",
+  // ADR-HEARTH-234 (Sean, 2026-10-26: "just add as many as possible per remote"): "Rev", "Fwd" and
+  // "Info" are all in ECP's documented "Recognized by ECP" keypress list (developer.roku.com,
+  // External Control Protocol, fetched 2026-10-26). Info is the remote's * key, which opens the
+  // options menu for whatever is on screen, so it backs "menu".
+  "rewind",
+  "fastForward",
+  "menu",
 ];
 
 // See Capability.ts's playPause entry for the citation. Returns null (deliberately distinct from
@@ -308,6 +315,18 @@ export class RokuEcpDriver implements DeviceDriver {
           await client.keypress("Select");
           this.patchValues(device.id, { lastAction: "select" });
         }
+        return;
+      case "rewind":
+        await client.keypress("Rev");
+        this.patchValues(device.id, { lastAction: "rewind" });
+        return;
+      case "fastForward":
+        await client.keypress("Fwd");
+        this.patchValues(device.id, { lastAction: "fastForward" });
+        return;
+      case "menu":
+        await client.keypress("Info");
+        this.patchValues(device.id, { lastAction: "menu" });
         return;
       case "back":
         await client.keypress("Back");
