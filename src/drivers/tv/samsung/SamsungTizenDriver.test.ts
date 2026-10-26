@@ -193,6 +193,38 @@ describe("SamsungTizenDriver", () => {
     expect(JSON.parse(MockWebSocket.latest().sentMessages[0]).params.DataOfCmd).toBe("KEY_SOURCE");
   });
 
+  // ADR-HEARTH-234: transport keys from samsung-tv-ws-api's COMMANDS.md key list.
+  test.each([
+    ["play", "KEY_PLAY"],
+    ["pause", "KEY_PAUSE"],
+    ["rewind", "KEY_REWIND"],
+    ["fastForward", "KEY_FF"],
+  ] as const)("%s sends %s", async (capability, key) => {
+    await connectDriver(driver);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability });
+
+    expect(JSON.parse(MockWebSocket.latest().sentMessages[0]).params.DataOfCmd).toBe(key);
+  });
+
+  test("launchApp sends samsungtvws's ed.apps.launch event with the service's app id (ADR-HEARTH-234)", async () => {
+    await connectDriver(driver);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "youtube" } });
+
+    expect(JSON.parse(MockWebSocket.latest().sentMessages[0])).toEqual({
+      method: "ms.channel.emit",
+      params: { event: "ed.apps.launch", to: "host", data: { appId: "111299001912", action_type: "DEEP_LINK", metaTag: "" } },
+    });
+  });
+
+  test("launchApp rejects an unknown service without sending anything", async () => {
+    await connectDriver(driver);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "nope" } })).rejects.toThrow(/supported 'service'/);
+    expect(MockWebSocket.latest().sentMessages).toHaveLength(0);
+  });
+
   test("setChannel sends KEY_0..KEY_9 for each digit, in order, and records the channel", async () => {
     await connectDriver(driver);
     const socket = MockWebSocket.latest();

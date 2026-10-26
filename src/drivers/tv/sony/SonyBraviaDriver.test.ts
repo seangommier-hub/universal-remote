@@ -49,9 +49,12 @@ describe("SonyBraviaDriver", () => {
     await driver.disconnect(device); // cancels any Wake-on-LAN reconnect burst (ADR-HEARTH-144) so its timer cannot leak into the next test
   });
 
-  test("declares REST-API capabilities plus IRCC-IP nav/select/back/home (ADR-HEARTH-071) — but not menu or textEntry, which neither protocol supports", () => {
+  test("declares REST-API capabilities plus IRCC-IP keys (ADR-HEARTH-071, ADR-HEARTH-234) — but not menu or textEntry, which neither protocol supports", () => {
     const caps = driver.getCapabilities();
-    expect(caps).toEqual(["power", "volumeUp", "volumeDown", "setVolume", "mute", "inputSelection", "directionalNavigation", "select", "back", "home"]);
+    expect(caps).toEqual([
+      "power", "volumeUp", "volumeDown", "setVolume", "mute", "inputSelection", "directionalNavigation", "select", "back", "home",
+      "channelUp", "channelDown", "setChannel", "play", "pause", "rewind", "fastForward", "openSourceList", "launchApp",
+    ]);
     expect(caps).not.toContain("menu");
     expect(caps).not.toContain("textEntry");
   });
@@ -408,6 +411,53 @@ describe("SonyBraviaDriver", () => {
     expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain("<IRCCCode>AAAAAQAAAAEAAABgAw==</IRCCCode>");
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+  // ADR-HEARTH-234: IRCC-IP keys confirmed in both sources SonyIrccClient.ts cites.
+  test.each([
+    ["channelUp", "AAAAAQAAAAEAAAAQAw=="],
+    ["channelDown", "AAAAAQAAAAEAAAARAw=="],
+    ["play", "AAAAAgAAAJcAAAAaAw=="],
+    ["pause", "AAAAAgAAAJcAAAAZAw=="],
+    ["rewind", "AAAAAgAAAJcAAAAbAw=="],
+    ["fastForward", "AAAAAgAAAJcAAAAcAw=="],
+    ["openSourceList", "AAAAAQAAAAEAAAAlAw=="],
+  ] as const)("%s sends its IRCC code, with no follow-up read", async (capability, code) => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability });
+
+    expect((global.fetch as jest.Mock).mock.calls[0][1].body).toContain(`<IRCCCode>${code}</IRCCCode>`);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("setChannel presses one Num IRCC code per digit and records the channel", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    const result = await driver.executeCommand(device, { deviceId: device.id, capability: "setChannel", args: { channel: 41 } });
+
+    const bodies = (global.fetch as jest.Mock).mock.calls.map((call) => call[1].body as string);
+    expect(bodies[0]).toContain("<IRCCCode>AAAAAQAAAAEAAAADAw==</IRCCCode>"); // Num4
+    expect(bodies[1]).toContain("<IRCCCode>AAAAAQAAAAEAAAAAAw==</IRCCCode>"); // Num1
+    expect(result.state).toMatchObject({ channel: 41 });
+  }, 10000);
+
+  test("launchApp finds the installed app by title and makes it active", async () => {
+    const apps = [{ title: "YouTube", uri: "com.sony.dtv.youtube" }, { title: "Netflix", uri: "com.sony.dtv.netflix" }];
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 1, result: [apps] }) } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 2, result: [] }) } as unknown as Response);
+
+    await driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "netflix" } });
+
+    const setActive = JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body);
+    expect(setActive).toMatchObject({ method: "setActiveApp", params: [{ uri: "com.sony.dtv.netflix" }] });
+  });
+
+  test("launchApp rejects a service that is not installed without calling setActiveApp", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 1, result: [[{ title: "YouTube", uri: "x" }]] }) } as unknown as Response);
+
+    await expect(driver.executeCommand(device, { deviceId: device.id, capability: "launchApp", args: { service: "hulu" } })).rejects.toThrow(/installed/);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ADR-HEARTH-144: after a Wake-on-LAN packet the driver retries reaching the TV on a fast fixed
@@ -496,4 +546,5 @@ describe("SonyBraviaDriver reconnect burst after Wake-on-LAN", () => {
     await jest.advanceTimersByTimeAsync(WAKE_BURST_WINDOW_MS * 2);
     expect(powerStatusCalls()).toBe(callsAtDisconnect);
   });
+
 });

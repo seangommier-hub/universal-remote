@@ -80,7 +80,7 @@ describe("RokuEcpDriver", () => {
     resetRelayNecessityCacheForTests();
   });
 
-  test("declares inputSelection (ECP has real input keys) and selectPlayPause but not power/setVolume/menu/separate select or playPause", () => {
+  test("declares inputSelection (ECP has real input keys), selectPlayPause and Rev/Fwd/Info (ADR-HEARTH-234) but not power/setVolume/separate select or playPause", () => {
     const caps = driver.getCapabilities();
     expect(caps).toContain("inputSelection");
     expect(caps).toContain("selectPlayPause");
@@ -89,7 +89,7 @@ describe("RokuEcpDriver", () => {
     expect(caps).not.toContain("power");
     expect(caps).not.toContain("powerOn");
     expect(caps).not.toContain("setVolume");
-    expect(caps).not.toContain("menu");
+    expect(caps).toEqual(expect.arrayContaining(["rewind", "fastForward", "menu"]));
   });
 
   test("connect() reads real power state from device-info and real playback state from media-player", async () => {
@@ -548,6 +548,21 @@ describe("RokuEcpDriver", () => {
 
     const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
     expect(keypressUrls).toEqual(["http://192.168.1.80:8060/keypress/Backspace"]);
+  });
+
+  // ADR-HEARTH-234: ECP's documented Rev, Fwd and Info keys.
+  test.each([
+    ["rewind", "Rev"],
+    ["fastForward", "Fwd"],
+    ["menu", "Info"],
+  ] as const)("%s sends the %s keypress", async (capability, key) => {
+    await connectRoku(driver);
+
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse());
+    await driver.executeCommand(device, { deviceId: device.id, capability });
+
+    const keypressUrls = (global.fetch as jest.Mock).mock.calls.slice(3).map((call) => call[0]);
+    expect(keypressUrls).toEqual([`http://192.168.1.80:8060/keypress/${key}`]);
   });
 
   test("textEntry rejects an empty string without any network call", async () => {

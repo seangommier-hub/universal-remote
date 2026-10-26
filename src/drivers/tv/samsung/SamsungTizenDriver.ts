@@ -1,5 +1,5 @@
 import { DeviceDriver, StateChangeListener } from "../../../core/drivers/DeviceDriver";
-import { CapabilityId, NavigationDirection } from "../../../core/types/Capability";
+import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
@@ -52,7 +52,30 @@ const SAMSUNG_CAPABILITIES: CapabilityId[] = [
   // driver already has, same as any other on-screen menu. See Capability.ts and ADR-HEARTH-027
   // for why this isn't just inputSelection under a different name.
   "openSourceList",
+  // ADR-HEARTH-234 (Sean, 2026-10-26: "just add as many as possible per remote"): KEY_PLAY,
+  // KEY_PAUSE, KEY_REWIND and KEY_FF are all in xchwarze/samsung-tv-ws-api's COMMANDS.md key list
+  // (fetched 2026-10-26), sent over the same remote-control socket as every key above.
+  "play",
+  "pause",
+  "rewind",
+  "fastForward",
+  // ADR-HEARTH-234: corrects the earlier "Samsung's protocol has no app-launch capability" finding.
+  // samsungtvws's run_app() (remote.py, fetched 2026-10-26) sends "ms.channel.emit" /
+  // "ed.apps.launch" over this SAME samsung.remote.control socket — no new channel, no cloud API.
+  // App ids are community-sourced (see SAMSUNG_APP_IDS) and can differ by model year.
+  "launchApp",
 ];
+
+// Samsung's numeric launch ids for the four fixed streaming services (ADR-HEARTH-234). Sourced from
+// community lists (jaruba/ha-samsungtv-tizen App_list.md, tavicu/homebridge-samsung-tizen) — not a
+// Samsung-published table, and Netflix is "11101200001" on some older TVs. Fire-and-forget like
+// every key on this protocol: there is no readback to tell whether the app actually opened.
+const SAMSUNG_APP_IDS: Record<StreamingService, string> = {
+  netflix: "3201907018807",
+  youtube: "111299001912",
+  primeVideo: "3201910019365",
+  hulu: "3201601007625",
+};
 
 const DIRECTION_KEYS: Record<NavigationDirection, string> = {
   up: "KEY_UP",
@@ -98,6 +121,14 @@ function keyCodeFor(command: Command): string {
       return "KEY_SLEEP";
     case "openSourceList":
       return "KEY_SOURCE";
+    case "play":
+      return "KEY_PLAY";
+    case "pause":
+      return "KEY_PAUSE";
+    case "rewind":
+      return "KEY_REWIND";
+    case "fastForward":
+      return "KEY_FF";
     case "directionalNavigation": {
       const direction = command.args?.direction as NavigationDirection | undefined;
       if (!direction || !(direction in DIRECTION_KEYS)) {
@@ -383,6 +414,14 @@ export class SamsungTizenDriver implements DeviceDriver {
       const values = { ...current, channel };
       this.setState(device.id, { connection: "connected", values, lastUpdated: Date.now() });
       return { success: true, deviceId: device.id, capability: command.capability, timestamp: Date.now(), state: values };
+    }
+
+    if (command.capability === "launchApp") {
+      const service = command.args?.service as StreamingService | undefined;
+      const appId = service ? SAMSUNG_APP_IDS[service] : undefined;
+      if (!appId) throw new Error(`launchApp requires a supported 'service' arg (got ${String(service)})`);
+      client.launchApp(appId);
+      return { success: true, deviceId: device.id, capability: command.capability, timestamp: Date.now(), state: current };
     }
 
     const keyCode = keyCodeFor(command);

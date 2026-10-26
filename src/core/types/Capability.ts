@@ -33,9 +33,9 @@ export type CapabilityId =
   | "settings"
   // Real-hardware research (2026-09-10): Roku's ECP has a documented launch-by-channel-ID
   // endpoint (POST /launch/<id>) and LG's SSAP has ssap://system.launcher/launch — both verified,
-  // real mechanisms, not assumed. Samsung's protocol has no app-launch capability at all (its
-  // remote-control websocket is key-press emulation only), and Sony's wasn't verified either way
-  // — neither driver declares this. See RokuEcpDriver.ts/LgWebOsDriver.ts for the id mappings.
+  // real mechanisms, not assumed. Corrected 2026-10-26 (ADR-HEARTH-234): Samsung's remote-control
+  // websocket DOES carry app launches ("ms.channel.emit"/"ed.apps.launch", samsungtvws run_app), and
+  // Sony's REST appControl has getApplicationList/setActiveApp — both drivers now declare this.
   | "launchApp"
   // Real-hardware research (2026-09-10): Samsung's documented Tizen key list includes
   // "KEY_SOURCE|Source" — opens the TV's own on-screen source picker rather than jumping directly

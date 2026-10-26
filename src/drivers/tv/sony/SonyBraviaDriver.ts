@@ -44,6 +44,18 @@ const SONY_BRAVIA_CAPABILITIES: CapabilityId[] = [
   "select",
   "back",
   "home",
+  // ADR-HEARTH-234 (Sean, 2026-10-26: "just add as many as possible per remote"): IRCC-IP keys
+  // confirmed in both sources SonyIrccClient.ts cites (channel, number, transport and Input keys),
+  // plus REST appControl getApplicationList/setActiveApp for app launching (SonyAppLauncher.ts).
+  "channelUp",
+  "channelDown",
+  "setChannel",
+  "play",
+  "pause",
+  "rewind",
+  "fastForward",
+  "openSourceList",
+  "launchApp",
 ];
 
 export const SONY_BRAVIA_DRIVER_ID = "sony-bravia";

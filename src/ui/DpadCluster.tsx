@@ -6,6 +6,7 @@ import { DPAD_HEIGHT, ROCKER_WIDTH } from "./dpadLayout";
 import { has } from "./hasCapability";
 import { ROCKER_LABEL_MAX_FONT_MULTIPLIER, scaleFont, shouldShowRockerLabel } from "./remoteScale";
 import { remoteCardStyles } from "./remoteCardStyles";
+import { TransportControlsRow } from "./TransportControlsRow";
 import { theme } from "./theme";
 import { useDpadSwipeGesture } from "./useDpadSwipeGesture";
 import { useHoldRepeat } from "./useHoldRepeat";
@@ -239,6 +240,7 @@ export function DpadCluster({
           />
         </View>
       )}
+      <TransportControlsRow device={device} scale={scale} disabled={disabled} onSend={onSend} />
     </View>
   );
 }

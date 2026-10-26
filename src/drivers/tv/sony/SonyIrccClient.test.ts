@@ -48,6 +48,23 @@ describe("SonyIrccClient", () => {
       confirm: "AAAAAQAAAAEAAABlAw==",
       home: "AAAAAQAAAAEAAABgAw==",
       return: "AAAAAgAAAJcAAAAjAw==",
+      channelUp: "AAAAAQAAAAEAAAAQAw==",
+      channelDown: "AAAAAQAAAAEAAAARAw==",
+      play: "AAAAAgAAAJcAAAAaAw==",
+      pause: "AAAAAgAAAJcAAAAZAw==",
+      rewind: "AAAAAgAAAJcAAAAbAw==",
+      forward: "AAAAAgAAAJcAAAAcAw==",
+      input: "AAAAAQAAAAEAAAAlAw==",
+      num0: "AAAAAQAAAAEAAAAJAw==",
+      num1: "AAAAAQAAAAEAAAAAAw==",
+      num2: "AAAAAQAAAAEAAAABAw==",
+      num3: "AAAAAQAAAAEAAAACAw==",
+      num4: "AAAAAQAAAAEAAAADAw==",
+      num5: "AAAAAQAAAAEAAAAEAw==",
+      num6: "AAAAAQAAAAEAAAAFAw==",
+      num7: "AAAAAQAAAAEAAAAGAw==",
+      num8: "AAAAAQAAAAEAAAAHAw==",
+      num9: "AAAAAQAAAAEAAAAIAw==",
     });
   });
 });

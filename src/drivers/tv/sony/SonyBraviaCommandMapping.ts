@@ -1,12 +1,14 @@
 /** Maps a Hearth command to the Sony BRAVIA REST/IRCC-IP call that performs it, reporting what the driver already knows about the resulting state. */
 
-import { NavigationDirection } from "../../../core/types/Capability";
+import { CapabilityId, NavigationDirection, StreamingService } from "../../../core/types/Capability";
 import { Command } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { SonyBraviaClient, SonyBraviaConfig } from "./SonyBraviaClient";
 import { SonyIrccClient, SONY_IRCC_CODES } from "./SonyIrccClient";
 import { CommandValidationError } from "../../shared/commandFailure";
+import { sendDigitSequence } from "../../../core/util/sendDigitSequence";
+import { launchSonyApp } from "./SonyAppLauncher";
 
 const VOLUME_STEP = 2;
 
@@ -37,6 +39,44 @@ const DIRECTION_TO_IRCC_CODE: Record<NavigationDirection, string> = {
   left: SONY_IRCC_CODES.left,
   right: SONY_IRCC_CODES.right,
 };
+
+// ADR-HEARTH-234: capabilities that are exactly one IRCC-IP key press with no state to report.
+const SIMPLE_IRCC_CODES: Partial<Record<CapabilityId, string>> = {
+  select: SONY_IRCC_CODES.confirm,
+  back: SONY_IRCC_CODES.return,
+  home: SONY_IRCC_CODES.home,
+  channelUp: SONY_IRCC_CODES.channelUp,
+  channelDown: SONY_IRCC_CODES.channelDown,
+  play: SONY_IRCC_CODES.play,
+  pause: SONY_IRCC_CODES.pause,
+  rewind: SONY_IRCC_CODES.rewind,
+  fastForward: SONY_IRCC_CODES.forward,
+  openSourceList: SONY_IRCC_CODES.input,
+};
+
+const DIGIT_IRCC_CODES: Record<string, string> = {
+  "0": SONY_IRCC_CODES.num0,
+  "1": SONY_IRCC_CODES.num1,
+  "2": SONY_IRCC_CODES.num2,
+  "3": SONY_IRCC_CODES.num3,
+  "4": SONY_IRCC_CODES.num4,
+  "5": SONY_IRCC_CODES.num5,
+  "6": SONY_IRCC_CODES.num6,
+  "7": SONY_IRCC_CODES.num7,
+  "8": SONY_IRCC_CODES.num8,
+  "9": SONY_IRCC_CODES.num9,
+};
+
+/** Presses the number keys for a channel number or a raw digit string (PIN entry), one IRCC code per digit. */
+async function sendSonyDigits(device: Device, command: Command): Promise<CommandOutcome> {
+  const ircc = new SonyIrccClient(requireConfig(device));
+  const digits = command.args?.digits;
+  const channel = command.args?.channel;
+  const entry = typeof digits === "string" ? digits : channel;
+  if (typeof entry !== "string" && typeof entry !== "number") throw new CommandValidationError("setChannel requires a numeric 'channel' or string 'digits' arg");
+  await sendDigitSequence(entry, (digit) => ircc.sendCode(DIGIT_IRCC_CODES[digit]));
+  return typeof digits === "string" ? {} : { patch: { channel: entry } };
+}
 
 /** Reads and validates the `{ipAddress, psk}` config every Sony REST/IRCC-IP call needs. */
 export function requireConfig(device: Device): SonyBraviaConfig {
@@ -116,16 +156,16 @@ export async function applyCommand(client: SonyBraviaClient, device: Device, com
       await new SonyIrccClient(requireConfig(device)).sendCode(DIRECTION_TO_IRCC_CODE[direction]);
       return {};
     }
-    case "select":
-      await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.confirm);
+    case "setChannel":
+      return sendSonyDigits(device, command);
+    case "launchApp":
+      await launchSonyApp(client, command.args?.service as StreamingService | undefined);
       return {};
-    case "back":
-      await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.return);
+    default: {
+      const code = SIMPLE_IRCC_CODES[command.capability];
+      if (!code) throw new CommandValidationError(`SonyBraviaDriver does not implement capability: ${command.capability}`);
+      await new SonyIrccClient(requireConfig(device)).sendCode(code);
       return {};
-    case "home":
-      await new SonyIrccClient(requireConfig(device)).sendCode(SONY_IRCC_CODES.home);
-      return {};
-    default:
-      throw new CommandValidationError(`SonyBraviaDriver does not implement capability: ${command.capability}`);
+    }
   }
 }

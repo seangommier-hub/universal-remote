@@ -56,10 +56,12 @@ describe("AndroidTvDriver", () => {
     jest.useRealTimers();
   });
 
-  test("declares honest capabilities: keys, launch and text, but no absolute volume, channel or input", () => {
+  test("declares honest capabilities: keys, launch, text, menu and channel keys (ADR-HEARTH-234), but no absolute volume, channel number or input", () => {
     const caps = driver.getCapabilities();
-    expect(caps).toEqual(expect.arrayContaining(["power", "volumeUp", "volumeDown", "mute", "directionalNavigation", "select", "home", "back", "playPause", "launchApp", "textEntry"]));
-    for (const missing of ["setVolume", "setChannel", "inputSelection", "channelUp"] as const) expect(caps).not.toContain(missing);
+    expect(caps).toEqual(
+      expect.arrayContaining(["power", "volumeUp", "volumeDown", "mute", "directionalNavigation", "select", "home", "back", "playPause", "launchApp", "textEntry", "menu", "channelUp", "channelDown"])
+    );
+    for (const missing of ["setVolume", "setChannel", "inputSelection"] as const) expect(caps).not.toContain(missing);
   });
 
   test("connect() reads real power state and foreground app", async () => {
@@ -135,6 +137,9 @@ describe("AndroidTvDriver", () => {
     ["volumeDown", {}, "VOLUME_DOWN"],
     ["mute", {}, "MUTE"],
     ["playPause", {}, "MEDIA_PLAY_PAUSE"],
+    ["menu", {}, "MENU"],
+    ["channelUp", {}, "CHANNEL_UP"],
+    ["channelDown", {}, "CHANNEL_DOWN"],
     ["directionalNavigation", { direction: "left" }, "DPAD_LEFT"],
   ] as const)("%s sends the %s allowlisted key", async (capability, args, key) => {
     mockSendKey.mockResolvedValueOnce(undefined);
