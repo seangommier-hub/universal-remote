@@ -1,4 +1,4 @@
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // Course correction (ADR-HEARTH-042's 2026-09-11 update): a WEBHOOK_SMART_APP doesn't use a
@@ -40,7 +40,7 @@ export class SmartThingsApiError extends Error {
 export class FamilyCommandCenterNotConfiguredError extends Error {}
 
 async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then SmartThings outlets can sync.");
   }

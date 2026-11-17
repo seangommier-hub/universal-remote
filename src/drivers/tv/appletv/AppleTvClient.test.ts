@@ -1,8 +1,8 @@
 import { AppleTvClient } from "./AppleTvClient";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
@@ -12,7 +12,7 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 describe("AppleTvClient", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
   });
 
   test("startPairing posts the IP and resolves with a session id", async () => {
@@ -60,7 +60,7 @@ describe("AppleTvClient", () => {
   });
 
   test("without Family Command Center configured fails clearly rather than silently no-opping", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
     await expect(new AppleTvClient().startPairing("192.168.1.90")).rejects.toThrow(/Family Command Center/);
   });
 

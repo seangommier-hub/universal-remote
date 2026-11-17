@@ -12,6 +12,19 @@ describe("SamsungTizenClient", () => {
     global.fetch = jest.fn();
   });
 
+  test("a relay refusal during the handshake (ADR-HEARTH-234) fails at once with the relay's reason, not a pairing timeout", async () => {
+    mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "stale-token" });
+    const client = new SamsungTizenClient({ ipAddress: "192.168.1.80", token: "saved" });
+    const connectPromise = client.connect();
+    MockWebSocket.latest().simulateError();
+    await flushMicrotasks();
+    const relaySocket = MockWebSocket.latest();
+    relaySocket.simulateOpen();
+    await flushMicrotasks();
+    relaySocket.simulateClose(4001, "unauthorized");
+    await expect(connectPromise).rejects.toThrow(/rejected this phone's saved token/);
+  });
+
   test("connects to the unencrypted port 8001 endpoint with a base64-encoded app name", async () => {
     const client = new SamsungTizenClient({ ipAddress: "192.168.1.60", appName: "Hearth" });
     const connectPromise = client.connect();

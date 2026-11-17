@@ -7,7 +7,7 @@
 // ADR-HEARTH-011: if the TV isn't reachable directly (different network segment than the
 // phone), connect() falls back to relaying through Family Command Center.
 
-import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
+import { describeHandshakeClose, openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 import { requestWithRelayFallback } from "../../../core/network/httpRelayFallback";
 
 export const SAMSUNG_PAIRING_TIMEOUT_MS = 20000; // only hit on a first-time pairing, which needs a physical on-screen approval tap
@@ -73,6 +73,7 @@ export class SamsungTizenClient {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        socket.onclose = null;
         socket.close();
         const message = this.config.token
           ? "This TV isn't recognizing a previous pairing anymore (its own settings may have been reset or updated) — accept the on-screen prompt to re-approve it"
@@ -99,6 +100,7 @@ export class SamsungTizenClient {
           resolve(typeof token === "string" && token.length > 0 ? token : this.config.token);
         } else if (message.event === MS_CHANNEL_UNAUTHORIZED_EVENT) {
           clearTimeout(timeout);
+          socket.onclose = null;
           socket.close();
           reject(new SamsungPairingError("Pairing was denied on the TV"));
         }
@@ -106,6 +108,12 @@ export class SamsungTizenClient {
       socket.onerror = () => {
         clearTimeout(timeout);
         reject(new Error(`Could not open a WebSocket to ${this.config.ipAddress}:8001`));
+      };
+      // ADR-HEARTH-234: a relay refusal arrives as a close on the already-open socket; surface its
+      // reason now instead of waiting out the pairing timeout. Replaced on a successful connect.
+      socket.onclose = (event?: { code?: number; reason?: string }) => {
+        clearTimeout(timeout);
+        reject(describeHandshakeClose(event, `${this.config.ipAddress}:8001`));
       };
     });
   }

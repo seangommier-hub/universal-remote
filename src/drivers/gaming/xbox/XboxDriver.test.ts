@@ -1,11 +1,11 @@
 import { XboxDriver } from "./XboxDriver";
 import { Device } from "../../../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 // Same reasoning as httpRelayFallback.test.ts: mocked rather than imported for real — the real
 // module pulls in AsyncStorage/SecureStore, native modules this Jest environment doesn't have.
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
@@ -28,7 +28,7 @@ describe("XboxDriver", () => {
   beforeEach(() => {
     driver = new XboxDriver();
     global.fetch = jest.fn();
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
   });
 
   test("declares only powerOn — power-off and media control need a full authenticated SmartGlass session this driver doesn't implement", () => {
@@ -65,7 +65,7 @@ describe("XboxDriver", () => {
   });
 
   test("powerOn without Family Command Center configured fails clearly rather than silently no-opping", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
     await expect(driver.executeCommand(device, { deviceId: device.id, capability: "powerOn" })).rejects.toThrow(/Family Command Center/);
   });
 

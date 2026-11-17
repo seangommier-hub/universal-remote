@@ -1,8 +1,8 @@
 import { AlexaBridgeError, FamilyCommandCenterNotConfiguredError, isAlexaNotLinkedError, listPlugs, setPlugState } from "./AlexaPlugClient";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig");
-const mockLoadConfig = loadFamilyCommandCenterConfig as jest.MockedFunction<typeof loadFamilyCommandCenterConfig>;
+const mockLoadConfig = loadFamilyCommandCenterConfigSafely as jest.MockedFunction<typeof loadFamilyCommandCenterConfigSafely>;
 
 const FCC_CONFIG = { baseUrl: "http://192.168.1.172:3210", token: "fcc-token" };
 

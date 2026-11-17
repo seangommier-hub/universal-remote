@@ -39,6 +39,41 @@ export function resetDirectFailureMemoryForTests(): void {
   resetConnectivityForTests();
 }
 
+// ADR-HEARTH-234: Family Command Center's WS relay accepts the socket first and only then validates
+// it, so a refusal arrives as a close with one of these codes (scripts/hearth-relay/relay-ws-server.js
+// on the Family Command Center side) rather than as a failed open. A driver's handshake that ignores
+// the close just waits out its own timeout and blames the TV's pairing instead.
+export class RelayRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly code: number,
+  ) {
+    super(message);
+    this.name = "RelayRefusedError";
+  }
+}
+
+const RELAY_CLOSE_MESSAGES: Record<number, string> = {
+  4001: "Family Command Center rejected this phone's saved token — re-verify the connection in Settings > Family Command Center",
+  4003: "Family Command Center doesn't see this TV at its saved address — the TV may be off its network or have moved",
+  4004: "Family Command Center won't relay to this TV's port",
+  4008: "Family Command Center couldn't reach the TV — it may be off, asleep, or off its Wi-Fi network",
+  1011: "Family Command Center's relay hit an internal error",
+};
+
+/**
+ * Turns a close that arrives *before* a driver's handshake finished into a real error: a
+ * `RelayRefusedError` naming the cause for the relay's own refusal codes, otherwise a plain error
+ * saying the connection dropped before the TV answered (not a pairing problem).
+ */
+export function describeHandshakeClose(event: { code?: number; reason?: string } | undefined, target: string): Error {
+  const code = event?.code ?? 0;
+  const known = RELAY_CLOSE_MESSAGES[code];
+  if (known) return new RelayRefusedError(known, code);
+  const reason = event?.reason ? ` (${event.reason})` : "";
+  return new Error(`The connection to ${target} closed before the TV answered${reason} — the TV may be off, asleep, or unreachable from Family Command Center`);
+}
+
 const RELAY_PORT = 3211;
 const RELAY_SCHEME = "ws";
 

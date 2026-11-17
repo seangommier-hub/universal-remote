@@ -18,7 +18,7 @@ export class MockWebSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event?: { code?: number; reason?: string }) => void) | null = null;
 
   constructor(public url: string) {
     MockWebSocket.instances.push(this);
@@ -43,6 +43,12 @@ export class MockWebSocket {
 
   simulateRawMessage(data: string): void {
     this.onmessage?.({ data });
+  }
+
+  /** The server closing the socket with a code/reason, e.g. Family Command Center's relay refusing a connection (ADR-HEARTH-234). */
+  simulateClose(code: number, reason = ""): void {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.({ code, reason });
   }
 
   simulateError(): void {

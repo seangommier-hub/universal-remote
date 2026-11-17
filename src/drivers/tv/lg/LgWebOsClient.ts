@@ -10,7 +10,7 @@
 // actually succeeds, because Family Command Center's relay (plain Node.js, not React Native)
 // CAN be configured to trust that certificate server-side. See ADR-HEARTH-014.
 
-import { openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
+import { describeHandshakeClose, openSocketWithRelayFallback } from "../../../core/network/wsRelayFallback";
 import { logger } from "../../../core/logging/logger";
 import { SavedPairingRejectedError } from "../../shared/savedPairingRejected";
 
@@ -260,6 +260,7 @@ export class LgWebOsClient {
       }
       const failRegister = () => {
         this.pending.delete(registerId);
+        socket.onclose = null; // our own close, not a refusal: keep this function's message (ADR-HEARTH-234)
         socket.close();
         // Real-hardware finding (2026-09-10): a saved client-key timing out here doesn't mean
         // Hearth forgot it — it was confirmed sent (see LgWebOsDriver's connect-attempt log) and
@@ -294,6 +295,7 @@ export class LgWebOsClient {
         },
         reject: (err) => {
           clearTimeout(timeout);
+          socket.onclose = null; // our own close after the TV's real error (ADR-HEARTH-234)
           socket.close();
           reject(err);
         },
@@ -304,6 +306,16 @@ export class LgWebOsClient {
         clearTimeout(timeout);
         this.pending.delete(registerId);
         reject(new Error(`Could not open a WebSocket to ${this.config.ipAddress}:${PORT}`));
+      };
+      // ADR-HEARTH-234: the relay refuses (bad token, unknown TV address, TV not answering) by
+      // closing the already-open socket with a specific code. Without this handler that close was
+      // ignored and the register timeout fired 8s later blaming the TV's pairing. Replaced by the
+      // post-handshake handler on success; a close after our own socket.close() just re-rejects an
+      // already-settled promise, which is a no-op.
+      socket.onclose = (event?: { code?: number; reason?: string }) => {
+        clearTimeout(timeout);
+        this.pending.delete(registerId);
+        reject(promptShown ? new Error("The TV closed the connection before the pairing prompt was approved") : describeHandshakeClose(event, `${this.config.ipAddress}:${PORT}`));
       };
 
       // A known client-key rides alongside the manifest (not nested inside it) — same shape

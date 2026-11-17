@@ -1,11 +1,11 @@
 import { cameraViewToDevice, cameraViewToState, fccCameraSnapshotSource, fetchFccCameras, FccCameraTokenRejectedError, FCC_CAMERA_DRIVER_ID } from "./fccCameraApi";
 import { CameraView } from "../../../core/types/Camera";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 // Same explicit-factory mock as FamilyCommandCenterDiscoveryProvider.test.ts: the real module
 // imports AsyncStorage/SecureStore, whose native modules don't exist in this Jest environment.
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const BASE_URL = "http://192.168.1.172:3210";
@@ -30,7 +30,7 @@ describe("fetchFccCameras (ADR-HEARTH-191)", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
     // A public tunnel is deliberately configured here too, so these tests prove lanOnly actually bypasses it.
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: TOKEN, publicBaseUrl: PUBLIC_URL });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: TOKEN, publicBaseUrl: PUBLIC_URL });
   });
 
   test("parses {enabled, cameras} from the response body", async () => {
@@ -55,7 +55,7 @@ describe("fetchFccCameras (ADR-HEARTH-191)", () => {
   });
 
   test("resolves to {enabled:false, cameras:[]} with no Family Command Center saved, instead of throwing", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
     await expect(fetchFccCameras()).resolves.toEqual({ enabled: false, cameras: [] });
     expect(global.fetch).not.toHaveBeenCalled();
   });

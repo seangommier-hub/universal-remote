@@ -1,4 +1,4 @@
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // TP-Link Kasa's local control protocol is a raw TCP socket with its own binary framing (port
@@ -32,7 +32,7 @@ export class KasaApiError extends Error {
 export class FamilyCommandCenterNotConfiguredError extends Error {}
 
 async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then Kasa plugs can be controlled.");
   }
