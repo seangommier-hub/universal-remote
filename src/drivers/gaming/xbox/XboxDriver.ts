@@ -3,7 +3,7 @@ import { CapabilityId } from "../../../core/types/Capability";
 import { Command, CommandResult } from "../../../core/types/Command";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch } from "../../../core/network/fccRequest";
 
 // Real-hardware research (2026-09-13): Xbox's SmartGlass protocol has a genuine, documented,
@@ -83,7 +83,7 @@ export class XboxDriver implements DeviceDriver {
       throw new Error(`XboxDriver does not implement capability: ${command.capability}`);
     }
     const { liveId, ipAddress } = requireConfig(device);
-    const config = await loadFamilyCommandCenterConfig();
+    const config = await loadFamilyCommandCenterConfigSafely();
     if (!config) {
       throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
     }

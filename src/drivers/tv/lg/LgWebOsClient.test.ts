@@ -1,5 +1,6 @@
 import { LgWebOsClient } from "./LgWebOsClient";
 import { SavedPairingRejectedError } from "../../shared/savedPairingRejected";
+import { RelayRefusedError } from "../../../core/network/wsRelayFallback";
 import { flushMicrotasks, installMockWebSocket, MockWebSocket } from "../../../testUtils/mockWebSocket";
 import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
@@ -50,6 +51,60 @@ describe("LgWebOsClient", () => {
 
     relaySocket.simulateMessage({ type: "registered", id: sent.id, payload: { "client-key": "relayed-key" } });
     await expect(connectPromise).resolves.toBe("relayed-key");
+  });
+
+  describe("relay refusals during the handshake (ADR-HEARTH-234)", () => {
+    async function openRelayedSocket(): Promise<{ connectPromise: Promise<string | undefined>; relaySocket: MockWebSocket }> {
+      mockLoadConfig.mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "stale-token" });
+      const client = new LgWebOsClient({ ipAddress: "10.20.30.40", clientKey: "saved-key" });
+      const connectPromise = client.connect();
+      MockWebSocket.latest().simulateError(); // direct wss always fails on a phone
+      await flushMicrotasks();
+      const relaySocket = MockWebSocket.latest();
+      relaySocket.simulateOpen(); // the relay accepts the socket first, then validates it
+      await flushMicrotasks();
+      return { connectPromise, relaySocket };
+    }
+
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test("a rejected token (4001) fails at once and says the token is the problem, not the TV's pairing", async () => {
+      const { connectPromise, relaySocket } = await openRelayedSocket();
+      relaySocket.simulateClose(4001, "unauthorized");
+      const failure = await connectPromise.catch((err) => err);
+      expect(failure).toBeInstanceOf(RelayRefusedError);
+      expect(failure.message).toMatch(/rejected this phone's saved token/);
+      expect(failure.message).not.toMatch(/pairing/);
+      expect(jest.getTimerCount()).toBe(0); // did not wait out the 8s register timeout
+    });
+
+    test("a TV the relay cannot reach (4008) says so instead of blaming the pairing", async () => {
+      const { connectPromise, relaySocket } = await openRelayedSocket();
+      relaySocket.simulateClose(4008, "target connection timed out");
+      await expect(connectPromise).rejects.toThrow(/couldn't reach the TV/);
+    });
+
+    test("a TV address the relay does not recognize (4003) says the TV may have moved", async () => {
+      const { connectPromise, relaySocket } = await openRelayedSocket();
+      relaySocket.simulateClose(4003, "target is not a known device on this network");
+      await expect(connectPromise).rejects.toThrow(/doesn't see this TV at its saved address/);
+    });
+
+    test("a plain close with no relay code says the connection dropped before the TV answered", async () => {
+      const { connectPromise, relaySocket } = await openRelayedSocket();
+      relaySocket.simulateClose(1000);
+      const failure = await connectPromise.catch((err) => err);
+      expect(failure).not.toBeInstanceOf(RelayRefusedError);
+      expect(failure.message).toMatch(/closed before the TV answered/);
+    });
+
+    test("silence with no close still ends in the existing register timeout message", async () => {
+      const { connectPromise } = await openRelayedSocket();
+      const settled = connectPromise.catch((err) => err);
+      jest.advanceTimersByTime(8000);
+      expect((await settled).message).toMatch(/isn't recognizing a previous pairing/);
+    });
   });
 
   test("connects to the encrypted port 3001 root path and sends the register handshake on open", async () => {

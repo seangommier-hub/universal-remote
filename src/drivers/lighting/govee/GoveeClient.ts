@@ -1,4 +1,4 @@
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // Govee's official local LAN Control API (confirmed 2026-09-27 against the community-published spec
@@ -42,7 +42,7 @@ export class GoveeApiError extends Error {
 export class FamilyCommandCenterNotConfiguredError extends Error {}
 
 async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then Govee lights can be controlled.");
   }

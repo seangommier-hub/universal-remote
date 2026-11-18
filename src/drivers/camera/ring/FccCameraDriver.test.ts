@@ -1,12 +1,12 @@
 import { FccCameraDriver } from "./FccCameraDriver";
 import { CameraView } from "../../../core/types/Camera";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { Device } from "../../../core/types/Device";
 
 // Same explicit-factory mock as FamilyCommandCenterDiscoveryProvider.test.ts: the real module
 // imports AsyncStorage/SecureStore, whose native modules don't exist in this Jest environment.
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const BASE_URL = "http://192.168.1.172:3210";
@@ -74,7 +74,7 @@ describe("FccCameraDriver (ADR-HEARTH-191)", () => {
 
   describe("fetchSnapshot", () => {
     beforeEach(() => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: TOKEN });
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: TOKEN });
     });
 
     test("uses the last-applied view's snapshotUrl with the bearer header — no network call of its own", async () => {
@@ -97,7 +97,7 @@ describe("FccCameraDriver (ADR-HEARTH-191)", () => {
     });
 
     test("throws with no Family Command Center saved", async () => {
-      (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null);
+      (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null);
       const driver = new FccCameraDriver();
       driver.applyCameraViews([view()]);
       await expect(driver.fetchSnapshot(device())).rejects.toThrow();

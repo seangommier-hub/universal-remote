@@ -2,7 +2,7 @@ import { CameraView, FccCamerasResponse } from "../../../core/types/Camera";
 import { Device } from "../../../core/types/Device";
 import { DeviceState } from "../../../core/types/DeviceState";
 import { SnapshotImage } from "../../../core/types/Snapshot";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch } from "../../../core/network/fccRequest";
 import { DEFAULT_FETCH_TIMEOUT_MS } from "../../../core/network/fetchWithTimeout";
 
@@ -29,7 +29,7 @@ export class FccCameraTokenRejectedError extends Error {}
  * branch just to hide the feature.
  */
 export async function fetchFccCameras(signal?: AbortSignal): Promise<FccCamerasResponse> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) return NO_CAMERAS;
   const response = await fccFetch(config, FCC_CAMERAS_PATH, { signal }, DEFAULT_FETCH_TIMEOUT_MS, { lanOnly: true });
   if (response.status === HTTP_UNAUTHORIZED) throw new FccCameraTokenRejectedError("Family Command Center rejected the saved token.");

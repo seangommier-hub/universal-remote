@@ -3,7 +3,7 @@
 // ever sends an IP address, the on-screen pairing code and allowlisted key/app names, and never
 // sees a credential.
 
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch } from "../../../core/network/fccRequest";
 import { DEFAULT_FETCH_TIMEOUT_MS, LONG_FETCH_TIMEOUT_MS } from "../../../core/network/fetchWithTimeout";
 
@@ -52,7 +52,7 @@ function kindOf(value: unknown): AndroidTvErrorKind {
 }
 
 async function relayRequest<T>(path: string, body: object, timeoutMs: number): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
   const response = await fccFetch(config, `${ROUTE_BASE}${path}`, { method: "POST", body: JSON.stringify(body) }, timeoutMs);
   if (response.ok) return response.json();

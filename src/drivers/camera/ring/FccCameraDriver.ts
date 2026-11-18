@@ -5,7 +5,7 @@ import { CameraView } from "../../../core/types/Camera";
 import { Device } from "../../../core/types/Device";
 import { createUnknownState, DeviceState } from "../../../core/types/DeviceState";
 import { SnapshotImage } from "../../../core/types/Snapshot";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { cameraViewToState, fccCameraSnapshotSource, FCC_CAMERA_DRIVER_ID } from "./fccCameraApi";
 
 export { FCC_CAMERA_DRIVER_ID };
@@ -98,7 +98,7 @@ export class FccCameraDriver implements DeviceDriver {
    * for as long as a camera screen is open, which is the only time this is ever called.
    */
   async fetchSnapshot(device: Device): Promise<SnapshotImage> {
-    const config = await loadFamilyCommandCenterConfig();
+    const config = await loadFamilyCommandCenterConfigSafely();
     if (!config) throw new Error("Family Command Center isn't connected — add its address and token in Settings first.");
     const view = this.views.get(device.id);
     if (!view) throw new Error(`${device.name} isn't reporting in yet.`);

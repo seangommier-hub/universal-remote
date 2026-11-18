@@ -13,6 +13,7 @@ import { ContractCaseId } from "./contract/exemptions";
 
 jest.mock("../discovery/familyCommandCenterConfig", () => ({
   loadFamilyCommandCenterConfig: jest.fn(async () => require("../testUtils/contractNetwork").contractNetwork.fccConfig),
+  loadFamilyCommandCenterConfigSafely: jest.fn(async () => require("../testUtils/contractNetwork").contractNetwork.fccConfig),
 }));
 jest.mock("../discovery/familyCommandCenterDeviceLookup");
 jest.mock("../core/network/wakeOnLan");

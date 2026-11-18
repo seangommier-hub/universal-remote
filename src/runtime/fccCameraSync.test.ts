@@ -2,12 +2,12 @@ import { planCameraSync, syncFccCameras } from "./fccCameraSync";
 import { CameraView, FccCamerasResponse } from "../core/types/Camera";
 import { cameraViewToDevice, FCC_CAMERA_DRIVER_ID } from "../drivers/camera/ring/fccCameraApi";
 import { Device } from "../core/types/Device";
-import { loadFamilyCommandCenterConfig } from "../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../discovery/familyCommandCenterConfig";
 
 // Same explicit-factory mock as FamilyCommandCenterDiscoveryProvider.test.ts: the real module
 // imports AsyncStorage/SecureStore, whose native modules don't exist in this Jest environment.
 jest.mock("../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const BASE_URL = "http://192.168.1.172:3210";
@@ -65,7 +65,7 @@ describe("planCameraSync (ADR-HEARTH-191)", () => {
 
 describe("syncFccCameras", () => {
   test("calls addDevice/removeDevice per the plan, and never throws when unreachable", async () => {
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue(null); // fetchFccCameras resolves {enabled:false, cameras:[]}
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue(null); // fetchFccCameras resolves {enabled:false, cameras:[]}
     const addDevice = jest.fn();
     const removeDevice = jest.fn();
     await expect(syncFccCameras([], addDevice, removeDevice)).resolves.toBeUndefined();
@@ -75,7 +75,7 @@ describe("syncFccCameras", () => {
 
   test("adds devices reported by a live camera list", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ enabled: true, cameras: [view("cam-1")] }) });
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: "t" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: BASE_URL, token: "t" });
     const addDevice = jest.fn();
     const removeDevice = jest.fn();
     await syncFccCameras([], addDevice, removeDevice);

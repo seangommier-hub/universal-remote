@@ -1,8 +1,8 @@
 import { AndroidTvClient, AndroidTvRelayError } from "./AndroidTvClient";
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 
 jest.mock("../../../discovery/familyCommandCenterConfig", () => ({
-  loadFamilyCommandCenterConfig: jest.fn(),
+  loadFamilyCommandCenterConfigSafely: jest.fn(),
 }));
 
 const BASE = "http://192.168.1.172:3210/api/integrations/hearth/androidtv";
@@ -14,7 +14,7 @@ function jsonResponse(body: unknown, status = 200) {
 describe("AndroidTvClient", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
-    (loadFamilyCommandCenterConfig as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
+    (loadFamilyCommandCenterConfigSafely as jest.Mock).mockResolvedValue({ baseUrl: "http://192.168.1.172:3210", token: "test-token" });
   });
 
   test("startPairing posts the IP and resolves with the session, name and MAC", async () => {

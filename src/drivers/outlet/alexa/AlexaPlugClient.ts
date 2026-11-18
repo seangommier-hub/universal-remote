@@ -1,4 +1,4 @@
-import { loadFamilyCommandCenterConfig } from "../../../discovery/familyCommandCenterConfig";
+import { loadFamilyCommandCenterConfigSafely } from "../../../discovery/familyCommandCenterConfig";
 import { fccFetch, isFccTimeout } from "../../../core/network/fccRequest";
 
 // ADR-HEARTH-192: the Family Command Center's Pi-side Alexa bridge (built by a sibling session
@@ -57,7 +57,7 @@ async function readErrorMessage(response: Response): Promise<string> {
 }
 
 async function fccRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const config = await loadFamilyCommandCenterConfig();
+  const config = await loadFamilyCommandCenterConfigSafely();
   if (!config) {
     throw new FamilyCommandCenterNotConfiguredError("Family Command Center isn't paired yet — pair it first, then Alexa plugs can sync.");
   }
